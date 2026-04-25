@@ -50,14 +50,21 @@ def generate_totp_secret() -> str:
 
 
 def verify_totp(secret: str, code: str) -> bool:
-    """Constant-time verification with clock-drift tolerance."""
+    """Constant-time verification with clock-drift tolerance.
+
+    Accepts both plaintext (legacy rows) and Fernet-encrypted secrets. The
+    DB schema has TOTP secrets encrypted at rest from go-live onward; the
+    fallback exists so existing pre-encryption rows keep working until the
+    next enrollment / rotation re-writes them encrypted."""
     if not secret or not code:
         return False
     code = code.replace(' ', '').strip()
     if not code.isdigit() or len(code) != 6:
         return False
     try:
-        return pyotp.TOTP(secret).verify(code, valid_window=TOTP_WINDOW)
+        from secrets_vault import decrypt
+        plaintext = decrypt(secret)
+        return pyotp.TOTP(plaintext).verify(code, valid_window=TOTP_WINDOW)
     except Exception:
         return False
 

@@ -12,6 +12,10 @@ qrcode[pil]==8.2
 # Rate limiting on /login (added during go-live security pass)
 slowapi==0.1.9
 
+# Symmetric encryption-at-rest for TOTP secrets + SMTP passwords. See
+# secrets_vault.py for the key-source order.
+cryptography==47.0.0
+
 # Optional — only required if the Flexcube Oracle pull is enabled.
 # Pilot banks without Flexcube can omit this dependency entirely.
 # oracledb==3.4.1

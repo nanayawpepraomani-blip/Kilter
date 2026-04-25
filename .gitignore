@@ -9,6 +9,12 @@ venv/
 .env.*
 !.env.example
 
+# --- Secrets — never commit ---------------------------------------------
+# The encryption key for TOTP secrets and SMTP passwords. If this leaks the
+# encrypted columns might as well be plaintext. Use the KILTER_SECRET_KEY
+# env var in production and delete this file.
+.kilter_secret_key
+
 # --- Editor / IDE --------------------------------------------------------
 .idea/
 .vscode/

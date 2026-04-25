@@ -166,17 +166,18 @@ def current_user(x_session_token: str = Header(default="")) -> dict:
         conn.close()
 
 
-def active_scope(x_session_token: str = Header(default="")) -> list[str] | None:
+def active_scope(user: dict = Depends(current_user),
+                 x_session_token: str = Header(default="")) -> list[str] | None:
     """The user's active access-area scope for list views. None = no filter
     (show everything). [] = "none selected" — we treat the same as None so the
     app never renders a deliberately-empty list from a bad toggle. A concrete
     list means: only show accounts whose access_area is in this set.
 
-    Unauthenticated requests resolve to None — list endpoints are currently
-    unguarded (pre-existing), so this dep just silently no-ops for them."""
+    Now requires a valid session — `current_user` runs first and raises 401
+    on missing/expired/revoked tokens. Previously this dep silently no-op'd
+    for unauthenticated requests, which left every endpoint depending on it
+    (list_sessions, list_accounts, stats, dashboard/*, etc.) wide open."""
     token = (x_session_token or "").strip()
-    if not token:
-        return None
     conn = get_conn()
     try:
         row = conn.execute(
@@ -362,11 +363,15 @@ def enroll_complete(payload: EnrollCompletePayloadWithSecret):
         if not verify_totp(payload.secret, payload.totp_code):
             raise HTTPException(400, "Code didn't match. Make sure your phone's time is in sync and try the next rotation.")
 
+        # Encrypt the secret at rest. verify_totp will decrypt on each login.
+        from secrets_vault import encrypt
+        encrypted_secret = encrypt(payload.secret)
+
         now = datetime.utcnow().isoformat()
         conn.execute(
             "UPDATE users SET totp_secret=?, totp_enrolled_at=?, enrollment_token=NULL "
             "WHERE username=?",
-            (payload.secret, now, payload.username),
+            (encrypted_secret, now, payload.username),
         )
         conn.execute(
             "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
@@ -380,10 +385,17 @@ def enroll_complete(payload: EnrollCompletePayloadWithSecret):
 
 
 @app.get("/sessions/{session_id}/review")
-def review(request: Request, session_id: int):
+def review(request: Request, session_id: int,
+           user: dict = Depends(current_user),
+           scope: list[str] | None = Depends(active_scope)):
     conn = get_conn()
     try:
-        s = conn.execute("SELECT id FROM sessions WHERE id=?", (session_id,)).fetchone()
+        scope_where, scope_params = _scope_clause(scope, alias='a')
+        s = conn.execute(
+            "SELECT s.id FROM sessions s LEFT JOIN accounts a ON a.id = s.account_id "
+            "WHERE s.id=? AND (s.account_id IS NULL OR " + scope_where + ")",
+            (session_id, *scope_params),
+        ).fetchone()
         if s is None:
             raise HTTPException(404, "Session not found")
     finally:
@@ -1122,14 +1134,21 @@ def list_sessions(scope: list[str] | None = Depends(active_scope)):
 
 
 @app.get("/sessions/{session_id}")
-def get_session(session_id: int):
+def get_session(session_id: int,
+                user: dict = Depends(current_user),
+                scope: list[str] | None = Depends(active_scope)):
     conn = get_conn()
     try:
+        # Scope check: a user limited to certain access areas can only read
+        # sessions whose linked account sits in those areas. Sessions without
+        # an account_id (legacy / unregistered intake) remain admin-visible.
+        scope_where, scope_params = _scope_clause(scope, alias='a')
         s = conn.execute(
             "SELECT s.*, a.shortname AS account_shortname, a.access_area AS account_access_area, "
             "       a.bic AS account_bic "
-            "FROM sessions s LEFT JOIN accounts a ON a.id = s.account_id WHERE s.id=?",
-            (session_id,),
+            "FROM sessions s LEFT JOIN accounts a ON a.id = s.account_id "
+            "WHERE s.id=? AND (s.account_id IS NULL OR " + scope_where + ")",
+            (session_id, *scope_params),
         ).fetchone()
         if s is None:
             raise HTTPException(404, "Session not found")
@@ -1271,9 +1290,20 @@ def session_register(session_id: int, user: dict = Depends(current_user)):
 # ---------------------------------------------------------------------------
 
 @app.get("/sessions/{session_id}/queue")
-def get_queue(session_id: int):
+def get_queue(session_id: int,
+              user: dict = Depends(current_user),
+              scope: list[str] | None = Depends(active_scope)):
     conn = get_conn()
     try:
+        # Scope-check the parent session before exposing its queue.
+        scope_where, scope_params = _scope_clause(scope, alias='a')
+        owned = conn.execute(
+            "SELECT s.id FROM sessions s LEFT JOIN accounts a ON a.id = s.account_id "
+            "WHERE s.id=? AND (s.account_id IS NULL OR " + scope_where + ")",
+            (session_id, *scope_params),
+        ).fetchone()
+        if owned is None:
+            raise HTTPException(404, "Session not found")
         assignments = conn.execute(
             "SELECT * FROM assignments WHERE session_id=? AND status='pending' "
             "ORDER BY tier, id",
@@ -1462,9 +1492,19 @@ def export_session(session_id: int, user: dict = Depends(current_user)):
 # ---------------------------------------------------------------------------
 
 @app.get("/sessions/{session_id}/audit")
-def get_audit(session_id: int):
+def get_audit(session_id: int,
+              user: dict = Depends(current_user),
+              scope: list[str] | None = Depends(active_scope)):
     conn = get_conn()
     try:
+        scope_where, scope_params = _scope_clause(scope, alias='a')
+        owned = conn.execute(
+            "SELECT s.id FROM sessions s LEFT JOIN accounts a ON a.id = s.account_id "
+            "WHERE s.id=? AND (s.account_id IS NULL OR " + scope_where + ")",
+            (session_id, *scope_params),
+        ).fetchone()
+        if owned is None:
+            raise HTTPException(404, "Session not found")
         rows = conn.execute(
             "SELECT id, action, actor, timestamp, details FROM audit_log "
             "WHERE session_id=? ORDER BY id",
@@ -1507,7 +1547,7 @@ def list_accounts(scope: list[str] | None = Depends(active_scope)):
 
 
 @app.get("/access-areas")
-def list_access_areas():
+def list_access_areas(user: dict = Depends(current_user)):
     """Used to populate the Access area dropdown. Ops and admin both see this
     so account creation/edit screens can bind to the same registry."""
     conn = get_conn()
@@ -2210,6 +2250,41 @@ class ChannelPatchPayload(BaseModel):
     active: int | None = None
 
 
+def _redact_channel_config(config_json: str | None) -> str | None:
+    """Strip the smtp_password field for outbound responses. Admin UI never
+    needs to see the stored password — they re-enter it to rotate. Returns
+    the JSON string with smtp_password replaced by an empty string if any
+    value is present, or untouched otherwise."""
+    if not config_json:
+        return config_json
+    try:
+        cfg = json.loads(config_json)
+    except (TypeError, ValueError):
+        return config_json
+    if isinstance(cfg, dict) and cfg.get('smtp_password'):
+        cfg['smtp_password'] = ''   # surface that one was set, but never echo it
+    return json.dumps(cfg)
+
+
+def _encrypt_channel_config(config_json: str | None) -> str | None:
+    """Inverse-side: encrypt the smtp_password field before persisting.
+    Caller is responsible for the JSON-validity round-trip; this is a
+    best-effort no-op for non-email channels."""
+    if not config_json:
+        return config_json
+    try:
+        cfg = json.loads(config_json)
+    except (TypeError, ValueError):
+        return config_json
+    pwd = cfg.get('smtp_password') if isinstance(cfg, dict) else None
+    if pwd:
+        from secrets_vault import encrypt, is_encrypted
+        if not is_encrypted(pwd):
+            cfg['smtp_password'] = encrypt(pwd)
+            return json.dumps(cfg)
+    return config_json
+
+
 @app.get("/notification-channels")
 def list_channels(user: dict = Depends(require_role('admin'))):
     conn = get_conn()
@@ -2217,7 +2292,14 @@ def list_channels(user: dict = Depends(require_role('admin'))):
         rows = conn.execute(
             "SELECT * FROM notification_channels ORDER BY active DESC, name"
         ).fetchall()
-        return [dict(r) for r in rows]
+        # Redact the SMTP password — admins shouldn't see the encrypted blob
+        # echoed back, and they don't need it to operate the UI.
+        out = []
+        for r in rows:
+            d = dict(r)
+            d['config_json'] = _redact_channel_config(d.get('config_json'))
+            out.append(d)
+        return out
     finally:
         conn.close()
 
@@ -2232,6 +2314,7 @@ def create_channel(payload: ChannelPayload,
         json.loads(payload.config_json)
     except Exception:
         raise HTTPException(400, "config_json must be valid JSON")
+    config_json_enc = _encrypt_channel_config(payload.config_json)
     now = datetime.utcnow().isoformat()
     conn = get_conn()
     try:
@@ -2239,7 +2322,7 @@ def create_channel(payload: ChannelPayload,
             "INSERT INTO notification_channels (name, kind, config_json, "
             "threshold_days, access_area_filter, active, created_at, created_by) "
             "VALUES (?,?,?,?,?,?,?,?)",
-            (payload.name, payload.kind, payload.config_json,
+            (payload.name, payload.kind, config_json_enc,
              payload.threshold_days, payload.access_area_filter,
              payload.active, now, user['username']),
         )
@@ -2275,6 +2358,7 @@ def update_channel(channel_id: int, payload: ChannelPatchPayload,
                     try: json.loads(v)
                     except Exception:
                         raise HTTPException(400, "config_json must be valid JSON")
+                    v = _encrypt_channel_config(v)
                 fields.append(f"{k}=?"); values.append(v)
         if not fields:
             raise HTTPException(400, "no fields to update")
@@ -2284,9 +2368,11 @@ def update_channel(channel_id: int, payload: ChannelPatchPayload,
             values,
         )
         conn.commit()
-        return dict(conn.execute(
+        out = dict(conn.execute(
             "SELECT * FROM notification_channels WHERE id=?", (channel_id,)
         ).fetchone())
+        out['config_json'] = _redact_channel_config(out.get('config_json'))
+        return out
     finally:
         conn.close()
 

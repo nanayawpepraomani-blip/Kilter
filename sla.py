@@ -127,17 +127,19 @@ def _dispatch_email(config: dict, channel: dict,
           "smtp_host": "smtp.office365.com",
           "smtp_port": 587,
           "smtp_user": "kilter@yourbank.com",
-          "smtp_password": "…",            # stored in config_json; move to a
-                                            # secrets store for production.
+          "smtp_password": "…",            # encrypted at rest via
+                                            # secrets_vault — decrypted just
+                                            # before the SMTP handshake.
           "use_starttls": true,
           "from_addr": "Kilter <kilter@yourbank.com>",
           "to_addrs": ["ops@yourbank.com", "treasurycontrol@yourbank.com"]
         }
     """
+    from secrets_vault import decrypt
     host  = (config.get('smtp_host')  or '').strip()
     port  = int(config.get('smtp_port') or 587)
     user  = (config.get('smtp_user')  or '').strip()
-    pwd   = config.get('smtp_password') or ''
+    pwd   = decrypt(config.get('smtp_password') or '')
     frm   = (config.get('from_addr')  or user).strip()
     tos   = config.get('to_addrs') or []
     if isinstance(tos, str):

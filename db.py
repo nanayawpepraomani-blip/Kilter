@@ -504,6 +504,7 @@ def init_db() -> None:
     try:
         conn.executescript(SCHEMA)
         _migrate_add_session_account_columns(conn)
+        _migrate_encrypt_secrets_at_rest(conn)
         _seed_bootstrap_admin(conn)
         _seed_access_areas(conn)
         _seed_grouping_rules(conn)
@@ -773,6 +774,67 @@ def _seed_bootstrap_admin(conn) -> None:
         print(f"  Open: http://localhost:8000/enroll?user=admin&token={token}")
         print("  Scan the QR with Microsoft Authenticator, then log in.")
         print("=" * 66)
+
+
+def _migrate_encrypt_secrets_at_rest(conn) -> None:
+    """One-shot migration: encrypt any legacy plaintext TOTP secrets and
+    SMTP passwords. Idempotent — already-encrypted rows are left alone, so
+    rerunning on every startup is cheap and safe.
+
+    Runs before the schema seeders so a fresh install (no rows) does
+    nothing; runs on every existing install to upgrade rows in place.
+    Failures here don't block startup — log + continue. The runtime
+    decrypt path remains tolerant of plaintext for the same reason."""
+    try:
+        from secrets_vault import encrypt, is_encrypted
+    except Exception as exc:
+        print(f"[migrate] secrets_vault unavailable, skipping encryption migration: {exc}")
+        return
+
+    # Users.totp_secret
+    rows = conn.execute(
+        "SELECT username, totp_secret FROM users WHERE totp_secret IS NOT NULL AND totp_secret != ''"
+    ).fetchall()
+    n_users = 0
+    for r in rows:
+        if not is_encrypted(r['totp_secret']):
+            try:
+                conn.execute(
+                    "UPDATE users SET totp_secret=? WHERE username=?",
+                    (encrypt(r['totp_secret']), r['username']),
+                )
+                n_users += 1
+            except Exception as exc:
+                print(f"[migrate] failed to encrypt totp_secret for {r['username']}: {exc}")
+
+    # notification_channels.config_json — encrypt the smtp_password sub-field
+    import json as _json
+    n_channels = 0
+    rows = conn.execute(
+        "SELECT id, config_json FROM notification_channels WHERE config_json IS NOT NULL"
+    ).fetchall()
+    for r in rows:
+        try:
+            cfg = _json.loads(r['config_json'])
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(cfg, dict):
+            continue
+        pwd = cfg.get('smtp_password')
+        if pwd and not is_encrypted(pwd):
+            try:
+                cfg['smtp_password'] = encrypt(pwd)
+                conn.execute(
+                    "UPDATE notification_channels SET config_json=? WHERE id=?",
+                    (_json.dumps(cfg), r['id']),
+                )
+                n_channels += 1
+            except Exception as exc:
+                print(f"[migrate] failed to encrypt smtp_password for channel {r['id']}: {exc}")
+
+    if n_users or n_channels:
+        conn.commit()
+        print(f"[migrate] encrypted {n_users} TOTP secret(s) and {n_channels} SMTP password(s) at rest.")
 
 
 def _migrate_add_session_account_columns(conn) -> None:
