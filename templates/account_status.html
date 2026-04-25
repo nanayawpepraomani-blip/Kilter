@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block title %}Account status — Kilter{% endblock %}
+{% block crumbs %}<span>Accounts</span> <span class="sep">/</span> <span class="current" id="crumb-account">Status</span>{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1 id="acct-title">Loading…</h1>
+    <div class="subtitle" id="acct-subtitle">—</div>
+  </div>
+  <div style="display:flex; gap:8px;">
+    <a id="open-items-link" class="btn btn-default btn-sm" href="/open-items-view">Open items</a>
+  </div>
+</div>
+
+<div class="stats" id="summary-stats"></div>
+
+<div class="card">
+  <div class="card-head"><h2>Aging</h2><span class="hint" id="oldest-hint"></span></div>
+  <div class="card-body">
+    <div class="stats" id="aging-stats"></div>
+  </div>
+</div>
+
+<div class="card" style="margin-top: 24px;">
+  <div class="card-head"><h2>By category</h2></div>
+  <div class="card-body tight">
+    <table class="table">
+      <thead><tr><th>Category</th><th class="num">Count</th><th class="num">Value</th></tr></thead>
+      <tbody id="cat-body"><tr class="empty-row"><td colspan="3">—</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card" style="margin-top: 24px;">
+  <div class="card-head"><h2>Tolerance</h2><span class="hint">Admin only</span></div>
+  <div class="card-body" id="tolerance-panel">Loading…</div>
+</div>
+
+<script>
+  const accountId = {{ account_id }};
+
+  async function loadStatus() {
+    const r = await fetch(`/accounts/${accountId}/status`);
+    if (!r.ok) {
+      document.getElementById('acct-title').textContent = 'Not found';
+      return;
+    }
+    const data = await r.json();
+    const a = data.account;
+    document.getElementById('crumb-account').textContent = a.shortname || a.label;
+    document.getElementById('acct-title').textContent = a.label;
+    document.getElementById('acct-subtitle').textContent =
+      `${a.swift_account} ↔ ${a.flex_ac_no} · ${a.currency}${a.access_area ? ' · ' + a.access_area : ''}`;
+
+    const t = data.totals;
+    const oi = data.open_items;
+    const last = data.last_session;
+    const ss = document.getElementById('summary-stats');
+    ss.innerHTML = `
+      <div class="stat accent-primary">
+        <div class="label">Match rate</div>
+        <div class="value">${t.match_rate_pct.toFixed(1)}%</div>
+        <div class="hint">${t.confirmed} confirmed of ${t.swift_total} SWIFT</div>
+      </div>
+      <div class="stat"><div class="label">SWIFT rows (all time)</div><div class="value">${t.swift_total}</div></div>
+      <div class="stat"><div class="label">Flex rows (all time)</div><div class="value">${t.flex_total}</div></div>
+      <div class="stat accent-warn">
+        <div class="label">Open items</div>
+        <div class="value">${oi.count}</div>
+        <div class="hint">${oi.oldest_days == null ? 'none' : 'oldest ' + oi.oldest_days + 'd'}</div>
+      </div>
+      <div class="stat"><div class="label">Cleared historic</div><div class="value">${oi.cleared_historic}</div></div>
+      <div class="stat accent-danger"><div class="label">Written off</div><div class="value">${oi.written_off}</div></div>
+      <div class="stat">
+        <div class="label">Last reconciled</div>
+        <div class="value" style="font-size: 18px;">${last ? fmtDateTime(last.created_at) : 'never'}</div>
+        <div class="hint">${last ? 'session #' + last.id : ''}</div>
+      </div>`;
+
+    const b = oi.buckets; const v = oi.bucket_values;
+    document.getElementById('aging-stats').innerHTML = `
+      <div class="stat accent-success"><div class="label">0–7 days</div><div class="value">${b['0-7']}</div><div class="hint">${fmtAmount(v['0-7'])}</div></div>
+      <div class="stat accent-warn"><div class="label">8–30 days</div><div class="value">${b['8-30']}</div><div class="hint">${fmtAmount(v['8-30'])}</div></div>
+      <div class="stat accent-warn"><div class="label">31–90 days</div><div class="value">${b['31-90']}</div><div class="hint">${fmtAmount(v['31-90'])}</div></div>
+      <div class="stat accent-danger"><div class="label">90+ days</div><div class="value">${b['90+']}</div><div class="hint">${fmtAmount(v['90+'])}</div></div>`;
+
+    document.getElementById('oldest-hint').textContent =
+      oi.oldest_days == null ? 'no open items' : `oldest item ${oi.oldest_days} days`;
+
+    const cats = oi.by_category || {};
+    const entries = Object.entries(cats).sort((a, b) => b[1].count - a[1].count);
+    document.getElementById('cat-body').innerHTML = entries.length
+      ? entries.map(([k, v]) =>
+          `<tr><td><span class="badge badge-neutral">${esc(k)}</span></td>
+               <td class="num">${v.count}</td>
+               <td class="num">${fmtAmount(v.value)}</td></tr>`).join('')
+      : '<tr class="empty-row"><td colspan="3">No open items</td></tr>';
+
+    document.getElementById('open-items-link').href = `/open-items-view?account=${accountId}`;
+
+    loadTolerance();
+  }
+
+  async function loadTolerance() {
+    const r = await fetch(`/accounts/${accountId}/tolerance`);
+    if (!r.ok) return;
+    const t = await r.json();
+    const isAdmin = window.me && window.me.role === 'admin';
+    const panel = document.getElementById('tolerance-panel');
+    panel.innerHTML = `
+      <div class="form-grid" style="grid-template-columns: repeat(4, 1fr); gap: 12px;">
+        <div class="field"><label>Amount abs (${esc(t.account_id ? '' : '')})</label>
+          <input id="t-abs" type="number" step="0.01" class="input" value="${t.amount_tol_abs}" ${isAdmin ? '' : 'disabled'}></div>
+        <div class="field"><label>Amount %</label>
+          <input id="t-pct" type="number" step="0.01" class="input" value="${t.amount_tol_pct}" ${isAdmin ? '' : 'disabled'}></div>
+        <div class="field"><label>Date ± days</label>
+          <input id="t-days" type="number" class="input" value="${t.date_tol_days}" ${isAdmin ? '' : 'disabled'}></div>
+        <div class="field"><label>Min ref length</label>
+          <input id="t-ref" type="number" class="input" value="${t.min_ref_len}" ${isAdmin ? '' : 'disabled'}></div>
+      </div>
+      <div style="margin-top: 12px; display: flex; justify-content: space-between; align-items: center;">
+        <span class="muted">${t.is_default ? 'Using defaults.' : 'Last updated ' + fmtDateTime(t.updated_at) + ' by ' + esc(t.updated_by || '—')}</span>
+        ${isAdmin ? '<button id="t-save" class="btn btn-primary btn-sm">Save</button>' : ''}
+      </div>`;
+    if (isAdmin) {
+      document.getElementById('t-save').onclick = async () => {
+        const body = {
+          amount_tol_abs: +document.getElementById('t-abs').value,
+          amount_tol_pct: +document.getElementById('t-pct').value,
+          date_tol_days:  +document.getElementById('t-days').value,
+          min_ref_len:    +document.getElementById('t-ref').value,
+        };
+        const r = await fetch(`/accounts/${accountId}/tolerance`, {
+          method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body),
+        });
+        if (!r.ok) { alert((await r.json().catch(() => ({}))).detail || 'Failed'); return; }
+        loadTolerance();
+      };
+    }
+  }
+
+  loadStatus();
+</script>
+{% endblock %}

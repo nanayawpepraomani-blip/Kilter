@@ -1,0 +1,88 @@
+Kilter — Proprietary Commercial License
+========================================
+
+Copyright (c) 2026 Kilter. All rights reserved.
+
+This software, including all source code, documentation, configuration,
+templates, and accompanying materials (collectively, the "Software"), is
+the proprietary property of Kilter. The Software is licensed, not sold.
+
+NO LICENSE GRANTED BY DEFAULT
+-----------------------------
+
+Possession of, or access to, this Software does NOT grant any right to
+use, copy, modify, merge, publish, distribute, sublicense, or sell the
+Software. Any such use requires a separately negotiated, signed, written
+commercial license agreement with Kilter.
+
+EVALUATION USE
+--------------
+
+A prospect bank or organization that has been provided this Software by
+Kilter for the purpose of evaluation (a "Pilot") may, for the duration
+of the Pilot and solely on its own internal infrastructure:
+
+  (a) install and run the Software,
+  (b) ingest and process its own correspondent-banking statements and
+      core-banking general-ledger data,
+  (c) operate the Software for normal reconciliation activities, and
+  (d) make backup copies as required for disaster recovery.
+
+Evaluation use does NOT include any right to:
+
+  (i)   redistribute the Software, in source or compiled form, to any
+        third party;
+  (ii)  publish, mirror, or open-source the Software or any derivative;
+  (iii) sublicense, lease, rent, or sell the Software or access to it;
+  (iv)  remove or alter any proprietary notices, copyright statements,
+        or branding within the Software;
+  (v)   reverse-engineer, decompile, or disassemble the Software except
+        to the extent that applicable law expressly permits despite this
+        limitation;
+  (vi)  use the Software in production beyond the agreed Pilot scope
+        without a signed commercial license.
+
+The Pilot terminates automatically (a) at the end of the agreed
+evaluation period, (b) upon written notice from Kilter, or (c) upon any
+breach of this License. On termination the Pilot organisation must
+remove all copies of the Software from its systems within thirty (30)
+days, except where retention is mandated by applicable law (in which
+case the Software remains subject to this License for the retention
+period).
+
+NO WARRANTY
+-----------
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, ACCURACY, AND
+NON-INFRINGEMENT. KILTER MAKES NO WARRANTY THAT THE SOFTWARE WILL MEET
+ANY PARTICULAR REGULATORY OR ACCOUNTING REQUIREMENT. THE PILOT
+ORGANISATION REMAINS SOLELY RESPONSIBLE FOR THE ACCURACY AND
+SUFFICIENCY OF ITS RECONCILIATION CONTROLS.
+
+LIMITATION OF LIABILITY
+-----------------------
+
+IN NO EVENT SHALL KILTER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE,
+ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE. THIS LIMITATION APPLIES TO THE FULL
+EXTENT PERMITTED BY APPLICABLE LAW.
+
+DATA OWNERSHIP
+--------------
+
+All data ingested, processed, or produced by the Software during a
+Pilot — including but not limited to nostro statements, GL extracts,
+audit logs, and reconciliation outputs — remains the exclusive
+property of the Pilot organisation. Kilter claims no right to such
+data and warrants that the Software, in its as-shipped configuration,
+performs no outbound transmission of Pilot data to Kilter or any third
+party.
+
+CONTACT
+-------
+
+For commercial licensing, support, or to request modifications to the
+terms above, contact Kilter directly.

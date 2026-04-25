@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% block title %}Currencies — Kilter{% endblock %}
+{% block crumbs %}<span class="current">Currencies</span>{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Currencies</h1>
+    <div class="subtitle">Managed ISO-code list that feeds the currency picker on cash-account forms. Deactivating a code hides it from the picker without affecting historic accounts.</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <h2>Currency list</h2>
+    <div style="display:flex;gap:10px;align-items:center">
+      <label style="font-size:var(--t-small);color:var(--c-text-muted)">
+        <input type="checkbox" id="show-inactive"> Show inactive
+      </label>
+      <button class="btn btn-primary btn-sm admin-only" id="add-btn" style="display:none">Add currency</button>
+    </div>
+  </div>
+  <div class="card-body tight">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>ISO code</th><th>Currency name</th>
+          <th class="num">Decimals</th><th>Euro?</th>
+          <th>Active</th><th class="admin-only" style="display:none"></th>
+        </tr>
+      </thead>
+      <tbody id="body"><tr class="empty-row"><td colspan="6">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Add/edit modal -->
+<div id="modal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.55);z-index:100;align-items:flex-start;justify-content:center;padding:50px 20px;overflow-y:auto">
+  <div class="card" style="max-width:500px;width:100%;margin:0">
+    <div class="card-head">
+      <h2 id="modal-title">Add currency</h2>
+      <button class="btn btn-ghost btn-sm" onclick="closeModal()">Close</button>
+    </div>
+    <div class="card-body">
+      <form id="form" class="form-grid">
+        <input type="hidden" name="mode" value="add">
+        <input type="hidden" name="original_code" value="">
+        <div class="field"><label>ISO code (3 letters) *</label>
+          <input class="input" name="iso_code" required maxlength="3" style="text-transform:uppercase" placeholder="e.g. GHS"></div>
+        <div class="field"><label>Currency name *</label>
+          <input class="input" name="name" required placeholder="e.g. US DOLLAR"></div>
+        <div class="field"><label>Decimals</label>
+          <input class="input" type="number" name="decimals" value="2" min="0" max="6"></div>
+        <div class="field"><label>Euro-zone currency?</label>
+          <select class="input" name="euro_currency"><option value="0">No</option><option value="1">Yes</option></select></div>
+        <div class="field"><label>Active</label>
+          <select class="input" name="active"><option value="1">Yes</option><option value="0">No (hidden from picker)</option></select></div>
+        <div style="grid-column:1/-1;display:flex;gap:10px;align-items:center">
+          <button type="submit" class="btn btn-primary" id="submit-btn">Save</button>
+          <button type="button" class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+          <span class="status" id="status"></span>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.body.dataset.nav = 'currencies';
+
+let canEdit = false;
+
+document.addEventListener('me:loaded', (ev) => {
+  canEdit = ev.detail.role === 'admin';
+  document.querySelectorAll('.admin-only').forEach(el => {
+    el.style.display = canEdit ? '' : 'none';
+  });
+});
+
+async function load() {
+  const inc = document.getElementById('show-inactive').checked;
+  const r = await fetch(`/currencies?include_inactive=${inc ? 'true' : 'false'}`);
+  if (!r.ok) { document.getElementById('body').innerHTML = `<tr><td colspan="6">Load failed.</td></tr>`; return; }
+  const rows = await r.json();
+  const body = document.getElementById('body');
+  if (rows.length === 0) { body.innerHTML = `<tr class="empty-row"><td colspan="6">No currencies.</td></tr>`; return; }
+  body.innerHTML = rows.map(c => `
+    <tr>
+      <td><strong>${esc(c.iso_code)}</strong></td>
+      <td>${esc(c.name)}</td>
+      <td class="num">${c.decimals}</td>
+      <td>${c.euro_currency ? '<span class="badge badge-success">Yes</span>' : '<span class="muted">—</span>'}</td>
+      <td>${c.active ? '<span class="badge badge-success">Active</span>' : '<span class="badge badge-neutral">Inactive</span>'}</td>
+      <td class="admin-only" style="${canEdit ? '' : 'display:none'}">
+        <button class="btn btn-ghost btn-sm" onclick='openEdit(${JSON.stringify(c)})'>Edit</button>
+        ${c.active ? `<button class="btn btn-ghost btn-sm" onclick="deact('${esc(c.iso_code)}')">Deactivate</button>` : ''}
+      </td>
+    </tr>`).join('');
+}
+
+function openAdd() {
+  const f = document.getElementById('form');
+  f.reset();
+  f.mode.value = 'add';
+  f.original_code.value = '';
+  f.iso_code.readOnly = false;
+  document.getElementById('modal-title').textContent = 'Add currency';
+  document.getElementById('status').textContent = '';
+  document.getElementById('modal').style.display = 'flex';
+}
+
+function openEdit(c) {
+  const f = document.getElementById('form');
+  f.mode.value = 'edit';
+  f.original_code.value = c.iso_code;
+  f.iso_code.value = c.iso_code;
+  f.iso_code.readOnly = true;
+  f.name.value = c.name;
+  f.decimals.value = c.decimals;
+  f.euro_currency.value = c.euro_currency ? '1' : '0';
+  f.active.value = c.active ? '1' : '0';
+  document.getElementById('modal-title').textContent = `Edit ${c.iso_code}`;
+  document.getElementById('status').textContent = '';
+  document.getElementById('modal').style.display = 'flex';
+}
+
+function closeModal() { document.getElementById('modal').style.display = 'none'; }
+
+async function deact(code) {
+  if (!confirm(`Deactivate currency ${code}? It will be hidden from the picker but existing accounts keep their currency reference.`)) return;
+  const r = await fetch(`/currencies/${encodeURIComponent(code)}`, { method: 'DELETE' });
+  if (!r.ok) { alert((await r.json().catch(()=>({}))).detail || 'Deactivate failed'); return; }
+  load();
+}
+
+document.getElementById('form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = e.target;
+  const status = document.getElementById('status');
+  const body = {
+    iso_code: f.iso_code.value.toUpperCase().trim(),
+    name: f.name.value.trim(),
+    decimals: Number(f.decimals.value),
+    euro_currency: Number(f.euro_currency.value),
+  };
+  let url, method;
+  if (f.mode.value === 'add') {
+    url = '/currencies'; method = 'POST';
+  } else {
+    url = `/currencies/${encodeURIComponent(f.original_code.value)}`; method = 'PATCH';
+    body.active = Number(f.active.value);
+    delete body.iso_code;
+  }
+  status.className = 'status';
+  status.textContent = 'Saving…';
+  try {
+    const r = await fetch(url, {
+      method, headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error((await r.json().catch(()=>({}))).detail || 'Save failed');
+    status.className = 'status success';
+    status.textContent = 'Saved.';
+    closeModal();
+    load();
+  } catch (err) {
+    status.className = 'status error';
+    status.textContent = err.message;
+  }
+});
+
+document.getElementById('show-inactive').addEventListener('change', load);
+document.getElementById('add-btn').addEventListener('click', openAdd);
+
+load();
+</script>
+{% endblock %}

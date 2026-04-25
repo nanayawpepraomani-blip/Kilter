@@ -1,0 +1,324 @@
+{% extends "manual_base.html" %}
+{% block title %}Kilter · Ops User Manual{% endblock %}
+{% block bar_label %}Ops User Manual{% endblock %}
+{% block footer_left %}Ops User Manual{% endblock %}
+{% block cover_eyebrow %}Operations role{% endblock %}
+{% block cover_title %}Ops User Manual{% endblock %}
+{% block cover_subtitle %}Your daily workflow — from login to sign-off, with every shortcut and workflow for reconciliation analysts.{% endblock %}
+{% block audience %}Ops analysts{% endblock %}
+
+{% block toc %}
+<div class="toc">
+  <h2>Contents</h2>
+  <ol>
+    <li>Sign-in &amp; MFA</li>
+    <li>The dashboard</li>
+    <li>The intake flow — scan &amp; manual upload</li>
+    <li>Reviewing a session — Queue tab</li>
+    <li>The Register tab</li>
+    <li>The Split view tab</li>
+    <li>Force-match &amp; split-match</li>
+    <li>Adding notes</li>
+    <li>Closing a session</li>
+    <li>Managing open items</li>
+    <li>The daily breaks report</li>
+    <li>Preparing a certificate</li>
+    <li>Keyboard shortcuts (complete)</li>
+    <li>Common situations &amp; how to handle them</li>
+  </ol>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<h2 id="signin">1. Sign-in &amp; MFA</h2>
+
+<p>Open the Kilter URL. You land on the sign-in page.</p>
+<ol>
+  <li>Enter your <strong>username</strong>.</li>
+  <li>Open <strong>Microsoft Authenticator</strong> on your phone. Tap the Kilter entry.</li>
+  <li>Type the 6-digit code.</li>
+  <li>Press <strong>Sign in</strong>.</li>
+</ol>
+
+<p>Your session lasts until the configured timeout. If you get bounced to the login page mid-work, your session has expired — sign in again.</p>
+
+<div class="callout">
+  <strong>New phone?</strong> Ask an admin to <em>Reset MFA</em> on your account. They'll share a fresh enrollment URL; scan the QR in Microsoft Authenticator and you're back in.
+</div>
+
+<h2 id="dashboard">2. The dashboard</h2>
+
+<p>After sign-in you land on <span class="path">Dashboard</span>. Four stat counters up top:</p>
+<ul>
+  <li><strong>Pending decisions</strong> — assignments across all open sessions that need your call.</li>
+  <li><strong>Confirmed matches</strong> — lifetime count.</li>
+  <li><strong>Open sessions</strong> — sessions with at least one pending assignment.</li>
+  <li><strong>Registered cash accounts</strong> — the pairings the scanner knows about.</li>
+</ul>
+
+<p>Three charts below:</p>
+<ul>
+  <li><strong>Match activity · last 14 days</strong> — stacked bar chart. Green = confirmed, red = rejected, amber = still pending. Hover a bar for the date + counts.</li>
+  <li><strong>Ageing of open items</strong> — horizontal bars across 0-1d / 2-3d / 4-7d / 8-30d / 30d+ buckets.</li>
+  <li><strong>By functional team</strong> — PSC TROPS / TREASURY / ... open-item counts.</li>
+</ul>
+
+<p>If any open item is more than 30 days old, a red <strong>at-risk callout</strong> appears above the stats. Click its "Review now" button to jump straight to the aged-items filter.</p>
+
+<p>Below the charts, the <strong>Recent sessions</strong> table shows the last 10 sessions with per-status counts. Click any session ID to jump to its Review page.</p>
+
+<h3>Presenter mode</h3>
+<p>For big-screen walkthroughs, open the command palette with <kbd>Ctrl</kbd>+<kbd>K</kbd> and pick <em>Presenter mode (auto-refresh)</em>. The sidebar and topbar disappear, stats enlarge, and the page auto-refreshes every 60 seconds.</p>
+
+<h2 id="intake">3. The intake flow — scan &amp; manual upload</h2>
+
+<p>Files normally arrive automatically — your IT pipeline drops SWIFT statements into <code>messages/swift/</code> (either <code>.out</code> MT940/950 or <code>.xml</code>/<code>.txt</code> ISO 20022 camt.053/054 — the scanner auto-detects) and Flexcube <code>.xlsx</code> files into <code>messages/flexcube/</code>. The scheduled <strong>Intake scan</strong> (every 15 min) pairs them and creates sessions. You don't need to do anything.</p>
+
+<p>When you need to force a scan — files just dropped and you don't want to wait — click <strong>Scan now</strong> on the dashboard. Results appear as a table below the button:</p>
+<table>
+  <thead><tr><th>Status</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><strong>ingested</strong></td><td>File parsed, paired, session created.</td></tr>
+    <tr><td><strong>duplicate</strong></td><td>SHA-256 of the file already seen. Filed to <code>unloaded/duplicate/</code>.</td></tr>
+    <tr><td><strong>unregistered</strong></td><td>Account identifier isn't in the cash accounts registry. Check <span class="path">Admin → Discovered accounts</span>.</td></tr>
+    <tr><td><strong>no_partner</strong></td><td>SWIFT file arrived but no matching Flex file (or vice versa). Waits in intake for the partner.</td></tr>
+    <tr><td><strong>mismatch</strong></td><td>Found a partner but currency or account key disagrees.</td></tr>
+  </tbody>
+</table>
+
+<h3>Manual upload</h3>
+<p>For one-off runs (historical replays, a file that the SFTP pipeline missed), use the <strong>Manual upload</strong> card: pick one SWIFT file and one Flexcube file, click <strong>Upload and reconcile</strong>. Deduplication + validation run identically to auto-scan.</p>
+
+<h2 id="queue">4. Reviewing a session — Queue tab</h2>
+
+<p>Click any session from Recent sessions or from <span class="path">Sessions</span>. You land on the Review page with three tabs: <strong>Review queue</strong>, <strong>Register</strong>, and <strong>Split view</strong>.</p>
+
+<h3>The header</h3>
+<ul>
+  <li><strong>Cash account</strong>, <strong>access area</strong>, <strong>currency</strong>.</li>
+  <li><strong>Statement period</strong> — from the SWIFT statement's value dates.</li>
+  <li><strong>Balances panel</strong> — opening, closing, difference, matched totals.</li>
+</ul>
+
+<h3>The queue card</h3>
+<p>Shows one pending assignment at a time. Two panels side by side:</p>
+<ul>
+  <li><strong>Left — SWIFT</strong> — value date, amount, sign (C/D), our ref, their ref, booking texts.</li>
+  <li><strong>Right — Flexcube</strong> — value date, amount, type (CR/DR), narration, trn_ref, external ref, module, user ID.</li>
+</ul>
+
+<p>Above the panels, a coloured <strong>tier banner</strong> tells you how confident the match is:</p>
+<table>
+  <thead><tr><th>Tier</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td>1 — green</td><td>Reference found in narration + exact amount + correct sign. Confirm unless something looks off.</td></tr>
+    <tr><td>2 — amber</td><td>Reference matches but amount differs (typically FX rounding). Verify.</td></tr>
+    <tr><td>3 — orange</td><td>No reference link; same value date; amount + sign match. Usually genuine — check the narration for confirmation.</td></tr>
+    <tr><td>4 — red</td><td>Amount + sign match; dates differ by ≤1 day. Weakest tier; scrutinise.</td></tr>
+    <tr><td>5 — violet "split"</td><td>1:N or N:1 aggregate match. Engine found multiple rows on one side summing to the single row on the other. Check the per-row numbers make sense.</td></tr>
+  </tbody>
+</table>
+
+<p>Below the panels:</p>
+<ul>
+  <li><strong>Amount difference banner</strong> — the Flex−SWIFT delta. Zero = great; non-zero = warn on FX or data error.</li>
+  <li><strong>Competing candidates</strong> — other Flex rows that lost this assignment. If the primary looks wrong, check these.</li>
+  <li><strong>Notes strip</strong> — prior notes on this match.</li>
+</ul>
+
+<h3>Acting on the queue</h3>
+<p>Three primary actions:</p>
+<ul>
+  <li><strong>Confirm match</strong> — accept the engine's pairing. Writes <code>decision_confirm</code> to the audit log.</li>
+  <li><strong>Reject</strong> — the pairing is wrong. Both rows go back into the unmatched pool. Audit: <code>decision_reject</code>.</li>
+  <li><strong>Skip</strong> — come back later. No write.</li>
+</ul>
+
+<p>Use <kbd>C</kbd> or <kbd>Space</kbd> to confirm, <kbd>R</kbd> or <kbd>X</kbd> to reject, <kbd>S</kbd> or <kbd>J</kbd> to skip forward, <kbd>K</kbd> to step back, <kbd>N</kbd> to add a note. Full shortcut list in section 13.</p>
+
+<h2 id="register">5. The Register tab</h2>
+
+<p>A flat table of <strong>every</strong> row in the session — SWIFT + Flex combined. Filters across the top:</p>
+<ul>
+  <li><strong>Search</strong> — matches ref or description.</li>
+  <li><strong>Status</strong> — all / confirmed / pending / rejected / unmatched.</li>
+  <li><strong>Side</strong> — both / SWIFT / Flex.</li>
+</ul>
+
+<p>Used for:</p>
+<ul>
+  <li><strong>Global view</strong> — what's in the session, colour-coded by status.</li>
+  <li><strong>Force-match</strong> — click checkboxes on one SWIFT row + one Flex row, click <strong>Force-match</strong>, optionally add a reason. See section 7.</li>
+  <li><strong>Split-match</strong> — pick one row on one side and multiple on the other, the button label becomes <strong>Force split-match</strong>.</li>
+  <li><strong>Split-group badges</strong> — violet "split" badges on rows that are part of an aggregate match.</li>
+</ul>
+
+<h2 id="split">6. The Split view tab</h2>
+
+<p>A two-pane side-by-side: SWIFT on the left, Flex on the right. Use this when the engine missed a match and you want to hunt for the counterpart visually.</p>
+
+<p>Each pane has its own search + status filter and shows row counts + running sum of selected rows. Click a row to toggle selection. Multi-select on one side (while the other has exactly one selected) enables a split-match.</p>
+
+<h3>The amount-tie pill</h3>
+<p>Bottom-right shows a green <strong>Amounts tie ✓</strong> pill when your selected-row sums match within tolerance, or a red <strong>Δ</strong> pill with the delta when they don't. When green, <strong>Match selected</strong> creates the assignment.</p>
+
+<h3>Keyboard flow</h3>
+<p>The split view is built for keyboard:</p>
+<ul>
+  <li><kbd>J</kbd> / <kbd>K</kbd> move the focused row down/up in the current pane.</li>
+  <li><kbd>Tab</kbd> switches between the SWIFT and Flex panes.</li>
+  <li><kbd>Space</kbd> toggles selection on the focused row.</li>
+  <li><kbd>M</kbd> matches the current selection.</li>
+  <li><kbd>Esc</kbd> clears all selections.</li>
+</ul>
+
+<h2 id="forcematch">7. Force-match &amp; split-match</h2>
+
+<p>Used when the engine didn't propose a pairing but you know two rows belong together. Both sides must currently be <em>unmatched</em> — if a row is already on a pending or confirmed assignment, reject that one first.</p>
+
+<h3>1:1 force-match</h3>
+<ol>
+  <li>Open the Register tab (or the Split view).</li>
+  <li>Tick the SWIFT row + the Flex row.</li>
+  <li>Click <strong>Force-match</strong>. Review the preview banner ("Both rows are unmatched and amounts tie").</li>
+  <li>Add an optional reason (audit trail).</li>
+  <li>Click <strong>Match</strong>.</li>
+</ol>
+
+<h3>Split-match (1:N or N:1)</h3>
+<p>SWIFT posts one aggregate, Flex posts several (or vice versa), all with the same reference. Tick the single row on one side and all the partner rows on the other — the button relabels to <strong>Force split-match</strong> and shows <em>1:3 split ready</em> (or similar) as a hint. Confirm.</p>
+
+<p>The app creates N assignment rows sharing a <code>split_group_id</code> so the match can be undone or audited as a single unit.</p>
+
+<h2 id="notes">8. Adding notes</h2>
+
+<p>Notes are free-text annotations on an assignment or an open item. Use them to leave context — "awaiting bank ref XYZ, expected T+2" — not final decisions.</p>
+
+<ul>
+  <li>On the Queue tab: press <kbd>N</kbd> or click the notes strip.</li>
+  <li>On Open items: click <strong>History</strong> on a row, then post a comment from the timeline view.</li>
+</ul>
+
+<p>Notes are permanent — no edit, no delete. That's not a limitation, it's the audit trail.</p>
+
+<h2 id="close">9. Closing a session</h2>
+
+<p>When the queue is empty (or you want to stop for the day), click <strong>Close session</strong> on the review page. Kilter:</p>
+<ol>
+  <li>Seeds every still-unmatched SWIFT and Flex row into the rolling open-items ledger.</li>
+  <li>Auto-categorises each item via the active categorization rules.</li>
+  <li>Auto-assigns each item to a functional team via the grouping rules.</li>
+  <li>Stamps the session as <em>closed</em>, with your username + timestamp.</li>
+</ol>
+
+<p>Closed sessions are immutable — the figures on the review page never change again. If more rows arrive for the same account later, they go into a new session; carry-forward matching may automatically clear today's open items.</p>
+
+<div class="callout tip">
+  <strong>You don't have to close manually.</strong> The scheduler's <strong>Auto-close stale sessions</strong> job runs daily at 23:00 UTC and closes everything older than 12 hours that you didn't get to. That's safe — unmatched rows go to the rolling ledger, not to the void.
+</div>
+
+<h2 id="open">10. Managing open items</h2>
+
+<p>Go to <span class="path">Open items</span>. This is your rolling work queue — everything that's unmatched across every session you have scope for.</p>
+
+<h3>Filters</h3>
+<ul>
+  <li><strong>Account</strong> — all accounts or just one.</li>
+  <li><strong>Status</strong> — open / cleared / written-off.</li>
+  <li><strong>Category</strong> — filter by the auto-categorised break type.</li>
+  <li><strong>Min age days</strong> — only show items older than N days.</li>
+</ul>
+
+<h3>Ageing badges</h3>
+<p>Each row has a coloured ageing badge: 0-7 (neutral) / 8-30 (info) / 31-90 (warn) / 90+ (danger).</p>
+
+<h3>Row actions</h3>
+<ul>
+  <li><strong>History</strong> — timeline drawer showing opened → comments → audit events → cleared/write-off. Great for auditors.</li>
+  <li><strong>Clear</strong> — hand-match this item against a row in a current session. Pick the session ID + the row + which side.</li>
+  <li><strong>Write off</strong> — terminal state for items ops has given up on. Requires a reason; goes into the audit log.</li>
+</ul>
+
+<h3>When to write off vs wait</h3>
+<ul>
+  <li><strong>&lt; 30 days</strong> — usually wait. Most counterparts arrive within T+5.</li>
+  <li><strong>30-90 days</strong> — investigate. Contact the correspondent or the originator.</li>
+  <li><strong>&gt; 90 days</strong> — write off with a clear reason. Never just leave — aged items distort the ledger.</li>
+</ul>
+
+<h2 id="report">11. The daily breaks report</h2>
+
+<p>The multi-tab xlsx that replaces the manual daily breaks workbook. From the dashboard:</p>
+<ol>
+  <li>Pick the <strong>As-of date</strong> (defaults to today).</li>
+  <li>Click <strong>Download xlsx</strong>.</li>
+</ol>
+
+<p>The file has tabs for:</p>
+<ul>
+  <li><strong>Summary</strong> — overall counts and amounts.</li>
+  <li><strong>BOG USD / EUR / GBP</strong> — central bank account breaks by currency.</li>
+  <li><strong>TREASURY / TRADE SWITCHES / PSC TROPS / CSD FEES / GRA / CASH MGT / TPU</strong> — per-team tabs.</li>
+</ul>
+
+<p>The scheduler's <strong>Daily breaks report</strong> job fires at 07:00 UTC every day and writes a marker into the audit log. The actual xlsx generates on-demand when you click Download — you always see fresh figures.</p>
+
+<h2 id="cert">12. Preparing a certificate</h2>
+
+<p>Month-end sign-off artefact. You're the <strong>maker</strong> in the maker-checker-approver flow.</p>
+
+<ol>
+  <li>Go to <span class="path">Certificates</span>.</li>
+  <li>Pick <strong>Account</strong>, <strong>Period start</strong> (first of month), <strong>Period end</strong> (last of month).</li>
+  <li>Click <strong>Generate draft</strong>. A row appears in <em>draft</em> status.</li>
+  <li>Review the figures — click <strong>PDF 🖨</strong> to open the print-ready page. Sanity-check opening/closing balance, match counts, open-item totals.</li>
+  <li>When ready, click <strong>Prepare</strong>. Optional note. Status becomes <em>prepared</em>.</li>
+</ol>
+
+<p>Internal Control picks it up from there. You see the status update in real time when the page reloads. Once <em>signed</em>, the xlsx / PDF becomes the frozen month-end record.</p>
+
+<h2 id="kbd">13. Keyboard shortcuts (complete)</h2>
+
+<table>
+  <thead><tr><th>Scope</th><th>Keys</th><th>Action</th></tr></thead>
+  <tbody>
+    <tr><td>Any page</td><td><kbd>Ctrl</kbd>+<kbd>K</kbd></td><td>Open command palette</td></tr>
+    <tr><td>Any page</td><td><kbd>?</kbd></td><td>Show the keyboard-help overlay</td></tr>
+    <tr><td>Any overlay</td><td><kbd>Esc</kbd></td><td>Close</td></tr>
+    <tr><td>Review queue</td><td><kbd>C</kbd> / <kbd>Space</kbd> / <kbd>Enter</kbd></td><td>Confirm match</td></tr>
+    <tr><td>Review queue</td><td><kbd>R</kbd> / <kbd>X</kbd></td><td>Reject match</td></tr>
+    <tr><td>Review queue</td><td><kbd>J</kbd> / <kbd>S</kbd> / <kbd>→</kbd> / <kbd>↓</kbd></td><td>Next pending</td></tr>
+    <tr><td>Review queue</td><td><kbd>K</kbd> / <kbd>←</kbd> / <kbd>↑</kbd></td><td>Previous pending</td></tr>
+    <tr><td>Review queue</td><td><kbd>N</kbd></td><td>Add a note</td></tr>
+    <tr><td>Split view</td><td><kbd>J</kbd> / <kbd>K</kbd></td><td>Move focus down/up in the active pane</td></tr>
+    <tr><td>Split view</td><td><kbd>Tab</kbd></td><td>Switch SWIFT ↔ Flex pane</td></tr>
+    <tr><td>Split view</td><td><kbd>Space</kbd></td><td>Toggle selection on focused row</td></tr>
+    <tr><td>Split view</td><td><kbd>M</kbd></td><td>Match current selection</td></tr>
+    <tr><td>Split view</td><td><kbd>Esc</kbd></td><td>Clear selections</td></tr>
+    <tr><td>Command palette</td><td><kbd>↑</kbd> / <kbd>↓</kbd></td><td>Navigate matches</td></tr>
+    <tr><td>Command palette</td><td><kbd>Enter</kbd></td><td>Open highlighted item</td></tr>
+  </tbody>
+</table>
+
+<h2 id="scenarios">14. Common situations &amp; how to handle them</h2>
+
+<h3>"The amounts tie but the dates are 5 days apart."</h3>
+<p>Likely a weekend or FX settlement lag. Confirm the match; leave a note: <em>"T+5 settlement on public holiday"</em>. If it keeps happening, ask admin to bump this account's <code>date_tol_days</code> tolerance.</p>
+
+<h3>"SWIFT shows one debit for $10,000, Flex shows three credits for $3k/$3k/$4k."</h3>
+<p>Classic 1:N split. Use Split view: select the single SWIFT row, select the three Flex rows, <kbd>M</kbd> to match. If all three share a reference, the engine likely already proposed it as tier 5 — check the queue first.</p>
+
+<h3>"The engine matched row A to row B but row C is a better fit."</h3>
+<p>On the queue card, C should appear in the <strong>Competing candidates</strong> strip. Click <strong>Reject</strong> on the current proposal; the engine's next pass uses C.</p>
+
+<h3>"An open item has been sitting for 60 days."</h3>
+<p>Open it. Click <strong>History</strong> — have comments been posted? If not, post one now: what did you find out? If the counterpart genuinely isn't coming, write off with reason "counterparty unable to confirm".</p>
+
+<h3>"I accidentally rejected a good match."</h3>
+<p>It's not lost — the two rows go back to unmatched. Use force-match on the Register or Split view to re-pair them. The audit log keeps both actions (reject, then manual).</p>
+
+<h3>"My review queue has 200 pending items and I'm overwhelmed."</h3>
+<p>Use the tier filter: tier-1 matches are the easiest wins — high confidence, usually just confirm. Burn through those first with <kbd>Space</kbd>-<kbd>J</kbd>-<kbd>Space</kbd>-<kbd>J</kbd>. The harder tiers take attention but you'll see fewer.</p>
+
+{% endblock %}

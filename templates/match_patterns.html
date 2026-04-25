@@ -1,0 +1,262 @@
+{% extends "base.html" %}
+{% block title %}Match patterns — Kilter{% endblock %}
+{% block crumbs %}<span class="current">Match patterns</span>{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Match patterns</h1>
+    <div class="subtitle">Narration tokens, ref prefixes and Flexcube user IDs that correlate with confirmed matches. Use the confirm-rate column to spot good candidates for auto-categorization or auto-grouping rules. Read-only — no auto-promotion; the human stays in the loop.</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body" style="display:flex;gap:20px;align-items:center;padding:14px 20px">
+    <div>Decisions analysed: <strong id="total">—</strong></div>
+    <div style="color:var(--c-text-muted);font-size:var(--t-small)">Min occurrences:</div>
+    <input class="input" type="number" id="min-occ" value="3" min="1" style="width:80px;font-size:var(--t-small);padding:4px 8px">
+    <button class="btn btn-default btn-sm" onclick="load()">Recompute</button>
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px">
+  <div class="card">
+    <div class="card-head"><h2>Narration tokens</h2></div>
+    <div class="card-body tight">
+      <table class="table">
+        <thead><tr><th>Token</th><th class="num">Confirmed</th><th class="num">Rejected</th><th class="num">Confirm rate</th><th style="width:180px"></th></tr></thead>
+        <tbody id="tokens"><tr class="empty-row"><td colspan="5">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2>Ref prefixes (first 4 chars of trn_ref)</h2></div>
+    <div class="card-body tight">
+      <table class="table">
+        <thead><tr><th>Prefix</th><th class="num">Confirmed</th><th class="num">Rejected</th><th class="num">Confirm rate</th><th style="width:180px"></th></tr></thead>
+        <tbody id="prefixes"><tr class="empty-row"><td colspan="5">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2>User IDs</h2></div>
+    <div class="card-body tight">
+      <table class="table">
+        <thead><tr><th>User</th><th class="num">Confirmed</th><th class="num">Rejected</th><th class="num">Confirm rate</th><th style="width:180px"></th></tr></thead>
+        <tbody id="users"><tr class="empty-row"><td colspan="5">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2>Modules</h2></div>
+    <div class="card-body tight">
+      <table class="table">
+        <thead><tr><th>Module</th><th class="num">Confirmed</th><th class="num">Rejected</th><th class="num">Confirm rate</th><th style="width:180px"></th></tr></thead>
+        <tbody id="modules"><tr class="empty-row"><td colspan="5">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Promote-to-auto-rule modal -->
+<div id="promote-modal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.55);z-index:100;align-items:flex-start;justify-content:center;padding:50px 20px;overflow-y:auto">
+  <div class="card" style="max-width:560px;width:100%;margin:0">
+    <div class="card-head">
+      <h2>Create auto-rule</h2>
+      <button class="btn btn-ghost btn-sm" onclick="closePromote()">Close</button>
+    </div>
+    <div class="card-body">
+      <div style="background:var(--c-surface-2);padding:10px 14px;border-radius:6px;margin-bottom:14px;font-size:var(--t-small)">
+        <div><strong>Pattern:</strong> <code id="p-key"></code></div>
+        <div class="muted" style="margin-top:4px" id="p-stats"></div>
+      </div>
+      <form id="promote-form" class="form-grid">
+        <div class="field" style="grid-column:1/-1">
+          <label>Rule family *</label>
+          <select class="input" name="family" id="p-family">
+            <option value="grouping">Auto-grouping (assign to functional team)</option>
+            <option value="category">Auto-categorization (break-type tag)</option>
+          </select>
+        </div>
+
+        <div class="field" style="grid-column:1/-1"><label>Rule name *</label>
+          <input class="input" name="name" required placeholder="e.g. TREASURY: ref prefix TBILL"></div>
+
+        <div class="field"><label>Priority</label>
+          <input class="input" type="number" name="priority" value="20" min="1" max="99"></div>
+
+        <div class="field"><label>Side</label>
+          <select class="input" name="side">
+            <option value="">Both sides</option>
+            <option value="swift">SWIFT only</option>
+            <option value="flex">Flex only</option>
+          </select></div>
+
+        <div class="field" style="grid-column:1/-1" id="p-target-grouping">
+          <label>Assign to functional team *</label>
+          <select class="input" name="functional_group">
+            <option value="TREASURY">TREASURY</option>
+            <option value="TRADE SWITCHES">TRADE SWITCHES</option>
+            <option value="PSC TROPS">PSC TROPS</option>
+            <option value="CSD FEES">CSD FEES</option>
+            <option value="GRA">GRA</option>
+            <option value="CASH MGT">CASH MGT</option>
+            <option value="TPU">TPU</option>
+          </select></div>
+
+        <div class="field" style="grid-column:1/-1;display:none" id="p-target-category">
+          <label>Tag as category *</label>
+          <select class="input" name="category">
+            <option value="timing_diff">timing_diff</option>
+            <option value="fx_mismatch">fx_mismatch</option>
+            <option value="internal_journal">internal_journal</option>
+            <option value="reversal_pending">reversal_pending</option>
+            <option value="bank_error">bank_error</option>
+            <option value="genuine_break">genuine_break</option>
+            <option value="uncategorized">uncategorized</option>
+          </select></div>
+
+        <div class="field" style="grid-column:1/-1">
+          <label>How the pattern matches</label>
+          <select class="input" name="match_kind" id="p-match-kind">
+            <option value="narration">narration contains (free text / userID / module)</option>
+            <option value="ref">ref contains (prefix in trn_ref / our_ref)</option>
+          </select>
+          <span class="hint" style="font-size:var(--t-small);color:var(--c-text-muted)">Pre-selected based on where this pattern was found.</span>
+        </div>
+
+        <div class="field" style="grid-column:1/-1"><label>Pattern value</label>
+          <input class="input" name="pattern_value" id="p-pattern"></div>
+
+        <div style="grid-column:1/-1;display:flex;gap:10px;align-items:center">
+          <button type="submit" class="btn btn-primary">Create rule</button>
+          <button type="button" class="btn btn-ghost" onclick="closePromote()">Cancel</button>
+          <span class="status" id="p-status"></span>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.body.dataset.nav = 'patterns';
+
+function rateClass(rate) {
+  if (rate >= 90) return 'badge-success';
+  if (rate >= 70) return 'badge-info';
+  if (rate >= 40) return 'badge-warn';
+  return 'badge-danger';
+}
+
+// Map the category a promoted rule should bucket into. When a token shows
+// up on matches-to-confirmed with >= 80% rate, it's a genuine "this is
+// TREASURY / this is TRADE SWITCHES" signal and the auto_grouping_rules
+// table is the right home. If the user wants something more specific
+// (break-type auto-categorization), they can pick it in the modal.
+function renderTable(id, rows, kind) {
+  const body = document.getElementById(id);
+  if (!rows || rows.length === 0) {
+    body.innerHTML = '<tr class="empty-row"><td colspan="5">None above threshold.</td></tr>';
+    return;
+  }
+  body.innerHTML = rows.map(r => {
+    const promotable = r.confirm_rate >= 80 && r.total >= 3;
+    return `
+    <tr>
+      <td><code>${esc(r.key)}</code></td>
+      <td class="num">${r.confirmed}</td>
+      <td class="num muted">${r.rejected}</td>
+      <td class="num"><span class="badge ${rateClass(r.confirm_rate)}">${r.confirm_rate.toFixed(1)}%</span></td>
+      <td>${promotable
+        ? `<button class="btn btn-primary btn-sm admin-only" onclick='promote(${JSON.stringify({key: r.key, kind, confirmed: r.confirmed, rate: r.confirm_rate})})'>Create auto-rule</button>`
+        : '<span class="muted" style="font-size:var(--t-micro)">Need ≥80% + ≥3 samples</span>'}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function load() {
+  const min = document.getElementById('min-occ').value || 3;
+  const r = await fetch(`/analytics/match-patterns?min_occurrences=${min}`);
+  if (!r.ok) { document.getElementById('total').textContent = 'load failed'; return; }
+  const d = await r.json();
+  document.getElementById('total').textContent = d.total_decided;
+  renderTable('tokens',   d.narration_tokens, 'narration');
+  renderTable('prefixes', d.ref_prefixes,     'ref_prefix');
+  renderTable('users',    d.user_ids,         'user_id');
+  renderTable('modules',  d.modules,          'module');
+}
+
+// ---------------------------------------------------------------------------
+// Promote-to-auto-rule flow. Prefills the modal with a sensible default
+// rule name + pattern value, then POSTs to the existing auto-grouping or
+// auto-categorization CRUD endpoints. Keeps the human in the loop: the
+// user reviews the auto-generated rule before saving.
+// ---------------------------------------------------------------------------
+let promoteCtx = null;
+
+function promote(ctx) {
+  promoteCtx = ctx;
+  const f = document.getElementById('promote-form');
+  f.reset();
+  document.getElementById('p-key').textContent = ctx.key;
+  document.getElementById('p-stats').textContent =
+    `${ctx.confirmed} confirmations · ${ctx.rate.toFixed(1)}% confirm rate — promoting this as an auto-rule will pre-tag future matches that share this pattern.`;
+  // Preselect match_kind based on where the pattern came from:
+  const matchKind = ctx.kind === 'ref_prefix' ? 'ref' : 'narration';
+  document.getElementById('p-match-kind').value = matchKind;
+  document.getElementById('p-pattern').value = ctx.key;
+  // Sensible name skeleton — user edits freely.
+  const guess = ctx.kind === 'user_id' ? `User ${ctx.key} → TREASURY`
+              : ctx.kind === 'ref_prefix' ? `Ref prefix ${ctx.key}`
+              : ctx.kind === 'module' ? `Module ${ctx.key}`
+              : `Narration contains ${ctx.key}`;
+  f.name.value = guess;
+  document.getElementById('p-status').textContent = '';
+  document.getElementById('promote-modal').style.display = 'flex';
+}
+function closePromote() { document.getElementById('promote-modal').style.display = 'none'; }
+
+document.getElementById('p-family').addEventListener('change', (e) => {
+  document.getElementById('p-target-grouping').style.display = e.target.value === 'grouping' ? '' : 'none';
+  document.getElementById('p-target-category').style.display = e.target.value === 'category' ? '' : 'none';
+});
+
+document.getElementById('promote-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = e.target;
+  const family = f.family.value;
+  const matchKind = f.match_kind.value;
+  const pattern = f.pattern_value.value.trim();
+  if (!pattern) { alert('Pattern value is required.'); return; }
+  const body = {
+    name: f.name.value.trim(),
+    priority: parseInt(f.priority.value, 10) || 20,
+    side: f.side.value || null,
+    narration_contains: matchKind === 'narration' ? pattern : null,
+    [family === 'grouping' ? 'functional_group' : 'category']:
+      family === 'grouping' ? f.functional_group.value : f.category.value,
+  };
+  if (family === 'grouping') body.ref_contains = matchKind === 'ref' ? pattern : null;
+  const url = family === 'grouping' ? '/grouping-rules' : '/categorization-rules';
+  const status = document.getElementById('p-status');
+  status.className = 'status'; status.textContent = 'Creating…';
+  try {
+    const r = await fetch(url, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    if (!r.ok) throw new Error((await r.json().catch(()=>({}))).detail || 'Failed');
+    status.className = 'status success';
+    status.textContent = 'Rule created. New open-items will be auto-tagged.';
+    setTimeout(closePromote, 1200);
+  } catch (err) {
+    status.className = 'status error';
+    status.textContent = err.message;
+  }
+});
+
+load();
+</script>
+{% endblock %}

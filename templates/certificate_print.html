@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Certificate — {{ figures.account.label }}</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 20mm 18mm;
+      @bottom-center {
+        content: "Kilter · " counter(page) " of " counter(pages);
+        font-size: 9pt; color: #666;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: "Segoe UI", "Inter", -apple-system, Roboto, Arial, sans-serif;
+      color: #0f172a; background: #f5f7fa; margin: 0;
+      font-size: 11pt; line-height: 1.4;
+    }
+    .sheet {
+      max-width: 210mm; margin: 24px auto;
+      background: white; padding: 28mm 22mm;
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+    }
+    .print-bar {
+      position: sticky; top: 0; z-index: 10;
+      background: #1f3a8a; color: white; padding: 12px 20px;
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 13px;
+    }
+    .print-bar button {
+      background: white; color: #1f3a8a; border: 0; padding: 6px 14px;
+      border-radius: 4px; font-weight: 600; cursor: pointer;
+      font-family: inherit; font-size: 13px;
+    }
+    .print-bar button:hover { background: #eff4fb; }
+    .print-bar a { color: white; text-decoration: none; opacity: 0.85; margin-left: 16px; }
+    .print-bar a:hover { opacity: 1; text-decoration: underline; }
+
+    h1 {
+      font-size: 22pt; margin: 0 0 4pt 0; letter-spacing: -0.3px;
+      color: #0b1220;
+    }
+    .eyebrow {
+      font-size: 9pt; text-transform: uppercase; letter-spacing: 1.5px;
+      color: #2563eb; font-weight: 700; margin-bottom: 6pt;
+    }
+    .subhead {
+      font-size: 11pt; color: #52606d; margin: 0;
+    }
+    .status-pill {
+      display: inline-block; padding: 3pt 10pt; border-radius: 999px;
+      font-size: 9pt; font-weight: 700; letter-spacing: 0.5px;
+      text-transform: uppercase; vertical-align: middle;
+    }
+    .status-draft      { background: #e4e7eb; color: #52606d; }
+    .status-prepared   { background: #e0e7ff; color: #3730a3; }
+    .status-reviewed   { background: #fef3c7; color: #78350f; }
+    .status-signed     { background: #d1fae5; color: #065f46; }
+    .status-superseded { background: #f1f5f9; color: #64748b; }
+
+    .rule { height: 2px; background: linear-gradient(90deg, #2563eb 0%, transparent 100%); margin: 14pt 0 20pt; }
+
+    .section-title {
+      font-size: 9pt; text-transform: uppercase; letter-spacing: 1.2px;
+      color: #52606d; font-weight: 700; margin: 20pt 0 8pt;
+      padding-bottom: 4pt; border-bottom: 1px solid #e4e7eb;
+    }
+
+    table { width: 100%; border-collapse: collapse; }
+    table.kv td { padding: 4pt 8pt; vertical-align: top; }
+    table.kv td.k { color: #52606d; width: 40%; font-weight: 600; }
+    table.kv td.v { font-weight: 500; }
+
+    table.data { font-size: 10pt; }
+    table.data th, table.data td {
+      padding: 6pt 8pt; border-bottom: 1px solid #e4e7eb;
+      text-align: left;
+    }
+    table.data th {
+      background: #f5f7fa; font-size: 9pt; text-transform: uppercase;
+      letter-spacing: 0.5px; color: #52606d; font-weight: 600;
+    }
+    table.data td.num, table.data th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    table.data tr.total td {
+      font-weight: 700; border-top: 2px solid #0f172a; border-bottom: 0;
+    }
+
+    .sig-grid {
+      display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14pt;
+      margin-top: 14pt;
+    }
+    .sig-box {
+      border: 1px solid #cbd2d9; border-radius: 4pt;
+      padding: 10pt; min-height: 80pt;
+    }
+    .sig-box .role {
+      font-size: 8pt; text-transform: uppercase; letter-spacing: 1px;
+      color: #52606d; font-weight: 700;
+    }
+    .sig-box .name { font-size: 12pt; font-weight: 600; margin-top: 14pt; }
+    .sig-box .at { font-size: 9pt; color: #52606d; margin-top: 2pt; }
+    .sig-box .placeholder { font-size: 9pt; color: #9aa5b1; font-style: italic; margin-top: 14pt; }
+
+    .footer-note {
+      margin-top: 30pt; padding-top: 12pt; border-top: 1px solid #e4e7eb;
+      font-size: 8pt; color: #9aa5b1; line-height: 1.5;
+    }
+    .footer-note strong { color: #52606d; }
+
+    @media print {
+      body { background: white; }
+      .print-bar, .screen-only { display: none !important; }
+      .sheet {
+        box-shadow: none; margin: 0; max-width: none;
+        padding: 0;
+      }
+      .status-pill { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .section-title, .sig-box { page-break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <div class="print-bar screen-only">
+    <span>📄 Print-ready certificate. Use your browser's Save-as-PDF dialog for a permanent copy.</span>
+    <div>
+      <button onclick="window.print()">Print / Save as PDF</button>
+      <a href="/certificates/{{ cert.id }}/download">Download xlsx instead</a>
+      <a href="/certificates-admin">← Back</a>
+    </div>
+  </div>
+
+  <div class="sheet">
+    <div class="eyebrow">Reconciliation certificate</div>
+    <h1>{{ figures.account.label }}</h1>
+    <p class="subhead">
+      Period <strong>{{ figures.period.start }}</strong> to <strong>{{ figures.period.end }}</strong>
+      &nbsp;·&nbsp;
+      <span class="status-pill status-{{ cert.status }}">{{ cert.status }}</span>
+    </p>
+    <div class="rule"></div>
+
+    <div class="section-title">Account identity</div>
+    <table class="kv">
+      <tr><td class="k">Access area</td><td class="v">{{ figures.account.access_area or '—' }}</td></tr>
+      <tr><td class="k">SWIFT account (their side)</td><td class="v"><code>{{ figures.account.swift_account or '—' }}</code></td></tr>
+      <tr><td class="k">Flexcube GL (our side)</td><td class="v"><code>{{ figures.account.flex_ac_no }}</code></td></tr>
+      <tr><td class="k">Correspondent BIC</td><td class="v"><code>{{ figures.account.bic or '—' }}</code></td></tr>
+      <tr><td class="k">Currency</td><td class="v"><strong>{{ figures.account.currency }}</strong></td></tr>
+      <tr><td class="k">Generated (UTC)</td><td class="v">{{ (figures.generated_at or '').replace('T', ' ')[:19] }}</td></tr>
+    </table>
+
+    <div class="section-title">Balances</div>
+    <table class="data">
+      <thead><tr><th>Type</th><th class="num">Amount</th><th>Sign</th><th>Value date</th></tr></thead>
+      <tbody>
+        {% if figures.opening_balance %}
+        <tr>
+          <td>Opening</td>
+          <td class="num">{{ '{:,.2f}'.format(figures.opening_balance.amount) if figures.opening_balance.amount is not none else '—' }}</td>
+          <td>{{ figures.opening_balance.sign or '' }}</td>
+          <td>{{ figures.opening_balance.date or '' }}</td>
+        </tr>
+        {% endif %}
+        {% if figures.closing_balance %}
+        <tr>
+          <td>Closing</td>
+          <td class="num">{{ '{:,.2f}'.format(figures.closing_balance.amount) if figures.closing_balance.amount is not none else '—' }}</td>
+          <td>{{ figures.closing_balance.sign or '' }}</td>
+          <td>{{ figures.closing_balance.date or '' }}</td>
+        </tr>
+        {% endif %}
+        {% if not figures.opening_balance and not figures.closing_balance %}
+        <tr><td colspan="4" style="color:#9aa5b1;font-style:italic">No balance data on file for the period.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+
+    <div class="section-title">Match summary</div>
+    <table class="data">
+      <thead><tr><th>Outcome</th><th class="num">Count</th></tr></thead>
+      <tbody>
+        <tr><td>Confirmed matches</td><td class="num">{{ figures.matches.confirmed }}</td></tr>
+        <tr><td>Pending decisions</td><td class="num">{{ figures.matches.pending }}</td></tr>
+        <tr><td>Rejected candidates</td><td class="num">{{ figures.matches.rejected }}</td></tr>
+        <tr><td>Sessions in period</td><td class="num">{{ figures.sessions_in_period }}</td></tr>
+      </tbody>
+    </table>
+
+    <div class="section-title">Open items by functional team</div>
+    <table class="data">
+      <thead><tr><th>Team</th><th class="num">Count</th><th class="num">Absolute amount</th></tr></thead>
+      <tbody>
+        {% for grp, data in (figures.open_items.by_group or {}).items() %}
+        <tr>
+          <td>{{ grp }}</td>
+          <td class="num">{{ data.count }}</td>
+          <td class="num">{{ '{:,.2f}'.format(data.amount) }}</td>
+        </tr>
+        {% endfor %}
+        <tr class="total">
+          <td>Total</td>
+          <td class="num">{{ figures.open_items.count }}</td>
+          <td class="num">{{ '{:,.2f}'.format(figures.open_items.total_amount) }}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="section-title">Signatures</div>
+    <div class="sig-grid">
+      <div class="sig-box">
+        <div class="role">Prepared by (maker)</div>
+        {% if cert.prepared_by %}
+          <div class="name">{{ cert.prepared_by }}</div>
+          <div class="at">{{ (cert.prepared_at or '').replace('T', ' ')[:19] }} UTC</div>
+        {% else %}
+          <div class="placeholder">Awaiting preparation</div>
+        {% endif %}
+      </div>
+      <div class="sig-box">
+        <div class="role">Reviewed by (checker)</div>
+        {% if cert.reviewed_by %}
+          <div class="name">{{ cert.reviewed_by }}</div>
+          <div class="at">{{ (cert.reviewed_at or '').replace('T', ' ')[:19] }} UTC</div>
+        {% else %}
+          <div class="placeholder">Awaiting review</div>
+        {% endif %}
+      </div>
+      <div class="sig-box">
+        <div class="role">Signed by (approver)</div>
+        {% if cert.signed_by %}
+          <div class="name">{{ cert.signed_by }}</div>
+          <div class="at">{{ (cert.signed_at or '').replace('T', ' ')[:19] }} UTC</div>
+        {% else %}
+          <div class="placeholder">Awaiting sign-off</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="footer-note">
+      <strong>About this certificate.</strong>
+      Figures are drawn from Kilter's reconciliation ledger. Unsigned certificates reflect the
+      live ledger and may change as new sessions arrive. Once signed, the numbers are frozen in a
+      JSON snapshot on record {{ cert.id }} and this document becomes immutable — later ledger
+      edits cannot rewrite history.<br><br>
+      <strong>Audit trail.</strong>
+      The maker / checker / approver fields above come from the Kilter audit log. Every
+      transition is recorded with user + timestamp and can be produced on request for compliance
+      review.<br><br>
+      Certificate ID {{ cert.id }} · Kilter
+    </div>
+  </div>
+
+  <script>
+    // Prompt the print dialog after a moment so users don't have to click
+    // twice. Disabled when the URL has ?no-autoprint — useful for reviewing
+    // the rendered output before committing.
+    if (!window.location.search.includes('no-autoprint')) {
+      setTimeout(() => window.print(), 600);
+    }
+  </script>
+</body>
+</html>

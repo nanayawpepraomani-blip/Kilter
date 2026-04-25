@@ -1,0 +1,62 @@
+# --- Python --------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+
+# --- Editor / IDE --------------------------------------------------------
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# --- Kilter runtime data — never commit ----------------------------------
+# The DB has TOTP secrets, audit logs, and customer reconciliation data.
+# Backups have the same. Files in messages/ and uploads/ are real
+# correspondent statements. exports/ holds generated reports. demo_data/
+# is regeneratable from the seed script.
+kilter.db
+kilter.db-shm
+kilter.db-wal
+kilter.db.backup-*
+messages/swift/*
+messages/flexcube/*
+messages/processed/
+messages/unloaded/
+uploads/*
+exports/*
+demo_data/
+
+# Keep the directory structure so `messages/swift` and friends exist on
+# fresh clones — empty .gitkeep files survive these wildcard ignores.
+!messages/swift/.gitkeep
+!messages/flexcube/.gitkeep
+!uploads/.gitkeep
+!exports/.gitkeep
+
+# --- Logs ----------------------------------------------------------------
+uvicorn.log
+uvicorn.err
+*.log
+
+# --- Test artefacts ------------------------------------------------------
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+
+# --- Agent / build state -------------------------------------------------
+.claude/
+.mypy_cache/
+.ruff_cache/
+
+# --- Temporary scratch ---------------------------------------------------
+scratch/
+*.tmp

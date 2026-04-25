@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Manuals — Kilter{% endblock %}
+{% block crumbs %}<span class="current">Manuals</span>{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Manuals</h1>
+    <div class="subtitle">Role-targeted documentation. Each manual opens as a print-ready page — use your browser's Save-as-PDF dialog for a permanent copy.</div>
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px">
+  {% for slug, title, subtitle, audience, role in manuals %}
+    <a href="/manuals/{{ slug }}" target="_blank" style="text-decoration:none;color:inherit">
+      <div class="card" style="height:100%;transition:transform 0.12s ease, box-shadow 0.12s ease;cursor:pointer"
+           onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='var(--shadow-md)'"
+           onmouseout="this.style.transform='';this.style.boxShadow=''">
+        <div class="card-body">
+          <div style="font-size:var(--t-micro);letter-spacing:1.2px;text-transform:uppercase;color:var(--c-primary);font-weight:700">
+            {{ audience }}
+          </div>
+          <h2 style="margin:6px 0 6px 0;font-size:var(--t-2);font-weight:600">{{ title }}</h2>
+          <div class="muted" style="font-size:var(--t-small);line-height:1.5">{{ subtitle }}</div>
+          <div style="margin-top:16px;display:flex;gap:10px;align-items:center">
+            <span class="btn btn-default btn-sm">Open manual</span>
+            <a href="/manuals/{{ slug }}?no-autoprint" style="font-size:var(--t-small);color:var(--c-text-muted)">View without auto-print</a>
+          </div>
+        </div>
+      </div>
+    </a>
+  {% endfor %}
+</div>
+
+<div class="card" style="margin-top:20px">
+  <div class="card-body">
+    <h2 style="margin:0 0 8px 0;font-size:var(--t-3)">How to save a manual as PDF</h2>
+    <ol style="margin:0;color:var(--c-text-muted);padding-left:20px;line-height:1.6">
+      <li>Click a manual above. It opens in a new tab.</li>
+      <li>The browser's print dialog opens automatically (or press <kbd>Ctrl</kbd><kbd>P</kbd>).</li>
+      <li>Under <strong>Destination</strong> pick <em>Save as PDF</em>.</li>
+      <li>Set <strong>Layout</strong> to Portrait, <strong>Paper size</strong> to A4.</li>
+      <li>Click <strong>Save</strong>. The PDF captures the current version of the app — re-save after upgrades to stay in sync.</li>
+    </ol>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>document.body.dataset.nav = 'manuals';</script>
+{% endblock %}

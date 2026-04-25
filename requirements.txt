@@ -1,0 +1,17 @@
+# Production dependencies — pinned to exact versions for reproducible
+# pilot-bank deploys. Bump deliberately, not opportunistically.
+fastapi==0.136.0
+uvicorn[standard]==0.44.0
+python-multipart==0.0.26
+openpyxl==3.1.5
+pydantic==2.13.3
+jinja2==3.1.6
+pyotp==2.9.0
+qrcode[pil]==8.2
+
+# Rate limiting on /login (added during go-live security pass)
+slowapi==0.1.9
+
+# Optional — only required if the Flexcube Oracle pull is enabled.
+# Pilot banks without Flexcube can omit this dependency entirely.
+# oracledb==3.4.1

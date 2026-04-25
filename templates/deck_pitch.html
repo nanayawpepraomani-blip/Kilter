@@ -1,0 +1,504 @@
+{% extends "deck_base.html" %}
+{% block title %}Kilter — Stakeholder Pitch{% endblock %}
+
+{% block slides %}
+
+<!-- =========== 1. Cover =========== -->
+<section class="slide cover" data-notes="
+  <strong>Opening beat.</strong> Stand near the screen. 30 seconds.<br>
+  'Today I want to show you how we replace a workflow that takes four analysts
+  five hours a day, with one that runs itself in the background while the team
+  focuses on the exceptions. This is Kilter.'">
+  <div class="slide-inner">
+    <div class="eyebrow">Ecobank Ghana · Treasury &amp; PSC</div>
+    <h1>Kilter</h1>
+    <div class="sub">A reconciliation service built to retire the manual Corona workflow — and run itself the rest of the day.</div>
+    <div class="gradient-line"></div>
+    <div class="meta">Stakeholder pitch · {{ generated_at }}</div>
+  </div>
+</section>
+
+<!-- =========== 2. The problem =========== -->
+<section class="slide" data-notes="
+  Pause here. <strong>Name the pain specifically.</strong> These are your
+  audience's daily problems — if they nod in recognition, you've earned
+  the rest of the pitch.">
+  <div class="slide-inner">
+    <h3>The situation today</h3>
+    <h2>Reconciliation is a ceiling on what your team can do.</h2>
+    <div class="cols-2" style="margin-top: 40px">
+      <div class="card">
+        <div class="icon">⏱</div>
+        <h2 style="font-size:20px">Manual, every day</h2>
+        <p>Corona needs a human to trigger every step. Analysts spend hours doing work that a machine should do.</p>
+      </div>
+      <div class="card">
+        <div class="icon">🧱</div>
+        <h2 style="font-size:20px">Session-bound breaks</h2>
+        <p>A break that doesn't clear today gets re-created tomorrow — nothing carries forward. Analysts re-match the same items week after week.</p>
+      </div>
+      <div class="card">
+        <div class="icon">🗂</div>
+        <h2 style="font-size:20px">Reports are spreadsheets</h2>
+        <p>The BoG daily breaks workbook is built by hand, with copy-paste tabs, every morning.</p>
+      </div>
+      <div class="card">
+        <div class="icon">🕵</div>
+        <h2 style="font-size:20px">Audit trail is fragile</h2>
+        <p>Who approved this? When? On what basis? The answers live in email threads, not an auditable system.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =========== 3. The cost =========== -->
+<section class="slide" data-notes="
+  Use <em>their</em> numbers. Beforehand ask ops for their actual daily time spend
+  and monthly break count. Swap in the real figures.">
+  <div class="slide-inner">
+    <h3>What it costs</h3>
+    <h2>Five hours a day. Every day. Four analysts.</h2>
+    <div class="cols-4" style="margin-top: 50px">
+      <div class="stat-card">
+        <div class="num">~20</div>
+        <div class="lbl">analyst hours / day</div>
+        <div class="sub">across the reconciliation desk, doing work software can do.</div>
+      </div>
+      <div class="stat-card">
+        <div class="num">30+</div>
+        <div class="lbl">day open items</div>
+        <div class="sub">with no system-enforced ageing visibility or SLA alert.</div>
+      </div>
+      <div class="stat-card">
+        <div class="num">5+ d</div>
+        <div class="lbl">to produce month-end</div>
+        <div class="sub">sign-off packs, because every certificate is a Word doc edited by hand.</div>
+      </div>
+      <div class="stat-card">
+        <div class="num">0</div>
+        <div class="lbl">machine-readable audit</div>
+        <div class="sub">of who matched, rejected, or wrote off what. Today it's email threads.</div>
+      </div>
+    </div>
+    <p class="muted" style="margin-top: 40px; font-size: 16px">Figures are illustrative of the pre-Kilter baseline; ops will validate the specific numbers for your desk.</p>
+  </div>
+</section>
+
+<!-- =========== 4. Section divider =========== -->
+<section class="slide section-title" data-notes="Brief transition. Don't read — just move on.">
+  <div class="slide-inner">
+    <div class="kicker">The solution</div>
+    <h1>Kilter</h1>
+    <div class="gradient-line" style="margin: 30px auto 0"></div>
+  </div>
+</section>
+
+<!-- =========== 5. What Kilter is =========== -->
+<section class="slide" data-notes="
+  30-second product elevator. Don't dwell — the differentiators are what sells,
+  not the description.">
+  <div class="slide-inner">
+    <h3>What it is</h3>
+    <h2>A reconciliation service that runs itself.</h2>
+    <p class="lead" style="margin-top: 30px">
+      Ingests your SWIFT and Flexcube feeds automatically.
+      Pairs transactions through five tiers of intelligent matching.
+      Carries unresolved items forward as a rolling ledger until they clear or are written off.
+      Produces the BoG workbook and month-end sign-off certificates on demand.
+      Every touch is audit-logged.
+    </p>
+    <div class="gradient-line"></div>
+    <p class="muted" style="font-size: 16px">Built in-house on Python and SQLite. Zero vendor lock-in. Auditable end to end.</p>
+  </div>
+</section>
+
+<!-- =========== 6-10. The 5 differentiators =========== -->
+<section class="slide" data-notes="
+  Start with the rolling ledger — this is the single biggest day-1 win.
+  An analyst who has lived with Corona will feel this in their bones.">
+  <div class="slide-inner">
+    <h3>Differentiator 1</h3>
+    <h2>The ledger outlives the session.</h2>
+    <p class="lead">Open items carry forward until they clear or are written off. Breaks don't disappear at end-of-session — they stay on the ledger, visible, aged, and assigned to a team.</p>
+    <div class="cols-2" style="margin-top: 40px">
+      <div class="card">
+        <h2 style="color: var(--danger); font-size: 20px">Corona today</h2>
+        <ul style="font-size: 18px">
+          <li>Break detected this session.</li>
+          <li>Session closes; break list is lost.</li>
+          <li>Tomorrow: new session, same break re-detected.</li>
+          <li>Analyst matches it again. And again. And again.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h2 style="color: var(--success); font-size: 20px">Kilter</h2>
+        <ul style="font-size: 18px">
+          <li>Break detected this session.</li>
+          <li>Session closes; break moves to the rolling ledger.</li>
+          <li>Tomorrow: counterpart arrives; carry-forward auto-clears it.</li>
+          <li>Analyst never sees it. Audit log records the auto-match.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-notes="
+  Second differentiator. Pull up the Scheduler page later in the demo to
+  reinforce. 'Corona requires a person. Kilter doesn't.'">
+  <div class="slide-inner">
+    <h3>Differentiator 2</h3>
+    <h2>It runs itself.</h2>
+    <p class="lead">Scheduled automation turns the app from a tool into a service.</p>
+    <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 28px; margin-top: 30px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 17px; line-height: 2;">
+      <div><span class="badge badge-blue">05:45</span>&nbsp;&nbsp;<strong>Flexcube pull</strong> — Oracle → xlsx → intake folder.</div>
+      <div><span class="badge badge-blue">06:00–09:00</span>&nbsp;&nbsp;<strong>SWIFT arrivals</strong> — MT940/950 and camt.053/054 both accepted.</div>
+      <div><span class="badge badge-blue">every 15 min</span>&nbsp;&nbsp;<strong>Intake scan</strong> — pair, match, seed.</div>
+      <div><span class="badge badge-blue">07:00</span>&nbsp;&nbsp;<strong>Daily breaks report</strong> — ready to download.</div>
+      <div><span class="badge badge-blue">07:30</span>&nbsp;&nbsp;<strong>SLA alerts</strong> — Teams + email fan-out.</div>
+      <div><span class="badge badge-blue">23:00</span>&nbsp;&nbsp;<strong>Auto-close</strong> — stale sessions → rolling ledger.</div>
+    </div>
+    <p style="margin-top: 30px; color: var(--ink)">Ops walks in at 08:00 to <strong>a reconciled ledger and a ready-to-send report.</strong></p>
+  </div>
+</section>
+
+<section class="slide" data-notes="
+  Third: the audit story. This is the one Internal Control and regulators care
+  about. Tailor the pitch depending on who's in the room.">
+  <div class="slide-inner">
+    <h3>Differentiator 3</h3>
+    <h2>Every touch is on the record.</h2>
+    <p class="lead">Regulator-ready audit trail. Not stored in email threads.</p>
+    <div class="cols-3" style="margin-top: 40px">
+      <div class="card">
+        <h2 style="font-size: 22px;color: var(--brand-2)">Who</h2>
+        <p>Username on every decision. TOTP-enforced — no anonymous actions possible.</p>
+      </div>
+      <div class="card">
+        <h2 style="font-size: 22px;color: var(--brand-2)">When</h2>
+        <p>ISO-8601 UTC timestamp. Millisecond precision. Immutable — append-only log.</p>
+      </div>
+      <div class="card">
+        <h2 style="font-size: 22px;color: var(--brand-2)">Why</h2>
+        <p>Optional note on every action. Required reason on every write-off.</p>
+      </div>
+    </div>
+    <p style="margin-top: 30px; font-size: 20px">Drill into any break — open, comment, carry-forward, clear, write-off — and see the full timeline in one click.</p>
+    <p class="muted" style="font-size: 18px;margin-top: 20px">Built-in maker-checker-approver flow on month-end certificates. Three distinct roles, three distinct users, frozen snapshot on signing.</p>
+  </div>
+</section>
+
+<section class="slide" data-notes="
+  Fourth: the engine. Worth going a bit deeper here because the smart
+  matches are what sell to the analysts. Mention the split-match example.">
+  <div class="slide-inner">
+    <h3>Differentiator 4</h3>
+    <h2>Intelligent matching beyond 1:1.</h2>
+    <div class="cols-2" style="margin-top: 40px">
+      <div>
+        <h2 style="font-size: 24px">Five-tier engine</h2>
+        <ul>
+          <li><strong>Tier 1</strong> — ref match + exact amount</li>
+          <li><strong>Tier 2</strong> — ref match + FX-tolerated amount</li>
+          <li><strong>Tier 3</strong> — same day + amount + sign</li>
+          <li><strong>Tier 4</strong> — ±1 day + amount + sign</li>
+          <li><strong>Tier 5</strong> — 1:N / N:1 split aggregates</li>
+        </ul>
+      </div>
+      <div>
+        <h2 style="font-size: 24px">Smart features</h2>
+        <ul>
+          <li><strong>Reference normalisation</strong> — <code>ABC/12-3</code>, <code>ABC-12-3</code>, <code>000ABC123</code> all collapse to one match.</li>
+          <li><strong>FX tolerance</strong> — basis-point spread across a live FX-rate registry.</li>
+          <li><strong>Split matching</strong> — 1 SWIFT row = 3 Flex rows summing. Ref-gated.</li>
+          <li><strong>Learned patterns</strong> — audit-log-mined auto-rules with one-click promotion.</li>
+        </ul>
+      </div>
+    </div>
+    <p style="margin-top: 30px">Expected uplift over strict 1:1 matching: <strong>10–15% on historic misses</strong>, without relaxing any tolerance.</p>
+  </div>
+</section>
+
+<section class="slide" data-notes="
+  Fifth: UX. This one is short — the demo sells itself. Mention the command
+  palette specifically as a 'Corona has nothing like this' moment.">
+  <div class="slide-inner">
+    <h3>Differentiator 5</h3>
+    <h2>Built for speed.</h2>
+    <p class="lead">Keyboard-first, screen-reader-friendly, dark-mode native.</p>
+    <div class="cols-2" style="margin-top: 40px">
+      <div class="card">
+        <h2 style="font-size: 22px">Command palette <kbd>Ctrl</kbd><kbd>K</kbd></h2>
+        <p>Jump to any page, account, or session in two keystrokes. Fuzzy search. Corona has nothing like this.</p>
+      </div>
+      <div class="card">
+        <h2 style="font-size: 22px">Keyboard review</h2>
+        <p><kbd>J</kbd>/<kbd>K</kbd> to move, <kbd>Space</kbd> to confirm, <kbd>X</kbd> to reject, <kbd>N</kbd> for note. Clear 100 pending matches without touching the mouse.</p>
+      </div>
+      <div class="card">
+        <h2 style="font-size: 22px">Split-pane view</h2>
+        <p>SWIFT left, Flex right. Click to select, multi-select for splits, live amount-tie indicator as you choose rows.</p>
+      </div>
+      <div class="card">
+        <h2 style="font-size: 22px">Dark mode &amp; presenter mode</h2>
+        <p>Respects user preference. Presenter mode hides chrome and auto-refreshes for the dealing-room screen.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =========== 11. Corona comparison =========== -->
+<section class="slide" data-notes="
+  This is the <strong>killer slide</strong>. Go line by line. Let each row land.
+  If they push back on any comparison, agree to verify and move on — don't
+  get into a feature-by-feature argument.">
+  <div class="slide-inner">
+    <h3>Side by side</h3>
+    <h2>Kilter vs Corona at a glance.</h2>
+    <table class="vs-table" style="margin-top: 30px">
+      <thead><tr><th>Capability</th><th>Corona 7.9</th><th>Kilter</th></tr></thead>
+      <tbody>
+        <tr><td>Break carry-forward across sessions</td><td class="bad">✗ Session-bound</td><td class="good">✓ Rolling ledger</td></tr>
+        <tr><td>Scheduled automation</td><td class="bad">✗ Human-triggered</td><td class="good">✓ In-process scheduler</td></tr>
+        <tr><td>Split (1:N / N:1) matching</td><td class="bad">✗</td><td class="good">✓ Tier-5 auto + manual</td></tr>
+        <tr><td>Reference normalisation</td><td class="bad">✗ Strict compare</td><td class="good">✓ Collapses formatting</td></tr>
+        <tr><td>ISO 20022 (camt.053 / camt.054)</td><td class="bad">✗ MT-only</td><td class="good">✓ Parses both today</td></tr>
+        <tr><td>FX-aware tolerance</td><td class="meh">~ Manual workaround</td><td class="good">✓ Basis-point rule</td></tr>
+        <tr><td>Audit trail on every decision</td><td class="meh">~ Partial</td><td class="good">✓ Append-only log</td></tr>
+        <tr><td>Maker-checker-approver certificates</td><td class="bad">✗</td><td class="good">✓ Role-enforced</td></tr>
+        <tr><td>SLA alerting (Teams / email)</td><td class="bad">✗</td><td class="good">✓ Configurable channels</td></tr>
+        <tr><td>Keyboard-first UX / command palette</td><td class="bad">✗</td><td class="good">✓ Ctrl+K everywhere</td></tr>
+        <tr><td>Dark mode</td><td class="bad">✗</td><td class="good">✓</td></tr>
+        <tr><td>Licence cost</td><td class="bad">Annual vendor fee</td><td class="good">Zero — in-house</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- =========== 11b. ISO 20022 readiness =========== -->
+<section class="slide" data-notes="
+  Strategic slide. Treasury + IT + Compliance all care about the ISO 20022
+  migration — SWIFT is retiring MT on the FIN network. Corona 7.9 does
+  not speak camt.053/054. Kilter already does. If the room brings up
+  ISO 20022 first, bump this slide earlier in the deck.">
+  <div class="slide-inner">
+    <h3>Future-proof</h3>
+    <h2>Already speaking ISO 20022.</h2>
+    <p class="lead" style="margin-top: 24px">
+      SWIFT is retiring MT940/MT950 on the FIN network. Every correspondent will
+      move to ISO 20022 XML messages. Kilter accepts <strong>both today</strong> —
+      drop an <code>.out</code> MT file or an <code>.xml</code> camt file into the
+      intake folder and the engine doesn't care which it gets.
+    </p>
+    <div class="cols-3" style="margin-top: 36px">
+      <div class="card">
+        <h2 style="font-size: 20px; color: var(--brand-2)">camt.053</h2>
+        <p><strong>End-of-day statement</strong> — the successor to MT940/950. Carries OPBD / CLBD balances, entries, remittance info. Parsed natively.</p>
+      </div>
+      <div class="card">
+        <h2 style="font-size: 20px; color: var(--brand-2)">camt.054</h2>
+        <p><strong>Intraday debit/credit notification</strong> — near-real-time entries as they hit the nostro. Lets us reconcile within minutes of a SWIFT arrival.</p>
+      </div>
+      <div class="card">
+        <h2 style="font-size: 20px; color: var(--brand-2)">Namespace-tolerant</h2>
+        <p>Supports camt.053.001.02, .04, .08, .09 — every version in the wild. New versions land as an additive mapping, not a rewrite.</p>
+      </div>
+    </div>
+    <div class="cols-2" style="margin-top: 30px">
+      <div class="card">
+        <h2 style="font-size: 20px; color: var(--danger)">Corona 7.9</h2>
+        <p>MT-only. Requires a vendor upgrade (with vendor licence fee) before the first correspondent flips.</p>
+      </div>
+      <div class="card">
+        <h2 style="font-size: 20px; color: var(--success)">Kilter</h2>
+        <p>Parses both formats side by side. No workflow change for ops. IBAN and proprietary account identifiers both supported. Zero cutover risk when a correspondent flips.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =========== 12. Technical story =========== -->
+<section class="slide" data-notes="
+  Short. IT audience eats this up; business audience zones out. Read the room.">
+  <div class="slide-inner">
+    <h3>Under the hood</h3>
+    <h2>Boring technology. On purpose.</h2>
+    <div class="cols-3" style="margin-top: 40px">
+      <div class="card">
+        <h2 style="font-size: 20px">🐍 Python 3.12 + FastAPI</h2>
+        <p>Industry standard. Auditable source tree. No runtime magic.</p>
+      </div>
+      <div class="card">
+        <h2 style="font-size: 20px">💾 SQLite single-file DB</h2>
+        <p>Zero DBA overhead. Back up by copying a file. Hundreds of millions of rows comfortably.</p>
+      </div>
+      <div class="card">
+        <h2 style="font-size: 20px">🧵 Stdlib-only scheduler</h2>
+        <p>No APScheduler, no celery, no Redis. One daemon thread, auditable in 300 lines.</p>
+      </div>
+      <div class="card">
+        <h2 style="font-size: 20px">🔐 Microsoft Authenticator MFA</h2>
+        <p>No passwords stored. TOTP via <code>pyotp</code> — the same stack Microsoft uses internally.</p>
+      </div>
+      <div class="card">
+        <h2 style="font-size: 20px">📄 openpyxl for xlsx</h2>
+        <p>The same library ops already uses to open the files. Formatting-compatible.</p>
+      </div>
+      <div class="card">
+        <h2 style="font-size: 20px">🛡 Zero vendor lock-in</h2>
+        <p>The whole codebase is Ecobank property. Walk away any time, port to anything.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =========== 13. Security & compliance =========== -->
+<section class="slide" data-notes="
+  Name the controls: TOTP, role-based permissions, SoD enforced by role,
+  immutable audit, signed certificate snapshots. Stop if someone has
+  a specific question — go deep on it.">
+  <div class="slide-inner">
+    <h3>Compliance</h3>
+    <h2>Built for the regulator conversation.</h2>
+    <div class="cols-2" style="margin-top: 40px">
+      <div>
+        <h2 style="font-size: 22px">Identity &amp; access</h2>
+        <ul>
+          <li>TOTP MFA via Microsoft Authenticator on every login.</li>
+          <li>Four roles: admin, ops, internal_control, audit.</li>
+          <li>Per-user access-area scoping (BoG / NOSTRO / AFFILIATES).</li>
+          <li>Session tokens expire; inactive sessions disconnect.</li>
+        </ul>
+      </div>
+      <div>
+        <h2 style="font-size: 22px">Audit &amp; control</h2>
+        <ul>
+          <li>Every mutation writes an append-only audit_log row.</li>
+          <li>Maker-checker-approver enforced by role on certificates.</li>
+          <li>Signed certificates freeze figures into an immutable snapshot.</li>
+          <li>Read-only audit role for external review without write risk.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =========== 14. ROI =========== -->
+<section class="slide" data-notes="
+  Be specific with numbers. Before the meeting, ask ops for their
+  analyst-hours baseline and swap it in. If you can't get it, say
+  'conservative estimate' and stick to realistic ranges.">
+  <div class="slide-inner">
+    <h3>The business case</h3>
+    <h2>What Kilter gives back.</h2>
+    <div class="cols-4" style="margin-top: 50px">
+      <div class="stat-card">
+        <div class="num">-70%</div>
+        <div class="lbl">analyst hours</div>
+        <div class="sub">spent on reconciliation, freed for investigation + exception work.</div>
+      </div>
+      <div class="stat-card">
+        <div class="num">-4 d</div>
+        <div class="lbl">month-end cycle</div>
+        <div class="sub">certificates go from 5-day-manual to 1-day-assisted.</div>
+      </div>
+      <div class="stat-card">
+        <div class="num">+10%</div>
+        <div class="lbl">match rate</div>
+        <div class="sub">from reference normalisation, splits, and carry-forward vs strict 1:1.</div>
+      </div>
+      <div class="stat-card">
+        <div class="num">0</div>
+        <div class="lbl">licence fee</div>
+        <div class="sub">built in-house. Payback on day 1.</div>
+      </div>
+    </div>
+    <p class="muted" style="margin-top: 40px; font-size: 16px">Figures are conservative estimates. Final numbers will be validated through a 4-week pilot.</p>
+  </div>
+</section>
+
+<!-- =========== 15. Rollout =========== -->
+<section class="slide" data-notes="
+  Important slide. Stakeholders need to know this isn't big-bang —
+  they can de-risk by staging.">
+  <div class="slide-inner">
+    <h3>How we get there</h3>
+    <h2>A staged rollout — zero-risk migration.</h2>
+    <div style="margin-top: 40px; font-size: 18px;">
+      <div style="display: grid; grid-template-columns: 140px 1fr; gap: 24px; margin-bottom: 20px; align-items: baseline">
+        <div><span class="badge badge-blue">Week 1–2</span></div>
+        <div><strong>Pilot.</strong> Kilter runs in parallel with Corona on 5 accounts. Both systems produce the same figures. Sign-off on parity.</div>
+      </div>
+      <div style="display: grid; grid-template-columns: 140px 1fr; gap: 24px; margin-bottom: 20px; align-items: baseline">
+        <div><span class="badge badge-blue">Week 3–4</span></div>
+        <div><strong>Training.</strong> Ops team onboarded via the curriculum in the Training manual. Internal Control briefed on the certificate flow.</div>
+      </div>
+      <div style="display: grid; grid-template-columns: 140px 1fr; gap: 24px; margin-bottom: 20px; align-items: baseline">
+        <div><span class="badge badge-amber">Week 5–6</span></div>
+        <div><strong>Expand.</strong> Roll Kilter to 30 accounts (the full NOSTRO + AFFILIATES set). Corona stays in read-only for reference.</div>
+      </div>
+      <div style="display: grid; grid-template-columns: 140px 1fr; gap: 24px; margin-bottom: 20px; align-items: baseline">
+        <div><span class="badge badge-green">Week 7–8</span></div>
+        <div><strong>Cutover.</strong> Corona is archived. Kilter is the production reconciliation service.</div>
+      </div>
+      <div style="display: grid; grid-template-columns: 140px 1fr; gap: 24px; align-items: baseline">
+        <div><span class="badge badge-green">Month 3+</span></div>
+        <div><strong>Extend.</strong> Flexcube DB direct extract. Oracle integration. Additional correspondents.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =========== 16. Risks =========== -->
+<section class="slide" data-notes="
+  Don't skip this. Raising the risks yourself shows you've thought about
+  them. If they ask about a risk you haven't listed, say 'great question'
+  and work through it live.">
+  <div class="slide-inner">
+    <h3>What could go wrong</h3>
+    <h2>Risks — and how we've addressed them.</h2>
+    <table class="vs-table" style="margin-top: 30px">
+      <thead><tr><th>Risk</th><th>Mitigation</th></tr></thead>
+      <tbody>
+        <tr><td>Engine miscounts during cutover</td><td>Parallel-run with Corona for 2 weeks. Figure-for-figure reconciliation before archiving Corona.</td></tr>
+        <tr><td>Single point of failure (one server)</td><td>SQLite is file-based — nightly atomic backup + tested recovery drill. HA is a phase-2 upgrade to PostgreSQL.</td></tr>
+        <tr><td>Ops resistance to change</td><td>Training curriculum + phased rollout + shadow period. Analysts work with the new UI before Corona is retired.</td></tr>
+        <tr><td>Audit confidence in new system</td><td>Read-only audit role for external review. Full CSV evidence export. Manual walkthrough with the BoG auditor during pilot.</td></tr>
+        <tr><td>Schema changes break historic data</td><td>All migrations are additive. Historic assignments / certificates remain queryable after every upgrade.</td></tr>
+        <tr><td>Custom build = single maintainer</td><td>Documentation is in-app. Every module has a docstring. Source tree walks with Ecobank — not locked to one developer.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- =========== 17. The ask =========== -->
+<section class="slide" data-notes="
+  <strong>This is the close.</strong> Slow down. Say exactly what you need and
+  when. Don't ask for more than one thing.">
+  <div class="slide-inner">
+    <h3>What we need from you</h3>
+    <h2>Approve a 4-week pilot.</h2>
+    <div style="font-size: 22px; margin-top: 50px; line-height: 1.9; color: var(--ink)">
+      <p>1. <strong>Infrastructure</strong> — one Windows VM, 4 vCPU / 8 GB RAM / 100 GB SSD. Python 3.12. IT already has the spec sheet.</p>
+      <p>2. <strong>Access</strong> — read-only Oracle user for Flexcube. Teams channel webhook. SMTP relay credentials.</p>
+      <p>3. <strong>Team</strong> — two ops analysts for 4 weeks (can remain on their current workload; pilot is parallel).</p>
+      <p>4. <strong>Decision date</strong> — by end of pilot week 4, go / no-go on full cutover.</p>
+    </div>
+    <p style="margin-top: 40px; color: var(--ink); font-size: 20px">Nothing irreversible happens during the pilot. Corona stays in production. We learn what works.</p>
+  </div>
+</section>
+
+<!-- =========== 18. Questions =========== -->
+<section class="slide cover" data-notes="
+  Last slide. Stop talking. Let them think. The best pitches end with 5 seconds of silence.">
+  <div class="slide-inner" style="text-align: center">
+    <div class="eyebrow">Thank you</div>
+    <h1 style="font-size: 110px">Questions?</h1>
+    <div class="gradient-line" style="margin: 30px auto"></div>
+    <p style="font-size: 22px; color: var(--ink-muted); margin-top: 40px">
+      Full documentation at <code>/manuals</code> · Live demo at <code>/demo</code>
+    </p>
+  </div>
+</section>
+
+{% endblock %}

@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block title %}Activity log · Kilter{% endblock %}
+{% block crumbs %}<a href="/">Dashboard</a><span class="sep">/</span><span class="current">Activity log</span>{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Activity log</h1>
+    <div class="subtitle">System-wide audit trail of sessions, decisions, exports, user changes. Append-only — nothing is ever edited or deleted.</div>
+  </div>
+  <button class="btn btn-default" id="export-btn">Download CSV</button>
+</div>
+
+<div id="not-authorized" class="card" style="display:none">
+  <div class="card-body">
+    <div class="empty-state">
+      <h3>Restricted</h3>
+      <p>This view is available to Admin, Audit, and Internal Control roles.</p>
+    </div>
+  </div>
+</div>
+
+<div id="authorized" style="display:none">
+  <div class="card">
+    <div class="card-head">
+      <h2>Filter</h2>
+    </div>
+    <div class="card-body">
+      <form id="filter" class="form-grid">
+        <div class="field"><label>Actor (username)</label>
+          <select class="input" name="actor" id="actor-select"><option value="">Any</option></select>
+        </div>
+        <div class="field"><label>Action</label>
+          <select class="input" name="action" id="action-select"><option value="">Any</option></select>
+        </div>
+        <div class="field"><label>Session ID</label><input class="input" name="session_id" type="number" placeholder="any"></div>
+        <div class="field"><label>From date</label><input class="input" name="from_date" type="date"></div>
+        <div class="field"><label>To date</label><input class="input" name="to_date" type="date"></div>
+        <div class="field"><label>Search details</label><input class="input" name="q" placeholder="e.g. reference, keyword"></div>
+        <div class="field"><label>Limit</label><input class="input" name="limit" type="number" value="200" min="1" max="1000"></div>
+        <div style="grid-column:1/-1">
+          <button type="submit" class="btn btn-primary">Apply</button>
+          <button type="button" class="btn btn-ghost" onclick="document.getElementById('filter').reset(); load();">Clear</button>
+        </div>
+      </form>
+    </div>
+    <div class="card-body" id="facet-strip" style="border-top:1px solid var(--c-border);display:flex;gap:14px;align-items:center;padding:12px 20px;flex-wrap:wrap;font-size:var(--t-small);color:var(--c-text-muted)">
+      <span id="total-count">—</span>
+    </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2>Entries</h2>
+      <div class="hint"><span id="entry-count">0</span> rows</div>
+    </div>
+    <div class="card-body tight">
+      <table class="table" id="log-table">
+        <thead>
+          <tr>
+            <th style="width:60px">ID</th>
+            <th style="width:170px">Timestamp</th>
+            <th style="width:120px">Actor</th>
+            <th style="width:150px">Action</th>
+            <th style="width:80px">Session</th>
+            <th>Details</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.body.dataset.nav = 'activity';
+
+const ACTION_BADGE = {
+  session_created:   'badge-info',
+  decision_confirm:  'badge-success',
+  decision_reject:   'badge-danger',
+  export:            'badge-neutral',
+  account_created:   'badge-info',
+  user_created:      'badge-info',
+  user_updated:      'badge-warn',
+};
+
+document.addEventListener('me:loaded', () => {
+  const canSee = window.me && ['admin','audit','internal_control'].includes(window.me.role);
+  document.getElementById('not-authorized').style.display = canSee ? 'none' : '';
+  document.getElementById('authorized').style.display = canSee ? '' : 'none';
+  if (canSee) { loadFacets(); load(); }
+});
+
+async function loadFacets() {
+  const r = await fetch('/activity/facets');
+  if (!r.ok) return;
+  const d = await r.json();
+  const aSel = document.getElementById('actor-select');
+  aSel.innerHTML = '<option value="">Any</option>' +
+    d.actors.map(a => `<option value="${esc(a)}">${esc(a)}</option>`).join('');
+  const actSel = document.getElementById('action-select');
+  actSel.innerHTML = '<option value="">Any</option>' +
+    d.actions.map(a => `<option value="${esc(a.action)}">${esc(a.action)} (${a.n})</option>`).join('');
+  document.getElementById('total-count').innerHTML = `<strong>${d.total.toLocaleString()}</strong> total entries across <strong>${d.actors.length}</strong> actors · <strong>${d.actions.length}</strong> action types`;
+}
+
+async function load() {
+  const fd = new FormData(document.getElementById('filter'));
+  const params = new URLSearchParams();
+  for (const [k, v] of fd.entries()) if (v) params.set(k, v);
+  const r = await fetch('/activity?' + params.toString());
+  if (!r.ok) return;
+  const rows = await r.json();
+  document.getElementById('entry-count').textContent = rows.length;
+
+  const tbody = document.querySelector('#log-table tbody');
+  if (rows.length === 0) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="6">No entries for this filter.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(e => `
+    <tr>
+      <td class="muted">#${e.id}</td>
+      <td class="muted">${fmtDateTime(e.timestamp)}</td>
+      <td>${esc(e.actor)}</td>
+      <td><span class="badge ${ACTION_BADGE[e.action] || 'badge-neutral'}">${esc(e.action)}</span></td>
+      <td>${e.session_id ? `<a href="/sessions/${e.session_id}/review">#${e.session_id}</a>` : '<span class="muted">—</span>'}</td>
+      <td><code style="font-size:var(--t-small)">${e.details ? esc(JSON.stringify(e.details)) : ''}</code></td>
+    </tr>`).join('');
+}
+
+document.getElementById('filter').addEventListener('submit', (e) => {
+  e.preventDefault();
+  load();
+});
+
+document.getElementById('export-btn').addEventListener('click', async () => {
+  const fd = new FormData(document.getElementById('filter'));
+  const params = new URLSearchParams();
+  for (const [k, v] of fd.entries()) if (v && k !== 'limit') params.set(k, v);
+  const r = await fetch('/activity/export?' + params.toString());
+  if (!r.ok) { alert((await r.json()).detail || 'Export failed'); return; }
+  const blob = await r.blob();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'kilter_activity.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+</script>
+{% endblock %}

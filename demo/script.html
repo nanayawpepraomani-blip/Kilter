@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Kilter — Demo Script</title>
+  <style>
+    :root {
+      --ink: #0f172a; --muted: #52606d; --subtle: #9aa5b1;
+      --primary: #1f3a8a; --primary-soft: #eff4fb;
+      --accent: #0891b2; --success: #059669; --success-soft: #d1fae5;
+      --warn: #b45309; --warn-soft: #fef3c7;
+      --danger: #b91c1c; --danger-soft: #fee2e2;
+      --border: #e4e7eb; --surface: #ffffff; --bg: #f7f8fa;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg); color: var(--ink); font-size: 15px; line-height: 1.55;
+    }
+    .wrap { max-width: 860px; margin: 0 auto; padding: 48px 32px 96px; }
+    header.hero {
+      background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
+      color: white; border-radius: 12px; padding: 28px 32px; margin-bottom: 28px;
+    }
+    header.hero h1 { margin: 0 0 6px 0; font-size: 28px; letter-spacing: -0.4px; }
+    header.hero .meta { opacity: 0.85; font-size: 14px; }
+    h2 {
+      margin: 32px 0 10px; font-size: 22px; color: var(--primary);
+      padding-bottom: 6px; border-bottom: 1px solid var(--border);
+    }
+    h3 { margin: 20px 0 8px; font-size: 16px; color: var(--ink); }
+    p, li { line-height: 1.55; }
+    code {
+      background: #eef1f5; border-radius: 4px; padding: 1px 6px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.92em; color: var(--primary);
+    }
+    a { color: var(--primary); text-decoration: none; border-bottom: 1px dotted var(--primary); }
+    a:hover { color: var(--accent); }
+    blockquote {
+      margin: 10px 0; padding: 12px 18px;
+      background: var(--primary-soft); border-left: 4px solid var(--primary);
+      border-radius: 6px; color: var(--ink); font-size: 0.97em;
+    }
+    blockquote p { margin: 0; }
+    .fill {
+      display: inline-block; background: var(--warn-soft); color: var(--warn);
+      padding: 0 6px; border-radius: 3px; font-size: 0.85em; font-weight: 600;
+    }
+    .callout {
+      background: var(--surface); border: 1px solid var(--border);
+      border-left: 4px solid var(--accent);
+      border-radius: 8px; padding: 14px 18px; margin: 12px 0;
+    }
+    .callout.warn  { border-left-color: var(--warn); background: var(--warn-soft); }
+    .callout.danger{ border-left-color: var(--danger); background: var(--danger-soft); }
+    .checklist { list-style: none; padding-left: 0; }
+    .checklist li { padding: 6px 0; }
+    .checklist input[type="checkbox"] { margin-right: 10px; transform: translateY(1px); }
+    table {
+      width: 100%; border-collapse: separate; border-spacing: 0;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; overflow: hidden; margin: 14px 0; font-size: 0.92em;
+    }
+    table th {
+      background: #f5f7fa; color: var(--muted); text-align: left;
+      padding: 10px 14px; border-bottom: 1px solid var(--border);
+      font-size: 0.9em; font-weight: 600;
+    }
+    table td {
+      padding: 10px 14px; border-bottom: 1px solid #f0f2f5; vertical-align: top;
+    }
+    table tr:last-child td { border-bottom: 0; }
+    .scene {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 18px 22px; margin: 18px 0;
+    }
+    .scene .beat {
+      display: inline-block; background: var(--primary); color: white;
+      padding: 2px 10px; border-radius: 20px; font-size: 11px;
+      font-weight: 600; letter-spacing: 0.3px; margin-right: 8px;
+    }
+    .scene h3 { margin-top: 0; }
+    .scene .moneyshot {
+      display: inline-block; background: var(--success-soft); color: var(--success);
+      padding: 2px 10px; border-radius: 20px; font-size: 11px;
+      font-weight: 600; letter-spacing: 0.3px; margin-left: 8px;
+    }
+    .say {
+      background: var(--primary-soft); border-left: 4px solid var(--primary);
+      padding: 10px 14px; border-radius: 6px; margin: 10px 0;
+      font-style: italic; color: var(--ink);
+    }
+    .say::before { content: "🎤 "; font-style: normal; }
+    .nav {
+      position: sticky; top: 0; background: var(--bg);
+      padding: 12px 0; margin-bottom: 20px; z-index: 10;
+      border-bottom: 1px solid var(--border);
+      display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px;
+    }
+    .nav a {
+      color: var(--muted); border-bottom: none; padding: 4px 10px; border-radius: 4px;
+    }
+    .nav a:hover { background: var(--primary-soft); color: var(--primary); }
+    .footer {
+      margin-top: 48px; color: var(--muted); font-size: 13px; text-align: center;
+    }
+    @media print {
+      body { background: white; }
+      .nav, .footer { display: none; }
+      .wrap { padding: 0; max-width: none; }
+      header.hero { background: var(--primary); }
+      .scene, .callout, table { page-break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <h1>Kilter &middot; Live Demo Script</h1>
+    <div class="meta">Mixed audience (ops + leadership) &middot; ~10 minutes &middot; Local at <code style="background:rgba(255,255,255,0.15);color:white">http://127.0.0.1:8000</code></div>
+  </header>
+
+  <nav class="nav">
+    <a href="#preflight">Pre-flight</a>
+    <a href="#timing">Timing map</a>
+    <a href="#scene1">1 · Dashboard</a>
+    <a href="#scene2">2 · Ingest</a>
+    <a href="#scene3">3 · Review</a>
+    <a href="#scene4">4 · Roles</a>
+    <a href="#scene5">5 · Scoping</a>
+    <a href="#scene6">6 · Export + audit</a>
+    <a href="#recovery">If it breaks</a>
+  </nav>
+
+  <h2 id="preflight">Pre-flight checklist <span style="font-size:13px;color:var(--muted);font-weight:normal">(5 min before you start)</span></h2>
+  <p>Do these in order. If any step fails, fix before presenting — don't improvise live.</p>
+  <ul class="checklist">
+    <li><input type="checkbox"> <strong>Server running.</strong> <code>uvicorn app:app --reload</code> → dashboard loads at <code>http://127.0.0.1:8000</code>.</li>
+    <li><input type="checkbox"> <strong>Admin logged in in Tab 1.</strong> You're on the Dashboard showing 4 sessions.</li>
+    <li><input type="checkbox"> <strong>Ops user ready in Tab 2.</strong> Sign in as <code>ops_demo</code> (TOTP via Authenticator). Leave the Dashboard open.</li>
+    <li><input type="checkbox"> <strong>Active area set to "All areas"</strong> on both tabs (topbar → Cancel if the picker is open).</li>
+    <li><input type="checkbox"> <strong>One session with a pending queue item.</strong> If everything is already cleared, upload a fresh SWIFT/Flex pair from <code>uploads/</code> so you have something to confirm live.</li>
+    <li><input type="checkbox"> <strong>Browser zoom at 110%.</strong> Makes the screen readable from the back of the room.</li>
+    <li><input type="checkbox"> <strong>Close every unrelated tab.</strong> Hide the bookmark bar (<code>Ctrl+Shift+B</code>).</li>
+    <li><input type="checkbox"> <strong>Recovery plan.</strong> If a page breaks, switch to the other tab and narrate while you recover. Never refresh the presenter tab mid-demo.</li>
+  </ul>
+
+  <h2 id="timing">Timing map</h2>
+  <table>
+    <thead><tr><th>Beat</th><th>Duration</th><th>Scene</th></tr></thead>
+    <tbody>
+      <tr><td>0:00</td><td>0:45</td><td>Scene 1 &middot; The dashboard (admin)</td></tr>
+      <tr><td>0:45</td><td>1:30</td><td>Scene 2 &middot; Ingest a pair</td></tr>
+      <tr><td>2:15</td><td>2:30</td><td>Scene 3 &middot; Review queue — confirm, reject, swap <span class="moneyshot">money shot</span></td></tr>
+      <tr><td>4:45</td><td>1:15</td><td>Scene 4 &middot; Switch to ops — what role-based UI looks like</td></tr>
+      <tr><td>6:00</td><td>1:30</td><td>Scene 5 &middot; Active-area picker (the mixed-audience hook)</td></tr>
+      <tr><td>7:30</td><td>1:30</td><td>Scene 6 &middot; Export xlsx + audit log</td></tr>
+      <tr><td>9:00</td><td>1:00</td><td>Close + Q&amp;A</td></tr>
+    </tbody>
+  </table>
+
+  <section class="scene" id="scene1">
+    <h3><span class="beat">0:00</span> Scene 1 — The dashboard <span style="color:var(--muted);font-weight:normal;font-size:13px">(0:45)</span></h3>
+    <p><strong>Show:</strong> Tab 1, logged in as admin, <code>/</code> dashboard.</p>
+    <p><strong>Point at, in this order:</strong></p>
+    <ul>
+      <li>Top four stat cards: <em>Pending decisions, Confirmed matches, Open sessions, Registered cash accounts</em>.</li>
+      <li>Recent sessions table — 4 sessions, one per currency (GBP/USD/EUR/GHS).</li>
+      <li>The sidebar: Workspace / Intake / Admin groups.</li>
+    </ul>
+    <div class="say">This is the landing page. Four numbers that matter for month-end — what's pending, what we've cleared, how many sessions still have open work, and how many cash accounts are wired up. The table below is the last four reconciliation sessions. Each one is a SWIFT statement matched against a Flexcube account for one currency.</div>
+  </section>
+
+  <section class="scene" id="scene2">
+    <h3><span class="beat">0:45</span> Scene 2 — Ingest a pair <span style="color:var(--muted);font-weight:normal;font-size:13px">(1:30)</span></h3>
+    <p><strong>Show:</strong> <code>/#upload</code> or drag into the Manual upload card.</p>
+    <p><strong>Do:</strong></p>
+    <ol>
+      <li>Drag the SWIFT <code>.out</code> file into the SWIFT slot.</li>
+      <li>Drag the Flexcube <code>.xlsx</code> into the Flex slot.</li>
+      <li>Click Upload.</li>
+      <li>Wait for the status line → <em>"Session #5: Registered · N pending, X unmatched SWIFT, Y unmatched Flex."</em></li>
+    </ol>
+    <div class="say">Two files — SWIFT messages from the bank, and the Flexcube extract for the matching account. Kilter sha-256s both files so you can't accidentally ingest the same statement twice. Behind the scenes the matcher proposed pairs across four tiers — the ones it's sure about, and the ones that need a human. That's what we do next.</div>
+    <div class="callout warn">
+      <strong>If the upload fails</strong> (duplicate hash, wrong format): switch to an existing session with <code>pending &gt; 0</code> and narrate: <em>"Here's one already ingested — same flow from here on."</em>
+    </div>
+  </section>
+
+  <section class="scene" id="scene3">
+    <h3><span class="beat">2:15</span> Scene 3 — Review queue <span class="moneyshot">money shot</span> <span style="color:var(--muted);font-weight:normal;font-size:13px">(2:30)</span></h3>
+    <p><strong>Show:</strong> Click <strong>Review →</strong> on a session with pending items.</p>
+    <p><strong>Do, narrating as you go:</strong></p>
+    <ol>
+      <li><strong>Point at the tier banner</strong> — <em>"This is a Tier 1 strict match. The engine has a reference number hit, amount matches, date matches. 99% of the time ops will click Confirm without thinking — that's the point."</em></li>
+      <li><strong>Click Confirm.</strong> The next card appears.</li>
+      <li><strong>Navigate to a Tier 2 or 3 card.</strong> Say: <em>"Here's where humans come in. Same reference but the amount is off by 40 basis points — that's a wire fee. The engine surfaces it, ops makes the call."</em></li>
+      <li><strong>Click Swap</strong> (if the card offers alternatives) — <em>"If we don't like the top pick, the engine has ranked alternatives ready. No re-running the matcher."</em></li>
+      <li><strong>Click Reject</strong> on a bad candidate — <em>"And if it's actually wrong, reject. The SWIFT row goes back to unmatched; it shows up in the exception report."</em></li>
+      <li><strong>Confirm a couple more</strong> until you see <strong>"✓ Queue cleared."</strong> Point at the green card: <em>"That's what ops wants to see at the end of a session."</em></li>
+    </ol>
+    <div class="callout">
+      <strong>Watch for:</strong> the "Download reconciliation xlsx" button on the cleared card. Don't click it yet — that's Scene 6.
+    </div>
+  </section>
+
+  <section class="scene" id="scene4">
+    <h3><span class="beat">4:45</span> Scene 4 — Role-based UI <span style="color:var(--muted);font-weight:normal;font-size:13px">(1:15)</span></h3>
+    <p><strong>Show:</strong> Switch to Tab 2 (logged in as <code>ops_demo</code>).</p>
+    <p><strong>Point at:</strong></p>
+    <ul>
+      <li>Sidebar — only <strong>Workspace</strong> group (Dashboard, Cash accounts, Sessions). No Intake, no Admin.</li>
+      <li>Bottom-left: <em>Ops Demo User &middot; ops</em>.</li>
+      <li>Top of Dashboard — the same four stat cards as admin.</li>
+    </ul>
+    <div class="say">Same app, different role. Ops sees the reconciliation tools and nothing else. No user management, no activity log, no manual upload — that's admin territory. We've got four roles total: admin, ops, audit, and internal control. Audit and IC can read the activity log; they can't touch a match.</div>
+  </section>
+
+  <section class="scene" id="scene5">
+    <h3><span class="beat">6:00</span> Scene 5 — Active-area picker <span class="moneyshot">mixed-audience hook</span> <span style="color:var(--muted);font-weight:normal;font-size:13px">(1:30)</span></h3>
+    <p><strong>Show:</strong> Top-right of the page — <em>Active area: All areas ▾</em>.</p>
+    <p><strong>Do:</strong></p>
+    <ol>
+      <li><strong>Click the picker.</strong> A panel opens with a search box and a checkbox list.</li>
+      <li><strong>Type "bank"</strong> in the search — point at BANK OF GHANA filtering in.</li>
+      <li><strong>Check BANK OF GHANA, click Apply.</strong> Page reloads.</li>
+      <li>Point at the top-right badge: now reads <em>Active area: BANK OF GHANA</em>.</li>
+      <li>Go to Sessions — only BoG sessions visible.</li>
+      <li>Go back to the picker, search "branch", check <strong>BRANCH 001 HOFF</strong> and <strong>BRANCH 002 TEMA</strong>, Apply.</li>
+      <li>Badge now reads <em>Active area: 2 areas</em> with a tooltip listing them.</li>
+    </ol>
+    <div class="say">For ops — most of you will pick one area when you log in and live there all day. For supervisors — you can pick several at once and see across your cluster. For leadership — leave it on All areas and you've got the whole bank. The picker is backed by the same 103 access areas Corona uses, so there's no new taxonomy to learn.</div>
+    <div class="callout warn">
+      Click Cancel / set back to All areas before moving on — scene 6 needs the unscoped view.
+    </div>
+  </section>
+
+  <section class="scene" id="scene6">
+    <h3><span class="beat">7:30</span> Scene 6 — Export + audit <span style="color:var(--muted);font-weight:normal;font-size:13px">(1:30)</span></h3>
+    <p><strong>Show:</strong> Tab 1 (admin). Session detail page with the queue cleared.</p>
+    <p><strong>Do:</strong></p>
+    <ol>
+      <li><strong>Click Export xlsx</strong> in the topbar. File downloads.</li>
+      <li><strong>Open the xlsx</strong> — point at the sheet names: <em>Matched / Unmatched SWIFT / Unmatched Flex / Balance</em>.</li>
+      <li>Close the xlsx. Sidebar → <strong>Activity log</strong>.</li>
+      <li>Point at the most recent rows — <em>login</em>, <em>session_create</em>, <em>decision</em>, <em>export</em>, <em>access_scope_change</em>.</li>
+      <li>Use the filters: <strong>Action = export</strong>, apply. Say: <em>"When audit asks 'who pulled a report in March', the answer is two clicks."</em></li>
+      <li>Click <strong>Export CSV</strong> on the activity page. <em>"And the audit log itself exports — auditors get the raw trail."</em></li>
+    </ol>
+    <div class="say">Three things ship with every reconciliation session. The xlsx report for finance — same format they're already using. The session's audit trail — who matched what, when. And a running activity log across every user, every action. The question "prove who did this" has a one-line answer now.</div>
+  </section>
+
+  <section class="scene" id="close">
+    <h3><span class="beat">9:00</span> Close <span style="color:var(--muted);font-weight:normal;font-size:13px">(1:00)</span></h3>
+    <p><strong>Back to the Dashboard. Say:</strong></p>
+    <div class="say">That's the loop: ingest, review, export, audited. We built it on our stack, MFA by default, role-based, and scoped to the way each team actually works. What I'd like next is a green light to run a 1-branch, 1-month pilot in parallel with Corona — we measure the real numbers, and we come back with a go/no-go in six weeks.</div>
+    <p><strong>Pause. Invite questions.</strong></p>
+  </section>
+
+  <h2 id="recovery">If something breaks (live recovery)</h2>
+  <table>
+    <thead><tr><th style="width:40%">Symptom</th><th>Recovery</th></tr></thead>
+    <tbody>
+      <tr><td>Page shows JSON (<code>{"id": ...}</code>)</td><td>Wrong link — go back, use the sidebar. Don't refresh.</td></tr>
+      <tr><td><code>{"detail":"Missing session token"}</code></td><td>Your session expired. Switch to the other tab; narrate while you re-login later.</td></tr>
+      <tr><td>Upload hangs &gt; 15 s</td><td>Say "in production this is async" and switch to an existing session.</td></tr>
+      <tr><td>Queue is empty on every session</td><td>Open the register tab — show matched history instead.</td></tr>
+      <tr><td>Server 500</td><td>Switch to the already-loaded tab. Don't refresh; talk through it. After the demo, check <code>uvicorn.err</code>.</td></tr>
+    </tbody>
+  </table>
+  <div class="callout danger">
+    <strong>Golden rule:</strong> never refresh the presenter tab. Narrate. Continue.
+  </div>
+
+  <h2>After the demo — leave-behinds</h2>
+  <ul>
+    <li><code>demo/pitch.html</code> (or <code>PITCH.md</code> — the slide source).</li>
+    <li>Link to the running instance <span class="fill">[FILL: URL after pilot deploy]</span>.</li>
+    <li>Contact: <span class="fill">[FILL: who owns the product, who owns intake]</span>.</li>
+  </ul>
+
+  <div class="footer">
+    Tip: press <code>Ctrl+P</code> to print this as a PDF for an on-stage printout.
+  </div>
+</div>
+</body>
+</html>

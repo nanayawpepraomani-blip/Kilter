@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+{% block title %}Sessions · Kilter{% endblock %}
+{% block crumbs %}<a href="/">Dashboard</a><span class="sep">/</span><span class="current">Sessions</span>{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Sessions</h1>
+    <div class="subtitle">Search the full history of reconciliation sessions across every cash account.</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <h2>Filters</h2>
+    <div class="hint"><span id="session-count">0</span> of <span id="session-total">0</span> sessions shown</div>
+  </div>
+  <div class="card-body">
+    <form id="filters" class="form-grid" style="grid-template-columns:repeat(4,1fr);gap:14px">
+      <div class="field"><label>Search</label>
+        <input class="input" id="f-q" placeholder="Cash account, filename, ref...">
+      </div>
+      <div class="field"><label>Access area</label>
+        <select class="input" id="f-area"><option value="">All</option></select>
+      </div>
+      <div class="field"><label>Cash account</label>
+        <select class="input" id="f-account"><option value="">All</option></select>
+      </div>
+      <div class="field"><label>Currency</label>
+        <select class="input" id="f-ccy"><option value="">All</option></select>
+      </div>
+      <div class="field"><label>Status</label>
+        <select class="input" id="f-status">
+          <option value="">Any</option>
+          <option value="open">Open (has pending)</option>
+          <option value="done">Done (fully reviewed)</option>
+          <option value="clean">Clean (zero difference)</option>
+        </select>
+      </div>
+      <div class="field"><label>Statement date from</label>
+        <input class="input" type="date" id="f-from">
+      </div>
+      <div class="field"><label>Statement date to</label>
+        <input class="input" type="date" id="f-to">
+      </div>
+      <div class="field" style="align-self:end">
+        <button type="button" class="btn btn-ghost" id="f-clear">Clear filters</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card" style="margin-top:20px">
+  <div class="card-head">
+    <h2>Results</h2>
+  </div>
+  <div class="card-body tight">
+    <table class="table" id="sessions-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Created</th>
+          <th>Cash account</th>
+          <th>Access area</th>
+          <th>CCY</th>
+          <th>Statement</th>
+          <th>Period</th>
+          <th class="num">Pending</th>
+          <th class="num">Confirmed</th>
+          <th class="num">Rejected</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.body.dataset.nav = 'sessions';
+
+let allSessions = [];
+let allAccounts = [];
+
+async function load() {
+  const [sessR, accR] = await Promise.all([fetch('/sessions'), fetch('/accounts')]);
+  if (!sessR.ok || !accR.ok) return;
+  allSessions = await sessR.json();
+  allAccounts = await accR.json();
+  document.getElementById('session-total').textContent = allSessions.length;
+
+  // Populate filter dropdowns
+  const areas = [...new Set(allSessions.map(s => s.account_access_area).filter(Boolean))].sort();
+  const accts = [...new Set(allSessions.map(s => s.account_label).filter(Boolean))].sort();
+  const ccys  = [...new Set(allSessions.map(s => s.swift_currency || s.flex_currency).filter(Boolean))].sort();
+  fillSelect('f-area', areas);
+  fillSelect('f-account', accts);
+  fillSelect('f-ccy', ccys);
+
+  applyFilters();
+}
+
+function fillSelect(id, opts) {
+  const sel = document.getElementById(id);
+  const current = sel.value;
+  sel.innerHTML = '<option value="">All</option>' +
+    opts.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+  sel.value = current;
+}
+
+function applyFilters() {
+  const q = (document.getElementById('f-q').value || '').toLowerCase();
+  const area = document.getElementById('f-area').value;
+  const acct = document.getElementById('f-account').value;
+  const ccy  = document.getElementById('f-ccy').value;
+  const status = document.getElementById('f-status').value;
+  const dateFrom = toYmd(document.getElementById('f-from').value);
+  const dateTo   = toYmd(document.getElementById('f-to').value);
+
+  const filtered = allSessions.filter(s => {
+    if (area && s.account_access_area !== area) return false;
+    if (acct && s.account_label !== acct) return false;
+    if (ccy && (s.swift_currency || s.flex_currency) !== ccy) return false;
+    if (status === 'open'  && (s.counts?.pending || 0) === 0) return false;
+    if (status === 'done'  && (s.counts?.pending || 0) > 0)   return false;
+    if (status === 'clean' && (s.counts?.pending || 0) > 0)   return false;
+    if (dateFrom && (s.closing_balance_date || 0) < dateFrom) return false;
+    if (dateTo && (s.closing_balance_date || 0) > dateTo) return false;
+    if (q) {
+      const hay = [
+        s.account_label, s.account_shortname, s.swift_filename, s.flex_filename,
+        s.swift_statement_ref, s.swift_account, s.flex_ac_no,
+      ].filter(Boolean).join(' ').toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  document.getElementById('session-count').textContent = filtered.length;
+
+  const tbody = document.querySelector('#sessions-table tbody');
+  if (filtered.length === 0) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="11">No sessions match the current filter.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = filtered.map(s => {
+    const acctCell = s.account_label
+      ? `<strong>${esc(s.account_shortname || s.account_label)}</strong>`
+      : `<span class="badge badge-warn">Unregistered</span>`;
+    const period = (s.opening_balance_date && s.closing_balance_date)
+      ? `${fmtDate(s.opening_balance_date)} → ${fmtDate(s.closing_balance_date)}`
+      : (s.closing_balance_date ? fmtDate(s.closing_balance_date) : '—');
+    return `
+      <tr>
+        <td><a href="/sessions/${s.id}/review">#${s.id}</a></td>
+        <td class="muted">${fmtDateTime(s.created_at)}</td>
+        <td>${acctCell}</td>
+        <td class="muted">${esc(s.account_access_area || '')}</td>
+        <td>${esc(s.swift_currency || s.flex_currency || '')}</td>
+        <td class="muted"><code style="font-size:var(--t-small)">${esc(s.swift_statement_ref || '')}</code></td>
+        <td class="muted" style="font-size:var(--t-small)">${period}</td>
+        <td class="num">${s.counts?.pending ?? 0}</td>
+        <td class="num">${s.counts?.confirmed ?? 0}</td>
+        <td class="num">${s.counts?.rejected ?? 0}</td>
+        <td><a class="btn btn-default btn-sm" href="/sessions/${s.id}/review">Open &rarr;</a></td>
+      </tr>`;
+  }).join('');
+}
+
+function toYmd(iso) {
+  if (!iso) return null;
+  return parseInt(iso.replace(/-/g, ''));
+}
+
+document.getElementById('filters').addEventListener('input', applyFilters);
+document.getElementById('filters').addEventListener('change', applyFilters);
+document.getElementById('f-clear').addEventListener('click', () => {
+  document.getElementById('filters').reset();
+  applyFilters();
+});
+
+load();
+</script>
+{% endblock %}

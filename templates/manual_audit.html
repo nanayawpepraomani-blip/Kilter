@@ -1,0 +1,268 @@
+{% extends "manual_base.html" %}
+{% block title %}Kilter · Audit Manual{% endblock %}
+{% block bar_label %}Audit Manual{% endblock %}
+{% block footer_left %}Audit Manual{% endblock %}
+{% block cover_eyebrow %}Audit role{% endblock %}
+{% block cover_title %}Audit Manual{% endblock %}
+{% block cover_subtitle %}Activity log, break history, certificate chain of evidence, evidence export — internal &amp; external audit playbook.{% endblock %}
+{% block audience %}Audit{% endblock %}
+
+{% block toc %}
+<div class="toc">
+  <h2>Contents</h2>
+  <ol>
+    <li>What the Audit role sees</li>
+    <li>The activity log</li>
+    <li>Drilling into a single break</li>
+    <li>The certificate chain of evidence</li>
+    <li>CSV evidence export</li>
+    <li>Raw SQLite access</li>
+    <li>Common audit queries</li>
+    <li>Regulatory &amp; external audit scenarios</li>
+    <li>Retention policy</li>
+  </ol>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<h2 id="role">1. What the Audit role sees</h2>
+
+<p>Audit is the most read-wide, write-narrow role in Kilter. Specifically:</p>
+
+<ul>
+  <li><strong>Read</strong> every session, assignment, open item, certificate, user, role assignment, and audit log entry.</li>
+  <li><strong>Read</strong> every config — cash accounts, tolerance rules, auto-categorisation rules, auto-grouping rules, scheduler jobs, SLA channels.</li>
+  <li><strong>Write</strong>: nothing. There is no operation an audit user can perform that mutates state.</li>
+</ul>
+
+<p>This intentional asymmetry makes it safe to hand an audit login to external reviewers for spot checks — they cannot accidentally disturb production state.</p>
+
+<h2 id="log">2. The activity log</h2>
+
+<p>Path: <span class="path">Admin → Activity log</span> (also visible to Audit and Internal Control).</p>
+
+<p>The activity log is an append-only record of every state-changing action in Kilter. Nothing in here is ever edited or deleted. If an error is recorded, the correction is a <em>new</em> entry — the original stays.</p>
+
+<h3>Entry shape</h3>
+<table>
+  <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>id</code></td><td>Auto-increment primary key. Monotonic, so ordering by ID is chronological.</td></tr>
+    <tr><td><code>timestamp</code></td><td>ISO 8601 UTC — <code>2026-04-23T21:50:11.714232</code>.</td></tr>
+    <tr><td><code>actor</code></td><td>Username of the user (or <code>system</code> / <code>system_scheduler</code>).</td></tr>
+    <tr><td><code>action</code></td><td>Machine-readable action name — see action catalogue below.</td></tr>
+    <tr><td><code>session_id</code></td><td>Session context if applicable; NULL for system-wide events.</td></tr>
+    <tr><td><code>details</code></td><td>JSON blob — action-specific payload (amounts, IDs, reasons).</td></tr>
+  </tbody>
+</table>
+
+<h3>Action catalogue (abridged)</h3>
+<table>
+  <thead><tr><th>Action</th><th>When it fires</th></tr></thead>
+  <tbody>
+    <tr><td><code>session_created</code></td><td>New session ingested.</td></tr>
+    <tr><td><code>decision_confirm</code> / <code>decision_reject</code></td><td>Analyst decided an engine-proposed match.</td></tr>
+    <tr><td><code>manual_match</code> / <code>manual_split</code></td><td>Force-match via the Register or Split view.</td></tr>
+    <tr><td><code>session_closed</code></td><td>Session transitioned to closed (manual or auto).</td></tr>
+    <tr><td><code>open_item_auto_cleared</code></td><td>Carry-forward engine matched a prior open item against a new session.</td></tr>
+    <tr><td><code>open_item_manual_cleared</code></td><td>Analyst hand-matched an open item.</td></tr>
+    <tr><td><code>open_item_written_off</code></td><td>Terminal write-off. <code>reason</code> in details.</td></tr>
+    <tr><td><code>certificate_created</code> / <code>certificate_prepared</code> / <code>certificate_reviewed</code> / <code>certificate_signed</code></td><td>Certificate lifecycle transitions.</td></tr>
+    <tr><td><code>user_created</code> / <code>user_updated</code></td><td>Identity changes.</td></tr>
+    <tr><td><code>account_created</code> / <code>account_updated</code></td><td>Registry changes.</td></tr>
+    <tr><td><code>tolerance_updated</code></td><td>Per-account tolerance changed.</td></tr>
+    <tr><td><code>scheduler_run</code></td><td>Scheduler executed a job. Details: job name, type, status, duration, output.</td></tr>
+    <tr><td><code>sla_alert_log</code></td><td>SLA log-only channel fired.</td></tr>
+  </tbody>
+</table>
+
+<h3>Filtering</h3>
+<ul>
+  <li><strong>Actor</strong> — dropdown populated from distinct usernames in the log.</li>
+  <li><strong>Action</strong> — dropdown populated with per-action counts so you see which actions dominate.</li>
+  <li><strong>Session ID</strong> — narrow to one session's entire lifecycle.</li>
+  <li><strong>From / to date</strong> — ISO date range (UTC).</li>
+  <li><strong>Search details</strong> — free-text LIKE match against the JSON details + action.</li>
+</ul>
+
+<p>The summary strip at the top gives a total-entries / distinct-actors / distinct-actions feel so you can calibrate sampling effort.</p>
+
+<h2 id="break">3. Drilling into a single break</h2>
+
+<p>Every open item has a <strong>History</strong> button that opens a timeline:</p>
+
+<ol>
+  <li>Go to <span class="path">Open items</span>.</li>
+  <li>Filter to the account / status / age you're investigating.</li>
+  <li>Click <strong>History</strong> on the row.</li>
+</ol>
+
+<p>The drawer shows a chronological timeline:</p>
+
+<ul>
+  <li><strong>Opened</strong> — when the item became an open item, from which source side, which session row.</li>
+  <li><strong>Comment(s)</strong> — every analyst note posted on this item, with author + timestamp.</li>
+  <li><strong>Audit events</strong> — every <code>open_item_*</code> action from the activity log that references this item.</li>
+  <li><strong>Cleared / Written off</strong> — terminal event with actor + method (auto_carry / manual_match / write_off).</li>
+</ul>
+
+<p>This timeline is the single-page story of a break. Give it to an auditor who's asking "what happened to this amount?" and they have their answer.</p>
+
+<h2 id="chain">4. The certificate chain of evidence</h2>
+
+<p>A signed certificate is the head of a chain that leads back to every raw transaction. The chain is:</p>
+
+<pre><code>Certificate (signed, with snapshot_json)
+    ↓
+Session(s) for the account in the period
+    ↓
+Assignments (confirmed = matches in the figures; pending = ignored)
+    ↓
+SWIFT rows + Flex rows (per-transaction detail)
+    ↓
+Ingested files (SHA-256 hashes, original filenames, ingested_at, ingested_by)</code></pre>
+
+<p>To produce this for an auditor:</p>
+
+<ol>
+  <li>Get the certificate ID from <span class="path">Certificates</span>.</li>
+  <li>Open <span class="path">Activity log</span>, filter <code>action = certificate_signed</code>, find the matching entry. <code>details.certificate_id</code> links back.</li>
+  <li>Download the certificate xlsx (which embeds the frozen snapshot) and the PDF (for the human-readable form).</li>
+  <li>Filter <code>action = session_created</code> over the certificate's period and the specific <code>account_id</code>. Each entry has <code>swift_sha256</code> and <code>flex_sha256</code> — these are the provable inputs.</li>
+  <li>Filter <code>session_id = X</code> for each session. You now have every confirmed/rejected decision with actor + timestamp.</li>
+</ol>
+
+<p>Every step is query-able via the web UI and export-able via CSV (section 5).</p>
+
+<h2 id="export">5. CSV evidence export</h2>
+
+<p>The <strong>Download CSV</strong> button on <span class="path">Activity log</span> exports the currently-filtered result set as CSV. Same filters as the page; no row limit.</p>
+
+<p>Typical exports:</p>
+<ul>
+  <li>Full year's audit log (from_date = Jan 1, to_date = Dec 31, limit unbounded).</li>
+  <li>All certificate signings for the year (action = <code>certificate_signed</code>).</li>
+  <li>All write-offs with amount &gt; threshold — filter on action <code>open_item_written_off</code>, then post-filter in Excel using the JSON details column.</li>
+</ul>
+
+<p>Column order: <code>id, timestamp, actor, action, session_id, details</code>. The <code>details</code> column is raw JSON — use Excel's <code>Data → Text to Columns</code> or Power Query for structured analysis.</p>
+
+<h2 id="raw">6. Raw SQLite access</h2>
+
+<p>For the ultimate "give me everything" case, the whole application state is in <code>kilter.db</code> — a standard SQLite 3 file. Read-only access is easy:</p>
+
+<pre><code># Open read-only so nothing can be mutated
+sqlite3 "file:d:/Kilter/kilter.db?mode=ro" "SELECT COUNT(*) FROM audit_log;"</code></pre>
+
+<p>All tables are documented in <code>db.py</code>'s schema. Key ones:</p>
+
+<ul>
+  <li><code>audit_log</code> — the activity log (append-only).</li>
+  <li><code>sessions</code>, <code>swift_txns</code>, <code>flex_txns</code> — per-session data.</li>
+  <li><code>assignments</code> — every match decision, with <code>source</code> (engine / manual / auto_carry / split / manual_split) and <code>split_group_id</code> where applicable.</li>
+  <li><code>open_items</code> — the rolling ledger.</li>
+  <li><code>reconciliation_certificates</code> — certificate records with <code>snapshot_json</code> for signed ones.</li>
+  <li><code>users</code>, <code>user_sessions</code> — identities and login history.</li>
+</ul>
+
+<div class="callout warn">
+  <strong>Request read-only credentials from IT</strong> — don't run queries against the production file directly while the service is writing. Either point at a backup snapshot or open with <code>mode=ro</code> as shown above.
+</div>
+
+<h2 id="queries">7. Common audit queries</h2>
+
+<h3>"Who signed every certificate last year?"</h3>
+<pre><code>SELECT rc.id, rc.period_start, rc.period_end, a.label AS account,
+       rc.signed_by, rc.signed_at
+FROM reconciliation_certificates rc
+JOIN accounts a ON a.id = rc.account_id
+WHERE rc.status = 'signed'
+  AND rc.signed_at BETWEEN '2025-01-01' AND '2026-01-01'
+ORDER BY rc.signed_at;</code></pre>
+
+<h3>"Every write-off over $10,000 in the last quarter"</h3>
+<pre><code>SELECT oi.id, a.label, oi.amount, oi.cleared_at, oi.cleared_by,
+       oi.write_off_reason
+FROM open_items oi
+JOIN accounts a ON a.id = oi.account_id
+WHERE oi.status = 'written_off'
+  AND oi.cleared_at >= '2026-01-01'
+  AND ABS(oi.amount) > 10000
+ORDER BY ABS(oi.amount) DESC;</code></pre>
+
+<h3>"Every force-match by a specific analyst"</h3>
+<pre><code>SELECT al.timestamp, al.session_id, al.details
+FROM audit_log al
+WHERE al.action IN ('manual_match', 'manual_split')
+  AND al.actor = 'jdoe'
+ORDER BY al.id DESC;</code></pre>
+
+<h3>"Which accounts had tolerance changes last year?"</h3>
+<pre><code>SELECT timestamp, actor, details
+FROM audit_log
+WHERE action = 'tolerance_updated'
+  AND timestamp >= '2025-01-01'
+ORDER BY id;</code></pre>
+
+<h3>"Scheduler job failures in the last 30 days"</h3>
+<pre><code>SELECT jr.started_at, sj.name, jr.status, jr.duration_ms,
+       substr(jr.output, 1, 200) AS output_head
+FROM job_runs jr
+JOIN scheduled_jobs sj ON sj.id = jr.job_id
+WHERE jr.status = 'error'
+  AND jr.started_at >= datetime('now', '-30 days')
+ORDER BY jr.started_at DESC;</code></pre>
+
+<h2 id="scenarios">8. Regulatory &amp; external audit scenarios</h2>
+
+<h3>Scenario A: External / central-bank auditor arrives</h3>
+<p>You're asked to demonstrate that reconciliation is being performed for a specific nostro account.</p>
+<ol>
+  <li>Create a temporary audit-role user for the auditor via Admin (expires in 30 days).</li>
+  <li>Show them <span class="path">Cash accounts</span> filtered to the account — evidence that it's registered.</li>
+  <li>Show <span class="path">Sessions</span> filtered to that account for the past year — evidence of daily reconciliation.</li>
+  <li>Show <span class="path">Certificates</span> for the account — evidence of monthly sign-off.</li>
+  <li>Open one certificate, click <strong>PDF</strong> — signed artefact with maker / checker / approver stamps.</li>
+  <li>Export the audit log CSV for the relevant period.</li>
+</ol>
+
+<h3>Scenario B: External audit confirmation of a single balance</h3>
+<p>Auditor picks one account + one date and asks for evidence of the reconciled balance.</p>
+<ol>
+  <li>Find the session closest to the date at <span class="path">Sessions</span>.</li>
+  <li>Open the session review — the opening and closing balances are on the header panel.</li>
+  <li>Open the Register tab — every SWIFT row and every Flex row with its final status.</li>
+  <li>Export via the xlsx download: a per-session workbook with all the detail.</li>
+</ol>
+
+<h3>Scenario C: Internal audit of write-off appropriateness</h3>
+<ol>
+  <li><span class="path">Activity log</span> → action <code>open_item_written_off</code>, date range + actor.</li>
+  <li>For each entry, click through to the open item's history (from Open items).</li>
+  <li>Sample the reasons — does each write-off have a plausible rationale and prior engagement (comments)?</li>
+  <li>Export findings.</li>
+</ol>
+
+<h3>Scenario D: Investigating a suspected control failure</h3>
+<ol>
+  <li>Identify the suspect period + user.</li>
+  <li>Activity log filtered to that actor + period — scan for rapid sequences (reject, then manual-match).</li>
+  <li>For every affected item, open the History drawer.</li>
+  <li>If the pattern is consistent, export the audit log CSV and hand to internal audit for deeper review.</li>
+</ol>
+
+<h2 id="retention">9. Retention policy</h2>
+
+<p>Kilter defaults preserve everything forever. Specifically:</p>
+<ul>
+  <li><strong>audit_log</strong> — no retention. Every row from day one is kept.</li>
+  <li><strong>job_runs</strong> — last 20 per job. Older runs are auto-pruned to keep the table fast; scheduler audit is also captured in audit_log, which is not pruned.</li>
+  <li><strong>sessions, assignments, open_items</strong> — no retention.</li>
+  <li><strong>user_sessions</strong> — only active sessions; expired ones are purged.</li>
+  <li><strong>messages/processed/</strong> — filesystem retention is whatever your backup policy enforces. Generally retained at least as long as the certificate that references them plus 1 year.</li>
+</ul>
+
+<p>If a retention policy requires <em>deletion</em> of data after N years (GDPR right-to-be-forgotten applied to a user, for instance), this is a manual DBA exercise. It is not exposed in the UI because audit integrity is usually considered to override individual retention limits in a regulated banking context.</p>
+
+{% endblock %}

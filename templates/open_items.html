@@ -1,0 +1,325 @@
+{% extends "base.html" %}
+{% block title %}Open items — Kilter{% endblock %}
+{% block crumbs %}<span class="current">Open items</span>{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Open items</h1>
+    <div class="subtitle">Single-sided entries carried across sessions. Clear, recategorize, or write off.</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <h2>Filters</h2>
+  </div>
+  <div class="card-body">
+    <div class="form-grid" style="grid-template-columns: repeat(5, 1fr); gap: 12px;">
+      <div class="field">
+        <label>Account</label>
+        <select id="f-account" class="input"><option value="">All accounts</option></select>
+      </div>
+      <div class="field">
+        <label>Status</label>
+        <select id="f-status" class="input">
+          <option value="open" selected>Open</option>
+          <option value="cleared">Cleared</option>
+          <option value="written_off">Written off</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Category</label>
+        <select id="f-category" class="input">
+          <option value="">All</option>
+          <option value="timing_diff">Timing difference</option>
+          <option value="fx_mismatch">FX mismatch</option>
+          <option value="internal_journal">Internal journal</option>
+          <option value="reversal_pending">Reversal pending</option>
+          <option value="bank_error">Bank error</option>
+          <option value="genuine_break">Genuine break</option>
+          <option value="uncategorized">Uncategorized</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Min age (days)</label>
+        <input id="f-age" type="number" min="0" class="input" placeholder="0">
+      </div>
+      <div class="field" style="align-self: end;">
+        <button id="f-apply" class="btn btn-primary">Apply</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="stats" id="aging-stats" style="margin-top: 24px;"></div>
+
+<div class="card" style="margin-top: 24px;">
+  <div class="card-head">
+    <h2>Items</h2>
+    <span class="hint" id="item-count">—</span>
+  </div>
+  <div class="card-body tight">
+    <table class="table" id="items-table">
+      <thead>
+        <tr>
+          <th>Account</th><th>Side</th><th>Value date</th>
+          <th class="num">Amount</th><th>Sign</th>
+          <th>Ref / narration</th>
+          <th>Category</th><th>Age</th><th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="items-body">
+        <tr class="empty-row"><td colspan="9">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- manual-clear modal -->
+<dialog id="clear-dialog" style="border:1px solid var(--c-border); border-radius:var(--radius-lg); padding:0; max-width:520px; width:90%;">
+  <form method="dialog" style="padding:20px;">
+    <h3 style="margin:0 0 12px 0;">Clear open item</h3>
+    <div class="field">
+      <label>Counterpart session id</label>
+      <input id="cd-session" type="number" class="input" required>
+    </div>
+    <div class="field" style="margin-top:10px;">
+      <label>Counterpart row number</label>
+      <input id="cd-row" type="number" class="input" required>
+    </div>
+    <div class="field" style="margin-top:10px;">
+      <label>Counterpart side (must be opposite of the open item)</label>
+      <select id="cd-side" class="input">
+        <option value="swift">swift</option>
+        <option value="flex">flex</option>
+      </select>
+    </div>
+    <div class="field" style="margin-top:10px;">
+      <label>Note (optional)</label>
+      <textarea id="cd-note" class="input" rows="3" placeholder="e.g. bank confirmed ref XYZ on T+2"></textarea>
+    </div>
+    <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;">
+      <button type="button" class="btn btn-default" id="cd-cancel">Cancel</button>
+      <button type="button" class="btn btn-primary" id="cd-submit">Clear</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- write-off modal -->
+<dialog id="writeoff-dialog" style="border:1px solid var(--c-border); border-radius:var(--radius-lg); padding:0; max-width:520px; width:90%;">
+  <form method="dialog" style="padding:20px;">
+    <h3 style="margin:0 0 12px 0;">Write off open item</h3>
+    <p class="subtitle" style="margin-top:0;">Terminal state. Requires admin or internal_control role.</p>
+    <div class="field">
+      <label>Reason</label>
+      <textarea id="wo-reason" class="input" rows="3" required></textarea>
+    </div>
+    <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;">
+      <button type="button" class="btn btn-default" id="wo-cancel">Cancel</button>
+      <button type="button" class="btn btn-danger-soft" id="wo-submit">Write off</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Break-history drawer -->
+<div id="history-modal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.55);z-index:100;align-items:flex-start;justify-content:center;padding:40px 20px;overflow-y:auto">
+  <div class="card" style="max-width:720px;width:100%;margin:0">
+    <div class="card-head">
+      <h2>Break history</h2>
+      <button class="btn btn-ghost btn-sm" onclick="closeHistory()">Close</button>
+    </div>
+    <div class="card-body tight" id="history-body" style="max-height:70vh;overflow-y:auto"></div>
+  </div>
+</div>
+
+<script>
+  const state = { accounts: [], selected: null };
+
+  // --- History drawer ----------------------------------------------------
+  // Shows the timeline for one open item: opened, comments, audit log
+  // entries, clearing / write-off. Pitched at auditors: "here's every
+  // touch on this break, with who and when."
+  async function openHistory(openItemId) {
+    const drawer = document.getElementById('history-modal');
+    const body   = document.getElementById('history-body');
+    body.innerHTML = '<div style="padding:30px;color:var(--c-text-muted)">Loading…</div>';
+    drawer.style.display = 'flex';
+    const r = await fetch(`/open-items/${openItemId}/history`);
+    if (!r.ok) { body.innerHTML = '<div style="padding:20px">Load failed.</div>'; return; }
+    const d = await r.json();
+    const oi = d.open_item;
+    const kindIcon = {
+      opened:   '◯',
+      comment:  '💬',
+      cleared:  '✓',
+      open_item_auto_cleared:  '↻',
+      open_item_manual_cleared:'✓',
+      open_item_written_off:   '✗',
+    };
+    const kindColor = {
+      opened:   'var(--c-primary)',
+      comment:  'var(--c-accent)',
+      cleared:  'var(--c-success)',
+      open_item_auto_cleared: 'var(--c-state-carry)',
+      open_item_manual_cleared: 'var(--c-success)',
+      open_item_written_off: 'var(--c-text-subtle)',
+    };
+    body.innerHTML = `
+      <div style="padding:20px 24px;border-bottom:1px solid var(--c-border);background:var(--c-surface-2)">
+        <div style="font-size:var(--t-small);color:var(--c-text-muted)">Break #${oi.id} · ${esc(oi.account_label || '')}</div>
+        <div style="font-size:var(--t-2);font-weight:700;margin-top:4px">
+          ${esc(oi.source_side.toUpperCase())} · ${oi.sign || ''} ${fmtAmount(oi.amount)} · ${esc(oi.ref || 'no ref')}
+        </div>
+        <div class="muted" style="margin-top:6px;font-size:var(--t-small)">${esc(oi.narration || '')}</div>
+      </div>
+      <div style="padding:20px 24px">
+        ${d.events.length === 0 ? '<div class="muted">No events.</div>' : `
+          <div style="position:relative;padding-left:28px">
+            <div style="position:absolute;left:10px;top:6px;bottom:6px;width:2px;background:var(--c-border)"></div>
+            ${d.events.map(e => `
+              <div style="position:relative;padding:10px 0;margin-left:4px">
+                <div style="position:absolute;left:-24px;top:14px;width:18px;height:18px;border-radius:50%;background:${kindColor[e.kind] || 'var(--c-primary)'};color:white;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700">${kindIcon[e.kind] || '•'}</div>
+                <div style="font-size:var(--t-small);color:var(--c-text-muted)">${fmtDateTime(e.ts)} · <strong style="color:var(--c-text)">${esc(e.actor || 'system')}</strong></div>
+                <div style="font-size:var(--t-body);margin-top:2px">${esc(e.description)}</div>
+              </div>`).join('')}
+          </div>`}
+      </div>`;
+  }
+  function closeHistory() { document.getElementById('history-modal').style.display = 'none'; }
+
+  async function loadAccounts() {
+    const r = await fetch('/accounts');
+    if (!r.ok) return;
+    state.accounts = await r.json();
+    const sel = document.getElementById('f-account');
+    sel.innerHTML = '<option value="">All accounts</option>' +
+      state.accounts.map(a => `<option value="${a.id}">${esc(a.shortname || a.label)} (${esc(a.currency)})</option>`).join('');
+  }
+
+  function agingBadge(days, bucket) {
+    const cls = bucket === '0-7' ? 'badge-neutral'
+               : bucket === '8-30' ? 'badge-info'
+               : bucket === '31-90' ? 'badge-warn' : 'badge-danger';
+    return `<span class="badge ${cls}">${days}d</span>`;
+  }
+
+  function catBadge(cat, source) {
+    const c = cat || 'uncategorized';
+    const cls = c === 'genuine_break' ? 'badge-danger'
+              : c === 'uncategorized'  ? 'badge-neutral'
+              : c === 'internal_journal' ? 'badge-info' : 'badge-warn';
+    const srcMark = source === 'manual' ? ' ✎' : '';
+    return `<span class="badge ${cls}">${esc(c)}${srcMark}</span>`;
+  }
+
+  async function loadItems() {
+    const acct = document.getElementById('f-account').value;
+    const status = document.getElementById('f-status').value;
+    const cat = document.getElementById('f-category').value;
+    const age = document.getElementById('f-age').value;
+    const qs = new URLSearchParams();
+    if (acct) qs.set('account_id', acct);
+    if (status) qs.set('status', status);
+    if (cat) qs.set('category', cat);
+    if (age) qs.set('min_age_days', age);
+
+    // Aging stats for the selected account (or skip when "all").
+    const statsEl = document.getElementById('aging-stats');
+    if (acct) {
+      const ar = await fetch(`/accounts/${acct}/open-items/aging`);
+      if (ar.ok) {
+        const ag = await ar.json();
+        const b = ag.buckets;
+        statsEl.innerHTML = `
+          <div class="stat"><div class="label">Open total</div><div class="value">${ag.total_open}</div></div>
+          <div class="stat accent-success"><div class="label">0–7 days</div><div class="value">${b['0-7']}</div></div>
+          <div class="stat accent-warn"><div class="label">8–30 days</div><div class="value">${b['8-30']}</div></div>
+          <div class="stat accent-warn"><div class="label">31–90 days</div><div class="value">${b['31-90']}</div></div>
+          <div class="stat accent-danger"><div class="label">90+ days</div><div class="value">${b['90+']}</div></div>`;
+      }
+    } else {
+      statsEl.innerHTML = '';
+    }
+
+    const r = await fetch(`/open-items?${qs.toString()}`);
+    const body = document.getElementById('items-body');
+    const count = document.getElementById('item-count');
+    if (!r.ok) {
+      body.innerHTML = '<tr class="empty-row"><td colspan="9">Failed to load</td></tr>';
+      return;
+    }
+    const rows = await r.json();
+    count.textContent = `${rows.length} row${rows.length === 1 ? '' : 's'}`;
+    if (!rows.length) {
+      body.innerHTML = '<tr class="empty-row"><td colspan="9">No items match these filters</td></tr>';
+      return;
+    }
+    body.innerHTML = rows.map(r => `
+      <tr>
+        <td>${esc(r.account_shortname || r.account_label || '')}</td>
+        <td><span class="badge ${r.source_side === 'swift' ? 'badge-info' : 'badge-neutral'}">${esc(r.source_side)}</span></td>
+        <td>${fmtDate(r.value_date)}</td>
+        <td class="num">${fmtAmount(r.amount)}</td>
+        <td>${esc(r.sign || '')}</td>
+        <td style="max-width:320px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${esc(r.narration || '')}">
+          <strong>${esc(r.ref || '')}</strong> ${esc(r.narration || '')}
+        </td>
+        <td>${catBadge(r.category, r.category_source)}</td>
+        <td>${agingBadge(r.age_days, r.age_bucket)}</td>
+        <td style="white-space:nowrap;">
+          <button class="btn btn-sm btn-ghost" data-history="${r.id}" title="Timeline for this break">History</button>
+          ${r.status === 'open' ? `
+            <button class="btn btn-sm btn-default" data-clear="${r.id}">Clear</button>
+            <button class="btn btn-sm btn-danger-soft" data-writeoff="${r.id}">Write off</button>
+          ` : `<span class="muted">${esc(r.status)}</span>`}
+        </td>
+      </tr>`).join('');
+  }
+
+  document.addEventListener('click', (ev) => {
+    const c = ev.target.closest('[data-clear]');
+    if (c) { state.selected = +c.dataset.clear; document.getElementById('clear-dialog').showModal(); }
+    const w = ev.target.closest('[data-writeoff]');
+    if (w) { state.selected = +w.dataset.writeoff; document.getElementById('writeoff-dialog').showModal(); }
+    const h = ev.target.closest('[data-history]');
+    if (h) { openHistory(+h.dataset.history); }
+    if (ev.target.id === 'history-modal') closeHistory();
+  });
+
+  document.getElementById('cd-cancel').onclick = () => document.getElementById('clear-dialog').close();
+  document.getElementById('wo-cancel').onclick = () => document.getElementById('writeoff-dialog').close();
+
+  document.getElementById('cd-submit').onclick = async () => {
+    const body = {
+      session_id: +document.getElementById('cd-session').value,
+      counterpart_row: +document.getElementById('cd-row').value,
+      counterpart_side: document.getElementById('cd-side').value,
+      note: document.getElementById('cd-note').value || null,
+    };
+    const r = await fetch(`/open-items/${state.selected}/clear`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body),
+    });
+    if (!r.ok) { alert((await r.json().catch(() => ({}))).detail || 'Failed'); return; }
+    document.getElementById('clear-dialog').close();
+    loadItems();
+  };
+
+  document.getElementById('wo-submit').onclick = async () => {
+    const reason = document.getElementById('wo-reason').value.trim();
+    if (!reason) return;
+    const r = await fetch(`/open-items/${state.selected}/write-off`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ reason }),
+    });
+    if (!r.ok) { alert((await r.json().catch(() => ({}))).detail || 'Failed'); return; }
+    document.getElementById('writeoff-dialog').close();
+    loadItems();
+  };
+
+  document.getElementById('f-apply').onclick = loadItems;
+  loadAccounts().then(loadItems);
+
+  document.body.dataset.nav = 'open-items';
+</script>
+{% endblock %}

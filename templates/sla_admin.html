@@ -1,0 +1,254 @@
+{% extends "base.html" %}
+{% block title %}SLA alerts — Kilter{% endblock %}
+{% block crumbs %}<span class="current">SLA alerts</span>{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>SLA alerts</h1>
+    <div class="subtitle">Notification channels that fire when open items age past their threshold. Wire a Teams webhook, add an email stub, or use the log-only channel to test the flow before going live.</div>
+  </div>
+  <button class="btn btn-primary admin-only" id="add-btn" style="display:none">Add channel</button>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <h2>Active channels</h2>
+    <button class="btn btn-ghost btn-sm" id="run-all">Run check now</button>
+  </div>
+  <div class="card-body tight">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Name</th><th>Kind</th><th>Threshold</th>
+          <th>Scope</th><th>Last run</th><th>Last result</th>
+          <th>Active</th><th style="width:180px"></th>
+        </tr>
+      </thead>
+      <tbody id="body"><tr class="empty-row"><td colspan="8">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<div id="modal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.55);z-index:100;align-items:flex-start;justify-content:center;padding:50px 20px;overflow-y:auto">
+  <div class="card" style="max-width:560px;width:100%;margin:0">
+    <div class="card-head">
+      <h2 id="modal-title">Add channel</h2>
+      <button class="btn btn-ghost btn-sm" onclick="closeModal()">Close</button>
+    </div>
+    <div class="card-body">
+      <form id="form" class="form-grid">
+        <input type="hidden" name="id">
+        <div class="field" style="grid-column:1/-1"><label>Name *</label>
+          <input class="input" name="name" required placeholder="e.g. BOG breaks → Teams"></div>
+        <div class="field"><label>Kind *</label>
+          <select class="input" name="kind" id="kind-select" required>
+            <option value="teams">Teams webhook</option>
+            <option value="log">Log only (test)</option>
+            <option value="email">Email (SMTP — not yet implemented)</option>
+          </select></div>
+        <div class="field"><label>Threshold (days)</label>
+          <input class="input" type="number" name="threshold_days" value="30" min="1"></div>
+        <div class="field" style="grid-column:1/-1" id="teams-config">
+          <label>Teams webhook URL *</label>
+          <input class="input" name="webhook_url" placeholder="https://xxx.webhook.office.com/...">
+          <span class="hint" style="font-size:var(--t-small);color:var(--c-text-muted)">Create via Teams → channel → Connectors → Incoming Webhook.</span>
+        </div>
+
+        <div id="email-config" style="display:none;grid-column:1/-1;display:none">
+          <div class="form-grid">
+            <div class="field"><label>SMTP host *</label>
+              <input class="input" name="smtp_host" placeholder="smtp.office365.com"></div>
+            <div class="field"><label>SMTP port</label>
+              <input class="input" type="number" name="smtp_port" value="587"></div>
+            <div class="field"><label>SMTP user</label>
+              <input class="input" name="smtp_user" placeholder="kilter@yourbank.com" autocomplete="off"></div>
+            <div class="field"><label>SMTP password</label>
+              <input class="input" type="password" name="smtp_password" autocomplete="new-password">
+              <span class="hint" style="font-size:var(--t-small);color:var(--c-text-muted)">Stored in the channel config. Rotate via the edit modal; a secrets vault is the right upgrade path.</span>
+            </div>
+            <div class="field"><label>From address *</label>
+              <input class="input" name="from_addr" placeholder='Kilter &lt;kilter@yourbank.com&gt;'></div>
+            <div class="field"><label>To addresses *</label>
+              <input class="input" name="to_addrs" placeholder="ops@yourbank.com, treasury@yourbank.com">
+              <span class="hint" style="font-size:var(--t-small);color:var(--c-text-muted)">Comma-separated.</span>
+            </div>
+            <div class="field" style="grid-column:1/-1"><label>
+                <input type="checkbox" name="use_starttls" checked> Use STARTTLS (recommended)
+              </label>
+            </div>
+          </div>
+        </div>
+        <div class="field" style="grid-column:1/-1"><label>Access-area filter (comma-separated; blank = all)</label>
+          <input class="input" name="access_areas" placeholder="NOSTRO, AFFILIATES"></div>
+        <div class="field"><label>Active</label>
+          <select class="input" name="active"><option value="1">Yes</option><option value="0">No</option></select></div>
+        <div style="grid-column:1/-1;display:flex;gap:10px;align-items:center">
+          <button type="submit" class="btn btn-primary">Save</button>
+          <button type="button" class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+          <span class="status" id="status"></span>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.body.dataset.nav = 'sla';
+
+document.addEventListener('me:loaded', (ev) => {
+  const canEdit = ev.detail.role === 'admin';
+  document.querySelectorAll('.admin-only').forEach(el => { el.style.display = canEdit ? '' : 'none'; });
+});
+
+async function load() {
+  const r = await fetch('/notification-channels');
+  if (!r.ok) { document.getElementById('body').innerHTML = `<tr><td colspan="8">Load failed — admin only.</td></tr>`; return; }
+  const rows = await r.json();
+  const body = document.getElementById('body');
+  if (rows.length === 0) {
+    body.innerHTML = `<tr class="empty-row"><td colspan="8">No channels yet. Add one above.</td></tr>`;
+    return;
+  }
+  body.innerHTML = rows.map(c => {
+    let scope = '';
+    try {
+      const parsed = c.access_area_filter ? JSON.parse(c.access_area_filter) : null;
+      scope = Array.isArray(parsed) && parsed.length ? parsed.join(', ') : 'all';
+    } catch (e) { scope = c.access_area_filter || 'all'; }
+    const kindBadge = {
+      teams: '<span class="badge badge-info">Teams</span>',
+      email: '<span class="badge badge-neutral">Email</span>',
+      log:   '<span class="badge badge-neutral">Log</span>',
+    }[c.kind] || esc(c.kind);
+    return `
+      <tr>
+        <td><strong>${esc(c.name)}</strong></td>
+        <td>${kindBadge}</td>
+        <td class="num">&gt;${c.threshold_days}d</td>
+        <td class="muted">${esc(scope)}</td>
+        <td class="muted" style="font-size:var(--t-micro)">${c.last_run_at ? fmtDateTime(c.last_run_at) : '—'}</td>
+        <td class="muted" style="font-size:var(--t-small)">${esc(c.last_result || '')}</td>
+        <td>${c.active ? '<span class="badge badge-success">Active</span>' : '<span class="badge badge-neutral">Inactive</span>'}</td>
+        <td>
+          <button class="btn btn-ghost btn-sm" onclick="runOne(${c.id}, true)">Dry-run</button>
+          <button class="btn btn-ghost btn-sm" onclick="runOne(${c.id}, false)">Send</button>
+          <button class="btn btn-ghost btn-sm" onclick='openEdit(${JSON.stringify(c)})'>Edit</button>
+        </td>
+      </tr>`;
+  }).join('');
+}
+
+async function runOne(id, dryRun) {
+  const r = await fetch(`/sla/check?channel_id=${id}${dryRun ? '&dry_run=true' : ''}`, { method: 'POST' });
+  if (!r.ok) { alert((await r.json().catch(()=>({}))).detail || 'Failed'); return; }
+  const j = await r.json();
+  alert(`Result: ${JSON.stringify(j, null, 2)}`);
+  load();
+}
+
+document.getElementById('run-all').addEventListener('click', async () => {
+  const r = await fetch('/sla/check', { method: 'POST' });
+  if (!r.ok) { alert((await r.json().catch(()=>({}))).detail || 'Failed'); return; }
+  const j = await r.json();
+  alert(`All channels:\n${JSON.stringify(j, null, 2)}`);
+  load();
+});
+
+function openAdd() {
+  const f = document.getElementById('form');
+  f.reset();
+  f.id.value = '';
+  document.getElementById('modal-title').textContent = 'Add channel';
+  document.getElementById('status').textContent = '';
+  document.getElementById('modal').style.display = 'flex';
+  document.getElementById('kind-select').dispatchEvent(new Event('change'));
+}
+
+function openEdit(c) {
+  const f = document.getElementById('form');
+  f.reset();
+  f.id.value = c.id;
+  f.name.value = c.name;
+  f.kind.value = c.kind;
+  f.threshold_days.value = c.threshold_days;
+  f.active.value = String(c.active);
+  try {
+    const config = c.config_json ? JSON.parse(c.config_json) : {};
+    f.webhook_url.value    = config.webhook_url || '';
+    f.smtp_host.value      = config.smtp_host || '';
+    f.smtp_port.value      = config.smtp_port || 587;
+    f.smtp_user.value      = config.smtp_user || '';
+    f.smtp_password.value  = config.smtp_password || '';
+    f.from_addr.value      = config.from_addr || '';
+    f.to_addrs.value       = Array.isArray(config.to_addrs) ? config.to_addrs.join(', ') : (config.to_addrs || '');
+    f.use_starttls.checked = config.use_starttls !== false;
+  } catch (e) {}
+  try {
+    const areas = c.access_area_filter ? JSON.parse(c.access_area_filter) : [];
+    f.access_areas.value = Array.isArray(areas) ? areas.join(', ') : '';
+  } catch (e) { f.access_areas.value = ''; }
+  document.getElementById('modal-title').textContent = `Edit ${c.name}`;
+  document.getElementById('status').textContent = '';
+  document.getElementById('modal').style.display = 'flex';
+  document.getElementById('kind-select').dispatchEvent(new Event('change'));
+}
+
+function closeModal() { document.getElementById('modal').style.display = 'none'; }
+
+document.getElementById('kind-select').addEventListener('change', (e) => {
+  const kind = e.target.value;
+  document.getElementById('teams-config').style.display = kind === 'teams' ? '' : 'none';
+  document.getElementById('email-config').style.display = kind === 'email' ? 'block' : 'none';
+});
+
+document.getElementById('form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = e.target;
+  const id = f.id.value;
+  let config;
+  if (f.kind.value === 'teams') {
+    config = { webhook_url: f.webhook_url.value.trim() };
+  } else if (f.kind.value === 'email') {
+    config = {
+      smtp_host:     f.smtp_host.value.trim(),
+      smtp_port:     parseInt(f.smtp_port.value, 10) || 587,
+      smtp_user:     f.smtp_user.value.trim(),
+      smtp_password: f.smtp_password.value,
+      from_addr:     f.from_addr.value.trim(),
+      to_addrs:      f.to_addrs.value.split(',').map(s => s.trim()).filter(Boolean),
+      use_starttls:  f.use_starttls.checked,
+    };
+  } else {
+    config = {};
+  }
+  const areas = f.access_areas.value.split(',').map(s => s.trim()).filter(Boolean);
+  const payload = {
+    name: f.name.value.trim(),
+    kind: f.kind.value,
+    config_json: JSON.stringify(config),
+    threshold_days: parseInt(f.threshold_days.value, 10),
+    access_area_filter: areas.length ? JSON.stringify(areas) : null,
+    active: parseInt(f.active.value, 10),
+  };
+  const url = id ? `/notification-channels/${id}` : '/notification-channels';
+  const method = id ? 'PATCH' : 'POST';
+  const status = document.getElementById('status');
+  status.className = 'status'; status.textContent = 'Saving…';
+  try {
+    const r = await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+    if (!r.ok) throw new Error((await r.json().catch(()=>({}))).detail || 'Failed');
+    status.className='status success'; status.textContent='Saved.';
+    closeModal(); load();
+  } catch (err) {
+    status.className='status error'; status.textContent=err.message;
+  }
+});
+
+document.getElementById('add-btn').addEventListener('click', openAdd);
+
+load();
+</script>
+{% endblock %}

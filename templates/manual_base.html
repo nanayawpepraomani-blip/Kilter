@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{% block title %}Kilter Manual{% endblock %}</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 22mm 20mm 24mm 20mm;
+      @bottom-left   { content: "Kilter · {% block footer_left %}{% endblock %}";
+                       font-size: 8pt; color: #52606d; }
+      @bottom-right  { content: "Page " counter(page) " of " counter(pages);
+                       font-size: 8pt; color: #52606d; }
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; }
+    body {
+      font-family: "Segoe UI", "Inter", -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+      color: #0f172a; background: #f5f7fa;
+      font-size: 11pt; line-height: 1.55;
+    }
+    .print-bar {
+      position: sticky; top: 0; z-index: 20;
+      background: #0b1220; color: white; padding: 10px 24px;
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 13px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+    }
+    .print-bar .left { display: flex; align-items: center; gap: 10px; }
+    .print-bar .mark {
+      width: 22px; height: 22px; border-radius: 5px;
+      background: linear-gradient(135deg, #2563eb, #0891b2);
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 800; font-size: 12px;
+    }
+    .print-bar .actions { display: flex; gap: 10px; align-items: center; }
+    .print-bar button {
+      background: white; color: #0b1220; border: 0; padding: 6px 14px;
+      border-radius: 4px; font-weight: 600; cursor: pointer;
+      font-family: inherit; font-size: 13px;
+    }
+    .print-bar button:hover { background: #eff4fb; }
+    .print-bar a { color: #d7deea; text-decoration: none; font-size: 13px; }
+    .print-bar a:hover { color: white; }
+
+    .sheet {
+      max-width: 210mm; margin: 24px auto;
+      background: white; padding: 26mm 24mm;
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+    }
+
+    .cover {
+      text-align: left; padding: 40pt 0 30pt; border-bottom: 3px solid #2563eb;
+      margin-bottom: 30pt;
+    }
+    .cover .eyebrow {
+      font-size: 10pt; letter-spacing: 2px; text-transform: uppercase;
+      color: #2563eb; font-weight: 700; margin-bottom: 10pt;
+    }
+    .cover h1 {
+      font-size: 32pt; margin: 0 0 8pt 0; letter-spacing: -0.8px;
+      color: #0b1220; line-height: 1.15;
+    }
+    .cover .subtitle { font-size: 13pt; color: #52606d; margin-bottom: 24pt; }
+    .cover .meta { font-size: 9pt; color: #9aa5b1; display: flex; gap: 20pt; flex-wrap: wrap; }
+    .cover .meta strong { color: #52606d; }
+
+    .toc {
+      background: #f5f7fa; padding: 14pt 20pt; border-radius: 4pt;
+      margin: 0 0 24pt 0; page-break-after: always;
+    }
+    .toc h2 { margin: 0 0 8pt 0; font-size: 11pt; text-transform: uppercase;
+              letter-spacing: 1.5px; color: #52606d; }
+    .toc ol { margin: 0; padding-left: 18pt; }
+    .toc li { padding: 3pt 0; font-size: 11pt; }
+    .toc a { color: #2563eb; text-decoration: none; }
+
+    h2 {
+      font-size: 18pt; margin: 28pt 0 8pt; color: #0b1220;
+      padding-bottom: 6pt; border-bottom: 2px solid #e4e7eb;
+      page-break-after: avoid;
+    }
+    h3 {
+      font-size: 13pt; margin: 20pt 0 6pt; color: #0b1220;
+      page-break-after: avoid;
+    }
+    h4 {
+      font-size: 11pt; margin: 14pt 0 4pt; color: #52606d;
+      text-transform: uppercase; letter-spacing: 0.6px;
+    }
+    p { margin: 8pt 0; }
+    ul, ol { padding-left: 20pt; }
+    li { margin: 4pt 0; }
+    code, kbd {
+      font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+      font-size: 10pt; background: #f1f5f9; padding: 1pt 5pt;
+      border-radius: 3pt; color: #0f172a;
+    }
+    kbd {
+      border: 1px solid #cbd2d9; border-bottom-width: 2px;
+      font-size: 9pt;
+    }
+    pre {
+      background: #0b1220; color: #d7deea; padding: 12pt 14pt;
+      border-radius: 4pt; overflow-x: auto; font-size: 9.5pt;
+      line-height: 1.5; page-break-inside: avoid;
+    }
+    pre code { background: none; padding: 0; color: inherit; font-size: inherit; }
+
+    table {
+      width: 100%; border-collapse: collapse; margin: 10pt 0;
+      font-size: 10pt; page-break-inside: avoid;
+    }
+    th, td {
+      padding: 6pt 10pt; text-align: left; vertical-align: top;
+      border-bottom: 1px solid #e4e7eb;
+    }
+    th { background: #f5f7fa; color: #52606d; font-weight: 600;
+         text-transform: uppercase; font-size: 9pt; letter-spacing: 0.5px; }
+
+    .callout {
+      background: #eff6ff; border-left: 3px solid #2563eb;
+      padding: 10pt 14pt; margin: 14pt 0; border-radius: 0 4pt 4pt 0;
+      page-break-inside: avoid;
+    }
+    .callout.warn { background: #fef3c7; border-left-color: #d97706; }
+    .callout.danger { background: #fee2e2; border-left-color: #dc2626; }
+    .callout.tip { background: #d1fae5; border-left-color: #059669; }
+    .callout strong { color: #0b1220; }
+
+    .path { color: #2563eb; font-weight: 600; font-family: inherit; }
+    .role-pill {
+      display: inline-block; padding: 1pt 8pt; border-radius: 999pt;
+      font-size: 8pt; font-weight: 700; letter-spacing: 0.5px;
+      text-transform: uppercase; vertical-align: middle; margin-right: 3pt;
+    }
+    .role-admin { background: #dbeafe; color: #1e3a8a; }
+    .role-ops { background: #d1fae5; color: #065f46; }
+    .role-audit { background: #f1f5f9; color: #52606d; }
+    .role-ic { background: #fef3c7; color: #78350f; }
+
+    @media print {
+      body { background: white; }
+      .print-bar { display: none; }
+      .sheet {
+        box-shadow: none; margin: 0; max-width: none; padding: 0;
+      }
+      h2 { page-break-before: auto; }
+      .cover { page-break-after: always; border-bottom: 3px solid #2563eb; }
+      .role-pill, .callout, th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      a { color: inherit; text-decoration: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="print-bar">
+    <div class="left">
+      <div class="mark">K</div>
+      <strong>Kilter · {% block bar_label %}Manual{% endblock %}</strong>
+    </div>
+    <div class="actions">
+      <button onclick="window.print()">Save as PDF / Print</button>
+      <a href="/manuals">← All manuals</a>
+      <a href="/">Back to app</a>
+    </div>
+  </div>
+
+  <div class="sheet">
+    <div class="cover">
+      <div class="eyebrow">{% block cover_eyebrow %}Kilter Documentation{% endblock %}</div>
+      <h1>{% block cover_title %}Manual{% endblock %}</h1>
+      <div class="subtitle">{% block cover_subtitle %}{% endblock %}</div>
+      <div class="meta">
+        <span><strong>Audience:</strong> {% block audience %}All users{% endblock %}</span>
+        <span><strong>Version:</strong> {{ app_version or '1.0' }}</span>
+        <span><strong>Generated:</strong> {{ generated_at }}</span>
+      </div>
+    </div>
+
+    {% block toc %}{% endblock %}
+    {% block content %}{% endblock %}
+  </div>
+</body>
+</html>

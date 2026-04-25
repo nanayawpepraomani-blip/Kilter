@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% block title %}Tolerance & rules — Kilter{% endblock %}
+{% block crumbs %}<span class="current">Tolerance &amp; rules</span>{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Tolerance &amp; categorization rules</h1>
+    <div class="subtitle">Per-account match thresholds and auto-categorization for one-sided items.</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head"><h2>Account tolerance rules</h2><span class="hint">Edit per-account from the account status page</span></div>
+  <div class="card-body tight">
+    <table class="table" id="tol-table">
+      <thead>
+        <tr><th>Account</th><th>Currency</th><th class="num">Amount abs</th><th class="num">Amount %</th>
+            <th class="num">Date ± days</th><th class="num">Min ref len</th><th>Updated</th><th></th></tr>
+      </thead>
+      <tbody id="tol-body"><tr class="empty-row"><td colspan="8">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card" style="margin-top: 24px;">
+  <div class="card-head"><h2>Auto-categorization rules</h2>
+    <button id="add-rule" class="btn btn-primary btn-sm">Add rule</button>
+  </div>
+  <div class="card-body tight">
+    <table class="table">
+      <thead>
+        <tr><th class="num">Priority</th><th>Name</th><th>Side</th><th>Narration contains</th>
+            <th>Type</th><th>Amount range</th><th>Category</th><th>Active</th><th></th></tr>
+      </thead>
+      <tbody id="rule-body"><tr class="empty-row"><td colspan="9">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<dialog id="rule-dialog" style="border:1px solid var(--c-border); border-radius:var(--radius-lg); padding:0; max-width:600px; width:90%;">
+  <form method="dialog" style="padding:20px;">
+    <h3 style="margin:0 0 12px 0;">New auto-categorization rule</h3>
+    <div class="form-grid">
+      <div class="field"><label>Name</label><input id="r-name" class="input" required></div>
+      <div class="field"><label>Priority (lower runs first)</label><input id="r-priority" type="number" value="100" class="input"></div>
+      <div class="field"><label>Side</label>
+        <select id="r-side" class="input">
+          <option value="">Both</option><option value="swift">swift</option><option value="flex">flex</option>
+        </select></div>
+      <div class="field"><label>Category</label>
+        <select id="r-category" class="input">
+          <option value="timing_diff">timing_diff</option>
+          <option value="fx_mismatch">fx_mismatch</option>
+          <option value="internal_journal">internal_journal</option>
+          <option value="reversal_pending">reversal_pending</option>
+          <option value="bank_error">bank_error</option>
+          <option value="genuine_break">genuine_break</option>
+          <option value="uncategorized">uncategorized</option>
+        </select></div>
+      <div class="field span-full"><label>Narration contains (case-insensitive)</label>
+        <input id="r-narr" class="input" placeholder="e.g. INT, CHRG, ACCRUAL"></div>
+      <div class="field"><label>Type equals</label>
+        <input id="r-type" class="input" placeholder="CR / DR / C / D"></div>
+      <div class="field"><label>Amount min</label><input id="r-amin" type="number" class="input"></div>
+      <div class="field"><label>Amount max</label><input id="r-amax" type="number" class="input"></div>
+    </div>
+    <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;">
+      <button type="button" class="btn btn-default" id="r-cancel">Cancel</button>
+      <button type="button" class="btn btn-primary" id="r-submit">Create</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+  async function loadTolerance() {
+    const [accounts] = await Promise.all([fetch('/accounts').then(r => r.json())]);
+    const body = document.getElementById('tol-body');
+    if (!accounts.length) {
+      body.innerHTML = '<tr class="empty-row"><td colspan="8">No accounts yet</td></tr>';
+      return;
+    }
+    const rows = await Promise.all(accounts.map(async a => {
+      const t = await fetch(`/accounts/${a.id}/tolerance`).then(r => r.json());
+      return { a, t };
+    }));
+    body.innerHTML = rows.map(({a, t}) => `
+      <tr>
+        <td><a href="/accounts/${a.id}/status-page">${esc(a.shortname || a.label)}</a></td>
+        <td>${esc(a.currency)}</td>
+        <td class="num">${t.amount_tol_abs}</td>
+        <td class="num">${t.amount_tol_pct}%</td>
+        <td class="num">${t.date_tol_days}</td>
+        <td class="num">${t.min_ref_len}</td>
+        <td>${t.is_default ? '<span class="muted">default</span>' : fmtDateTime(t.updated_at)}</td>
+        <td><a href="/accounts/${a.id}/status-page" class="btn btn-sm btn-default">Edit</a></td>
+      </tr>`).join('');
+  }
+
+  async function loadRules() {
+    const r = await fetch('/auto-cat-rules');
+    const body = document.getElementById('rule-body');
+    if (!r.ok) { body.innerHTML = '<tr class="empty-row"><td colspan="9">Failed</td></tr>'; return; }
+    const rules = await r.json();
+    if (!rules.length) {
+      body.innerHTML = '<tr class="empty-row"><td colspan="9">No rules defined — all items will be tagged <code>uncategorized</code></td></tr>';
+      return;
+    }
+    body.innerHTML = rules.map(r => {
+      const range = (r.amount_min != null || r.amount_max != null)
+        ? `${r.amount_min ?? ''} — ${r.amount_max ?? ''}` : '';
+      return `<tr>
+        <td class="num">${r.priority}</td>
+        <td>${esc(r.name)}</td>
+        <td>${esc(r.side || 'both')}</td>
+        <td>${esc(r.narration_contains || '')}</td>
+        <td>${esc(r.type_equals || '')}</td>
+        <td>${esc(range)}</td>
+        <td><span class="badge badge-neutral">${esc(r.category)}</span></td>
+        <td>${r.active ? '<span class="badge badge-success">active</span>' : '<span class="badge badge-neutral">inactive</span>'}</td>
+        <td>${r.active ? `<button data-del="${r.id}" class="btn btn-sm btn-danger-soft">Disable</button>` : ''}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  document.getElementById('add-rule').onclick = () => document.getElementById('rule-dialog').showModal();
+  document.getElementById('r-cancel').onclick = () => document.getElementById('rule-dialog').close();
+  document.getElementById('r-submit').onclick = async () => {
+    const body = {
+      name: document.getElementById('r-name').value.trim(),
+      priority: +document.getElementById('r-priority').value || 100,
+      side: document.getElementById('r-side').value || null,
+      category: document.getElementById('r-category').value,
+      narration_contains: document.getElementById('r-narr').value.trim() || null,
+      type_equals: document.getElementById('r-type').value.trim() || null,
+      amount_min: document.getElementById('r-amin').value ? +document.getElementById('r-amin').value : null,
+      amount_max: document.getElementById('r-amax').value ? +document.getElementById('r-amax').value : null,
+      active: true,
+    };
+    if (!body.name) return alert('Name is required');
+    const r = await fetch('/auto-cat-rules', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body),
+    });
+    if (!r.ok) { alert((await r.json().catch(() => ({}))).detail || 'Failed'); return; }
+    document.getElementById('rule-dialog').close();
+    loadRules();
+  };
+
+  document.addEventListener('click', async (ev) => {
+    const d = ev.target.closest('[data-del]');
+    if (!d) return;
+    if (!confirm('Disable this rule? Items already categorized by it keep their category.')) return;
+    const r = await fetch(`/auto-cat-rules/${d.dataset.del}`, { method: 'DELETE' });
+    if (!r.ok) { alert((await r.json().catch(() => ({}))).detail || 'Failed'); return; }
+    loadRules();
+  });
+
+  loadTolerance();
+  loadRules();
+
+  document.body.dataset.nav = 'tolerance';
+</script>
+{% endblock %}

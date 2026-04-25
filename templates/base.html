@@ -1,0 +1,1303 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{% block title %}Kilter{% endblock %}</title>
+  <style>
+    /* ============================================================
+       Design system — one place for tokens, typography, components.
+       Kept inline so the whole app is self-contained, no build step.
+       ============================================================ */
+    :root {
+      /* --- base palette ------------------------------------------------- */
+      --c-bg:        #f6f8fb;
+      --c-bg-sub:    #eef1f6;
+      --c-surface:   #ffffff;
+      --c-surface-2: #f9fafc;
+      --c-border:    #e4e7eb;
+      --c-border-strong: #cbd2d9;
+      --c-text:      #0f172a;
+      --c-text-muted:#52606d;
+      --c-text-subtle:#9aa5b1;
+
+      /* --- brand + accents --------------------------------------------- */
+      --c-primary:   #2563eb;
+      --c-primary-hover: #1d4ed8;
+      --c-primary-soft:  #dbeafe;
+      --c-accent:    #06b6d4;
+      --c-accent-soft: #cffafe;
+      --c-violet:    #7c3aed;
+      --c-violet-soft: #ede9fe;
+
+      /* --- semantic (status) ------------------------------------------- */
+      --c-success:   #059669;
+      --c-success-soft: #d1fae5;
+      --c-warn:      #d97706;
+      --c-warn-soft: #fef3c7;
+      --c-danger:    #dc2626;
+      --c-danger-soft: #fee2e2;
+      --c-info:      #4338ca;
+      --c-info-soft: #e0e7ff;
+
+      /* --- reconciliation-state (used by badges + charts) -------------- */
+      --c-state-cleared:  #10b981;
+      --c-state-pending:  #f59e0b;
+      --c-state-aged:     #ef4444;
+      --c-state-writeoff: #6b7280;
+      --c-state-carry:    #8b5cf6;
+
+      /* --- sidebar ----------------------------------------------------- */
+      --c-sidebar-bg:    #0b1220;
+      --c-sidebar-text:  #d7deea;
+      --c-sidebar-muted: #64748b;
+      --c-sidebar-active-bg: rgba(37, 99, 235, 0.22);
+      --c-sidebar-hover-bg:  rgba(255, 255, 255, 0.06);
+
+      /* --- chart series ------------------------------------------------ */
+      --c-chart-1: #2563eb;
+      --c-chart-2: #06b6d4;
+      --c-chart-3: #8b5cf6;
+      --c-chart-4: #10b981;
+      --c-chart-5: #f59e0b;
+      --c-chart-6: #ef4444;
+      --c-chart-grid: #e4e7eb;
+
+      --t-1: 28px;
+      --t-2: 20px;
+      --t-3: 16px;
+      --t-body: 14px;
+      --t-small: 13px;
+      --t-micro: 12px;
+
+      --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
+      --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.06);
+      --shadow-lg: 0 10px 30px rgba(15, 23, 42, 0.08);
+
+      --radius: 8px;
+      --radius-lg: 12px;
+
+      --sidebar-w: 232px;
+      --topbar-h: 60px;
+    }
+
+    /* Dark mode — overrides. Toggled via [data-theme="dark"] on <html>.
+       Applied before first paint by an inline script at the top of <body>
+       to avoid the flash-of-light-mode on page load. */
+    html[data-theme="dark"] {
+      --c-bg:        #0b1220;
+      --c-bg-sub:    #0f1729;
+      --c-surface:   #131c2e;
+      --c-surface-2: #1a2339;
+      --c-border:    #26324a;
+      --c-border-strong: #3b4a6b;
+      --c-text:      #e7edf7;
+      --c-text-muted:#97a3b8;
+      --c-text-subtle:#64748b;
+
+      --c-primary-soft:  rgba(37, 99, 235, 0.18);
+      --c-success-soft:  rgba(16, 185, 129, 0.18);
+      --c-warn-soft:     rgba(217, 119, 6, 0.18);
+      --c-danger-soft:   rgba(220, 38, 38, 0.18);
+      --c-info-soft:     rgba(67, 56, 202, 0.22);
+      --c-accent-soft:   rgba(6, 182, 212, 0.18);
+      --c-violet-soft:   rgba(124, 58, 237, 0.22);
+
+      --c-sidebar-bg: #05090f;
+      --c-chart-grid: #26324a;
+
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+      --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+      --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.5);
+    }
+
+    /* Dark-mode per-rule overrides for the hardcoded pale backgrounds in
+       the page-specific <style> blocks (review.html, reports.html, etc.).
+       Inline style="" attributes aren't caught by these; those are fixed
+       at the markup level. */
+    html[data-theme="dark"] kbd,
+    html[data-theme="dark"] .kbd-help kbd {
+      background: var(--c-bg-sub); border-color: var(--c-border-strong);
+      color: var(--c-text-muted);
+    }
+    html[data-theme="dark"] .table th {
+      background: var(--c-surface-2); color: var(--c-text-muted);
+    }
+    html[data-theme="dark"] .table tbody tr:hover td { background: var(--c-surface-2); }
+    html[data-theme="dark"] .table td { border-bottom-color: var(--c-border); }
+    html[data-theme="dark"] .badge-neutral {
+      background: var(--c-bg-sub); color: var(--c-text-muted);
+    }
+    html[data-theme="dark"] input[type="file"].input { background: var(--c-surface-2); }
+    html[data-theme="dark"] .btn-default { background: var(--c-surface-2); }
+    html[data-theme="dark"] .btn-default:hover:not(:disabled) { background: var(--c-surface); }
+    html[data-theme="dark"] .btn-ghost:hover:not(:disabled) { background: var(--c-surface-2); color: var(--c-text); }
+    html[data-theme="dark"] .scope-trigger { background: var(--c-surface); }
+    html[data-theme="dark"] .scope-trigger:hover { background: var(--c-surface-2); }
+    html[data-theme="dark"] .scope-list label:hover { background: var(--c-surface-2); }
+    html[data-theme="dark"] .scope-search input,
+    html[data-theme="dark"] .input, html[data-theme="dark"] select, html[data-theme="dark"] textarea {
+      background: var(--c-surface); color: var(--c-text); border-color: var(--c-border-strong);
+    }
+    html[data-theme="dark"] details > summary { color: var(--c-accent); }
+
+    /* --- review.html specific panels + tier colors ------------------- */
+    html[data-theme="dark"] .reconcile-panel.cleared {
+      background: rgba(37, 99, 235, 0.08); border-color: rgba(37, 99, 235, 0.25);
+    }
+    html[data-theme="dark"] .reconcile-panel.reconcile {
+      background: var(--c-surface-2); border-color: var(--c-border);
+    }
+    html[data-theme="dark"] .stats-strip .stat-tile.progress .bar { background: var(--c-bg-sub); }
+    html[data-theme="dark"] .tab .pill { background: var(--c-bg-sub); color: var(--c-text-muted); }
+    html[data-theme="dark"] .tier-1 { background: rgba(16, 185, 129, 0.18); color: #6ee7b7; }
+    html[data-theme="dark"] .tier-2 { background: rgba(217, 119, 6, 0.18); color: #fcd34d; }
+    html[data-theme="dark"] .tier-3 { background: rgba(234, 88, 12, 0.18); color: #fdba74; }
+    html[data-theme="dark"] .tier-4 { background: rgba(220, 38, 38, 0.18); color: #fca5a5; }
+    html[data-theme="dark"] .diff-banner {
+      background: rgba(217, 119, 6, 0.15); color: #fcd34d;
+      border-top-color: rgba(217, 119, 6, 0.3);
+    }
+    html[data-theme="dark"] .competing-strip { background: var(--c-surface-2); }
+    html[data-theme="dark"] .notes-strip {
+      background: rgba(217, 119, 6, 0.10); color: #fcd34d;
+      border-top-color: rgba(217, 119, 6, 0.3);
+    }
+    html[data-theme="dark"] .notes-strip .note { border-bottom-color: rgba(217, 119, 6, 0.25); }
+    html[data-theme="dark"] .notes-strip .note .body { color: var(--c-text); }
+    html[data-theme="dark"] .notes-strip .note .meta { color: #fbbf24; }
+    html[data-theme="dark"] .notes-strip .empty { color: var(--c-text-subtle); }
+    html[data-theme="dark"] .register tr.picked td { background: rgba(37, 99, 235, 0.18); }
+    html[data-theme="dark"] .register-controls { background: var(--c-surface-2); }
+    html[data-theme="dark"] .actions-bar { background: var(--c-surface-2); }
+    html[data-theme="dark"] .register .side-badge.swift {
+      background: rgba(37, 99, 235, 0.18); color: #93c5fd;
+    }
+    html[data-theme="dark"] .register .side-badge.flex {
+      background: rgba(217, 119, 6, 0.18); color: #fcd34d;
+    }
+    html[data-theme="dark"] .register .status-badge.unmatched {
+      background: var(--c-bg-sub); color: var(--c-text-muted);
+    }
+
+    /* --- reports.html / enroll.html / login.html pale panels --------- */
+    html[data-theme="dark"] .qr-panel,
+    html[data-theme="dark"] .secret-box {
+      background: var(--c-surface-2) !important;
+    }
+
+    /* --- Dialog element default white backdrop ----------------------- */
+    html[data-theme="dark"] dialog, html[data-theme="dark"] dialog.recon-dlg {
+      background: var(--c-surface); color: var(--c-text);
+      border-color: var(--c-border);
+    }
+    html[data-theme="dark"] dialog::backdrop,
+    html[data-theme="dark"] dialog.recon-dlg::backdrop {
+      background: rgba(2, 6, 23, 0.7);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0; background: var(--c-bg); color: var(--c-text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, Helvetica, Arial, sans-serif;
+      font-size: var(--t-body); line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--c-primary); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code, kbd { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.92em; }
+    kbd {
+      background: #eef1f5; border: 1px solid var(--c-border);
+      border-bottom-width: 2px; border-radius: 4px;
+      padding: 1px 6px; font-size: var(--t-micro); color: var(--c-text-muted);
+    }
+
+    /* ------------------------- Layout ------------------------- */
+    .app { display: grid; grid-template-columns: var(--sidebar-w) 1fr; min-height: 100vh; }
+    .sidebar {
+      background: var(--c-sidebar-bg); color: var(--c-sidebar-text);
+      display: flex; flex-direction: column;
+      position: sticky; top: 0; height: 100vh;
+    }
+    .sidebar .brand {
+      display: flex; align-items: center; gap: 10px;
+      padding: 18px 20px; border-bottom: 1px solid rgba(255,255,255,0.06);
+      color: white; font-weight: 700; letter-spacing: 0.3px;
+    }
+    .sidebar .brand-mark {
+      width: 28px; height: 28px; border-radius: 6px;
+      background: linear-gradient(135deg, #2563eb 0%, #0891b2 100%);
+      display: flex; align-items: center; justify-content: center;
+      color: white; font-weight: 800; font-size: 13px;
+    }
+    .sidebar nav {
+      padding: 12px 10px; flex: 1 1 0; min-height: 0;
+      display: flex; flex-direction: column; gap: 2px;
+      overflow-y: auto; overflow-x: hidden;
+    }
+    .sidebar nav::-webkit-scrollbar { width: 6px; }
+    .sidebar nav::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 3px; }
+    .sidebar nav::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.18); }
+    .sidebar nav a {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 12px; border-radius: 6px;
+      color: var(--c-sidebar-text); font-size: var(--t-body); font-weight: 500;
+      text-decoration: none; opacity: 0.82;
+      transition: background 120ms ease, color 120ms ease, opacity 120ms ease, box-shadow 120ms ease;
+    }
+    .sidebar nav a:hover { background: var(--c-sidebar-hover-bg); color: white; opacity: 1; }
+    .sidebar nav a.active { background: var(--c-sidebar-active-bg); color: white; opacity: 1; box-shadow: inset 3px 0 0 var(--c-primary); }
+    .sidebar nav .group-label {
+      padding: 14px 12px 6px; font-size: 11px; letter-spacing: 0.6px;
+      text-transform: uppercase; color: var(--c-sidebar-muted); font-weight: 600;
+    }
+    .sidebar .foot {
+      padding: 14px 16px; border-top: 1px solid rgba(255,255,255,0.06);
+      font-size: var(--t-small); color: #8594aa;
+    }
+    .sidebar .foot .u { color: white; font-weight: 500; }
+    .sidebar .foot input {
+      background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12);
+      color: white; padding: 4px 8px; border-radius: 4px;
+      font-size: var(--t-small); width: 100%; margin-top: 4px;
+    }
+
+    .main { display: flex; flex-direction: column; min-width: 0; }
+    .topbar {
+      height: var(--topbar-h);
+      background: var(--c-surface); border-bottom: 1px solid var(--c-border);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 28px; position: sticky; top: 0; z-index: 10;
+    }
+    .topbar .crumbs { display: flex; align-items: center; gap: 8px; font-size: var(--t-body); color: var(--c-text-muted); min-width: 0; }
+    .topbar .crumbs .sep { color: var(--c-text-subtle); }
+    .topbar .crumbs .current { color: var(--c-text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .topbar .actions { display: flex; gap: 8px; align-items: center; }
+    .topbar .env {
+      background: var(--c-warn-soft); color: var(--c-warn);
+      padding: 2px 8px; border-radius: 4px; font-size: var(--t-micro);
+      font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px;
+    }
+
+    /* --- Command palette trigger / theme toggle / kbd hint in topbar --- */
+    .kbd-hint {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 10px; border: 1px solid var(--c-border-strong);
+      border-radius: 6px; background: var(--c-surface-2);
+      font-size: var(--t-small); color: var(--c-text-muted); cursor: pointer;
+      font-family: inherit;
+    }
+    .kbd-hint:hover { background: var(--c-primary-soft); color: var(--c-primary); border-color: var(--c-primary); }
+    .kbd-hint kbd { font-size: 10px; padding: 1px 5px; }
+    .theme-toggle {
+      width: 34px; height: 30px; display: inline-flex; align-items: center;
+      justify-content: center; border: 1px solid var(--c-border-strong);
+      border-radius: 6px; background: var(--c-surface); cursor: pointer;
+      color: var(--c-text-muted); font-size: 15px; font-family: inherit;
+    }
+    .theme-toggle:hover { background: var(--c-primary-soft); color: var(--c-primary); border-color: var(--c-primary); }
+
+    /* --- Command palette overlay ------------------------------------- */
+    .palette-backdrop {
+      position: fixed; inset: 0; background: rgba(2, 6, 23, 0.55);
+      display: none; align-items: flex-start; justify-content: center;
+      padding: 80px 20px 20px; z-index: 200;
+      backdrop-filter: blur(3px);
+    }
+    .palette-backdrop.open { display: flex; }
+    .palette {
+      width: 100%; max-width: 620px; background: var(--c-surface);
+      border: 1px solid var(--c-border); border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-lg); overflow: hidden;
+      display: flex; flex-direction: column; max-height: 70vh;
+    }
+    .palette-input {
+      width: 100%; border: 0; padding: 16px 20px; font-size: 16px;
+      color: var(--c-text); background: var(--c-surface); outline: none;
+      font-family: inherit; border-bottom: 1px solid var(--c-border);
+    }
+    .palette-results { overflow-y: auto; padding: 6px 0; }
+    .palette-group {
+      padding: 8px 20px 4px; font-size: 11px; font-weight: 600;
+      letter-spacing: 0.5px; text-transform: uppercase;
+      color: var(--c-text-subtle);
+    }
+    .palette-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 20px; cursor: pointer; font-size: var(--t-body);
+      color: var(--c-text);
+    }
+    .palette-item:hover, .palette-item.active {
+      background: var(--c-primary-soft); color: var(--c-primary);
+    }
+    .palette-item .ico { font-size: 14px; color: var(--c-text-subtle); width: 16px; text-align: center; }
+    .palette-item.active .ico { color: var(--c-primary); }
+    .palette-item .sub { color: var(--c-text-subtle); font-size: var(--t-small); margin-left: auto; }
+    .palette-item.active .sub { color: var(--c-primary); opacity: 0.7; }
+    .palette-foot {
+      padding: 10px 20px; border-top: 1px solid var(--c-border);
+      font-size: var(--t-micro); color: var(--c-text-subtle);
+      display: flex; gap: 16px;
+    }
+    .palette-foot kbd { font-size: 10px; }
+
+    /* --- Keyboard-help overlay (shown with "?") --------------------- */
+    .kbd-help-backdrop {
+      position: fixed; inset: 0; background: rgba(2, 6, 23, 0.6);
+      display: none; align-items: center; justify-content: center;
+      padding: 20px; z-index: 210;
+    }
+    .kbd-help-backdrop.open { display: flex; }
+    .kbd-help {
+      background: var(--c-surface); border: 1px solid var(--c-border);
+      border-radius: var(--radius-lg); padding: 24px 28px;
+      max-width: 520px; width: 100%; box-shadow: var(--shadow-lg);
+    }
+    .kbd-help h3 { margin: 0 0 16px 0; font-size: var(--t-2); }
+    .kbd-help table { width: 100%; font-size: var(--t-small); }
+    .kbd-help td { padding: 6px 0; }
+    .kbd-help td:first-child { width: 120px; }
+    .kbd-help kbd { margin-right: 4px; }
+
+    /* --- Chart utilities (inline SVG) -------------------------------- */
+    .chart-card .card-body { padding: 16px 20px; }
+    .chart-legend {
+      display: flex; flex-wrap: wrap; gap: 14px;
+      font-size: var(--t-small); color: var(--c-text-muted); margin-top: 10px;
+    }
+    .chart-legend span.dot {
+      width: 10px; height: 10px; border-radius: 2px; display: inline-block;
+      margin-right: 6px; vertical-align: middle;
+    }
+    .chart-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; font-size: var(--t-small); }
+    .chart-row .label { width: 140px; color: var(--c-text-muted); }
+    .chart-row .bar-track {
+      flex: 1; height: 10px; background: var(--c-bg-sub); border-radius: 999px; overflow: hidden;
+    }
+    .chart-row .bar-fill { height: 100%; border-radius: 999px; transition: width 0.3s ease; }
+    .chart-row .val { width: 60px; text-align: right; font-variant-numeric: tabular-nums; color: var(--c-text); font-weight: 500; }
+
+    /* --- Presenter mode: `?presenter=1` hides the sidebar/topbar and
+           enlarges dashboard chrome for a big-screen walkthrough. Driven
+           by a `body.presenter` class set from JS. ------------------------ */
+    body.presenter .sidebar,
+    body.presenter .topbar { display: none; }
+    body.presenter .app { grid-template-columns: 1fr; }
+    body.presenter .content { padding: 32px 48px; }
+    body.presenter h1 { font-size: 40px; }
+    body.presenter .stat .value { font-size: 44px; }
+    body.presenter .stat .label { font-size: 14px; }
+    body.presenter .chart-card { box-shadow: var(--shadow-lg); }
+    body.presenter #presenter-banner {
+      display: flex !important; position: fixed; top: 12px; right: 12px;
+      background: var(--c-surface); border: 1px solid var(--c-border);
+      padding: 6px 14px; border-radius: 999px; font-size: var(--t-small);
+      color: var(--c-text-muted); box-shadow: var(--shadow-md);
+      align-items: center; gap: 10px; z-index: 50;
+    }
+
+    /* --- First-run welcome overlay ------------------------------------ */
+    .tour-backdrop {
+      position: fixed; inset: 0; background: rgba(2, 6, 23, 0.7);
+      display: none; align-items: center; justify-content: center;
+      padding: 20px; z-index: 220;
+    }
+    .tour-backdrop.open { display: flex; }
+    .tour {
+      background: var(--c-surface); border: 1px solid var(--c-border);
+      border-radius: var(--radius-lg); padding: 32px 36px;
+      max-width: 560px; width: 100%; box-shadow: var(--shadow-lg);
+    }
+    .tour h2 {
+      margin: 0 0 8px 0; font-size: 22px;
+      background: linear-gradient(135deg, var(--c-primary), var(--c-violet));
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+    }
+    .tour .tour-step { display: flex; gap: 14px; padding: 12px 0; }
+    .tour .tour-step .num {
+      width: 28px; height: 28px; border-radius: 50%;
+      background: var(--c-primary-soft); color: var(--c-primary);
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700; flex-shrink: 0;
+    }
+    .tour .tour-step .what { font-weight: 600; margin-bottom: 2px; }
+    .tour .tour-step .how { color: var(--c-text-muted); font-size: var(--t-small); }
+    .tour .tour-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+
+    /* --- Review split-view rows -------------------------------------- */
+    .split-row {
+      padding: 10px 14px; border-bottom: 1px solid var(--c-border);
+      cursor: pointer; display: grid;
+      grid-template-columns: 16px 76px 1fr 100px 90px;
+      gap: 10px; align-items: baseline; font-size: var(--t-small);
+      transition: background 0.08s ease;
+    }
+    .split-row:hover { background: var(--c-surface-2); }
+    .split-row.focused { background: var(--c-primary-soft); }
+    .split-row.selected {
+      background: rgba(37, 99, 235, 0.12);
+      box-shadow: inset 3px 0 0 var(--c-primary);
+    }
+    .split-row.selected.focused { background: rgba(37, 99, 235, 0.22); }
+    .split-row .sel-dot {
+      width: 12px; height: 12px; border-radius: 50%;
+      border: 1.5px solid var(--c-border-strong);
+    }
+    .split-row.selected .sel-dot {
+      border-color: var(--c-primary); background: var(--c-primary);
+      box-shadow: inset 0 0 0 2px var(--c-surface);
+    }
+    .split-row .date { color: var(--c-text-muted); font-variant-numeric: tabular-nums; }
+    .split-row .ref  { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: var(--t-micro); color: var(--c-text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .split-row .ref .narr { font-weight: 400; color: var(--c-text-muted); margin-left: 6px; }
+    .split-row .amt  { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+    .split-row .amt.dr { color: var(--c-danger); }
+    .split-row .amt.cr { color: var(--c-success); }
+    .split-row .stat { text-align: right; }
+
+    .diff-pill {
+      padding: 6px 12px; border-radius: 999px; font-weight: 600;
+      font-size: var(--t-small); font-variant-numeric: tabular-nums;
+    }
+    .diff-pill.tie { background: var(--c-success-soft); color: var(--c-success); }
+    .diff-pill.mismatch { background: var(--c-danger-soft); color: var(--c-danger); }
+
+    /* --- At-risk callout on dashboard -------------------------------- */
+    .risk-callout {
+      background: linear-gradient(135deg, var(--c-danger-soft) 0%, var(--c-warn-soft) 100%);
+      border: 1px solid var(--c-border); border-radius: var(--radius-lg);
+      padding: 14px 20px; display: flex; align-items: center; gap: 14px;
+      margin-bottom: 20px;
+    }
+    .risk-callout .icon { font-size: 28px; }
+    .risk-callout .title { font-weight: 600; color: var(--c-danger); }
+    .risk-callout .body { flex: 1; color: var(--c-text); font-size: var(--t-small); }
+
+    .content { padding: 28px 32px 64px; }
+    .page-head { margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+    .page-head h1 { margin: 0; font-size: var(--t-1); font-weight: 700; letter-spacing: -0.3px; }
+    .page-head .subtitle { color: var(--c-text-muted); margin-top: 4px; font-size: var(--t-body); }
+
+    /* ------------------------- Card / Section ------------------------- */
+    .card {
+      background: var(--c-surface); border: 1px solid var(--c-border);
+      border-radius: var(--radius-lg); box-shadow: var(--shadow-sm);
+      overflow: hidden;
+    }
+    .card + .card { margin-top: 20px; }
+    .card-head {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 16px 20px; border-bottom: 1px solid var(--c-border);
+    }
+    .card-head h2 { margin: 0; font-size: var(--t-3); font-weight: 600; }
+    .card-head .hint { color: var(--c-text-muted); font-size: var(--t-small); }
+    .card-body { padding: 20px; }
+    .card-body.tight { padding: 0; }
+    .card-body > p:first-child { margin-top: 0; }
+    .card-body > p:last-child { margin-bottom: 0; }
+
+    /* ------------------------- Buttons ------------------------- */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      gap: 6px; padding: 8px 14px; border-radius: 6px; border: 1px solid transparent;
+      font-size: var(--t-body); font-weight: 500; cursor: pointer;
+      transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+      font-family: inherit; line-height: 1.2;
+    }
+    .btn:focus-visible { outline: 2px solid var(--c-primary); outline-offset: 2px; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .btn-primary { background: var(--c-primary); color: white; }
+    .btn-primary:hover:not(:disabled) { background: var(--c-primary-hover); }
+
+    .btn-default {
+      background: var(--c-surface); color: var(--c-text);
+      border-color: var(--c-border-strong);
+    }
+    .btn-default:hover:not(:disabled) { background: #f4f6f9; }
+
+    .btn-ghost { background: transparent; color: var(--c-text-muted); }
+    .btn-ghost:hover:not(:disabled) { background: #f4f6f9; color: var(--c-text); }
+
+    .btn-success { background: var(--c-success); color: white; }
+    .btn-success:hover:not(:disabled) { background: #047857; }
+
+    .btn-danger-soft { background: var(--c-danger-soft); color: var(--c-danger); }
+    .btn-danger-soft:hover:not(:disabled) { background: #fecaca; }
+
+    .btn-sm { padding: 4px 10px; font-size: var(--t-small); }
+
+    /* ------------------------- Forms ------------------------- */
+    .field { display: flex; flex-direction: column; gap: 4px; }
+    .field label { font-size: var(--t-small); color: var(--c-text-muted); font-weight: 500; }
+    .input, select, textarea {
+      font-family: inherit; font-size: var(--t-body);
+      background: var(--c-surface); border: 1px solid var(--c-border-strong);
+      border-radius: 6px; padding: 8px 10px; color: var(--c-text);
+      transition: border-color 0.12s ease, box-shadow 0.12s ease;
+    }
+    .input:focus, select:focus, textarea:focus {
+      outline: none; border-color: var(--c-primary);
+      box-shadow: 0 0 0 3px var(--c-primary-soft);
+    }
+    input[type="file"].input { padding: 6px 10px; background: #fafbfc; cursor: pointer; }
+
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .form-grid.span-full { grid-column: 1 / -1; }
+
+    /* ------------------------- Table ------------------------- */
+    .table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: var(--t-body); }
+    .table th {
+      text-align: left; font-weight: 600; color: var(--c-text-muted);
+      background: #f9fafc; padding: 10px 14px;
+      border-bottom: 1px solid var(--c-border);
+      font-size: var(--t-small);
+    }
+    .table td {
+      padding: 12px 14px; border-bottom: 1px solid #f0f2f5;
+      vertical-align: middle;
+    }
+    .table tbody tr:hover td { background: #fafbfc; }
+    .table .num { font-variant-numeric: tabular-nums; text-align: right; }
+    .table .muted { color: var(--c-text-muted); }
+    .table .empty-row td { text-align: center; color: var(--c-text-subtle); padding: 28px; font-style: italic; }
+
+    /* ------------------------- Badges ------------------------- */
+    .badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 2px 9px; border-radius: 999px;
+      font-size: var(--t-micro); font-weight: 600;
+      letter-spacing: 0.2px; white-space: nowrap;
+    }
+    .badge-success { background: var(--c-success-soft); color: #065f46; }
+    .badge-warn    { background: var(--c-warn-soft); color: var(--c-warn); }
+    .badge-danger  { background: var(--c-danger-soft); color: var(--c-danger); }
+    .badge-info    { background: var(--c-info-soft); color: var(--c-info-text); }
+    .badge-neutral { background: #eef1f5; color: var(--c-text-muted); }
+
+    /* ------------------------- Stats ------------------------- */
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px; }
+    .stat {
+      background: var(--c-surface); border: 1px solid var(--c-border);
+      border-radius: var(--radius-lg); padding: 16px 18px;
+    }
+    .stat .label { font-size: var(--t-small); color: var(--c-text-muted); font-weight: 500; }
+    .stat .value { font-size: var(--t-1); font-weight: 700; margin-top: 4px; letter-spacing: -0.5px; }
+    .stat .hint { font-size: var(--t-micro); color: var(--c-text-subtle); margin-top: 4px; }
+    .stat.accent-primary .value { color: var(--c-primary); }
+    .stat.accent-success .value { color: var(--c-success); }
+    .stat.accent-warn    .value { color: var(--c-warn); }
+    .stat.accent-danger  .value { color: var(--c-danger); }
+
+    /* ------------------------- Status line ------------------------- */
+    .status { margin-top: 10px; font-size: var(--t-small); color: var(--c-text-muted); }
+    .status.error   { color: var(--c-danger); }
+    .status.success { color: var(--c-success); }
+
+    .empty-state {
+      text-align: center; padding: 48px 20px;
+      color: var(--c-text-muted);
+    }
+    .empty-state h3 { margin: 0 0 8px 0; color: var(--c-text); font-weight: 600; }
+    .empty-state p { margin: 4px 0; }
+
+    details > summary {
+      cursor: pointer; padding: 10px 0; font-size: var(--t-body);
+      font-weight: 500; color: var(--c-primary); list-style: none;
+    }
+    details > summary::-webkit-details-marker { display: none; }
+    details > summary::before { content: '+ '; font-weight: 700; }
+    details[open] > summary::before { content: '− '; }
+
+    /* ------------------------- Access-area picker (topbar) ------------------ */
+    .scope-picker { position: relative; }
+    .scope-trigger {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: var(--c-surface); border: 1px solid var(--c-border-strong);
+      border-radius: 6px; padding: 5px 10px; font-size: var(--t-small);
+      color: var(--c-text); cursor: pointer; font-family: inherit;
+      max-width: 240px; line-height: 1.2;
+    }
+    .scope-trigger:hover { background: #f4f6f9; }
+    .scope-trigger .label { color: var(--c-text-muted); font-weight: 500; }
+    .scope-trigger .value {
+      font-weight: 600; overflow: hidden; text-overflow: ellipsis;
+      white-space: nowrap; max-width: 140px;
+    }
+    .scope-trigger .caret { color: var(--c-text-subtle); font-size: 10px; }
+    .scope-panel {
+      position: absolute; top: calc(100% + 6px); right: 0;
+      width: 320px; max-height: 480px;
+      background: var(--c-surface); border: 1px solid var(--c-border);
+      border-radius: var(--radius); box-shadow: var(--shadow-lg);
+      display: none; flex-direction: column; z-index: 20;
+    }
+    .scope-panel.open { display: flex; }
+    .scope-search {
+      padding: 10px; border-bottom: 1px solid var(--c-border);
+    }
+    .scope-search input {
+      width: 100%; font-family: inherit; font-size: var(--t-small);
+      border: 1px solid var(--c-border-strong); border-radius: 6px;
+      padding: 6px 8px;
+    }
+    .scope-list { overflow-y: auto; flex: 1; padding: 4px 0; max-height: 340px; }
+    .scope-list label {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 12px; font-size: var(--t-small); cursor: pointer;
+    }
+    .scope-list label:hover { background: #f4f6f9; }
+    .scope-list label input { margin: 0; }
+    .scope-list .all-row { border-bottom: 1px solid var(--c-border); font-weight: 600; }
+    .scope-foot {
+      display: flex; justify-content: space-between; align-items: center;
+      gap: 8px; padding: 10px; border-top: 1px solid var(--c-border);
+    }
+    .scope-foot .count { font-size: var(--t-micro); color: var(--c-text-muted); }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">K</div>
+        <div>Kilter</div>
+      </div>
+      <nav id="nav-root">
+        <div class="group-label">Workspace</div>
+        <a href="/" data-nav="dashboard">Dashboard</a>
+        <a href="/cash-accounts" data-nav="cash-accounts">Cash accounts</a>
+        <a href="/sessions-list" data-nav="sessions">Sessions</a>
+        <a href="/open-items-view" data-nav="open-items">Open items</a>
+        <a href="/reports" data-nav="reports">Reports</a>
+        <a href="/manuals" data-nav="manuals">Manuals</a>
+        <div class="group-label admin-only" style="display:none">Intake</div>
+        <a href="/#scan" data-nav="scan" class="admin-only" style="display:none">Scan messages</a>
+        <a href="/#upload" data-nav="upload" class="admin-only" style="display:none">Manual upload</a>
+        <div class="group-label admin-only" style="display:none">Admin</div>
+        <a href="/admin/users" data-nav="users" class="admin-only" style="display:none">Users</a>
+        <a href="/admin/discovered" data-nav="discovered" class="admin-only" style="display:none">Discovered accounts <span id="nav-discovered-badge" class="badge badge-warn" style="display:none;margin-left:6px;font-size:10px;padding:1px 6px">0</span></a>
+        <a href="/tolerance-admin" data-nav="tolerance" class="admin-only" style="display:none">Tolerance &amp; rules</a>
+        <a href="/currencies-admin" data-nav="currencies" class="admin-only" style="display:none">Currencies</a>
+        <a href="/banks-admin" data-nav="banks" class="admin-only" style="display:none">Banks</a>
+        <a href="/fx-admin" data-nav="fx" class="admin-only" style="display:none">Exchange rates</a>
+        <a href="/certificates-admin" data-nav="certs">Certificates</a>
+        <a href="/sla-admin" data-nav="sla" class="admin-only" style="display:none">SLA alerts</a>
+        <a href="/match-patterns" data-nav="patterns" class="admin-only" style="display:none">Match patterns</a>
+        <a href="/scheduler-admin" data-nav="scheduler" class="admin-only" style="display:none">Scheduler</a>
+        <a href="/admin/activity" data-nav="activity" class="audit-visible" style="display:none">Activity log</a>
+      </nav>
+      <div class="foot">
+        <div class="u" id="user-display">—</div>
+        <div id="role-display" style="font-size:var(--t-micro);color:#64748b">—</div>
+        <button id="logout-btn" class="btn btn-ghost btn-sm" style="margin-top:10px;width:100%;background:rgba(255,255,255,0.06);color:#d7deea;border:1px solid rgba(255,255,255,0.1)">Sign out</button>
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="topbar">
+        <div class="crumbs">
+          {% block crumbs %}<span class="current">Dashboard</span>{% endblock %}
+        </div>
+        <div class="actions">
+          <div class="scope-picker" id="scope-picker">
+            <button type="button" class="scope-trigger" id="scope-trigger" aria-haspopup="true" aria-expanded="false">
+              <span class="label">Active area:</span>
+              <span class="value" id="scope-value">All areas</span>
+              <span class="caret">▾</span>
+            </button>
+            <div class="scope-panel" id="scope-panel" role="dialog" aria-label="Choose access areas">
+              <div class="scope-search">
+                <input type="search" id="scope-search" placeholder="Search areas…" autocomplete="off">
+              </div>
+              <div class="scope-list" id="scope-list"></div>
+              <div class="scope-foot">
+                <span class="count" id="scope-count">0 selected</span>
+                <div style="display:flex;gap:6px">
+                  <button type="button" class="btn btn-ghost btn-sm" id="scope-cancel">Cancel</button>
+                  <button type="button" class="btn btn-primary btn-sm" id="scope-apply">Apply</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <button type="button" class="kbd-hint" id="palette-trigger" title="Command palette">
+            <span>Jump to…</span> <kbd>Ctrl K</kbd>
+          </button>
+          <button type="button" class="theme-toggle" id="theme-toggle" title="Toggle dark mode" aria-label="Toggle dark mode">
+            <span id="theme-icon">🌙</span>
+          </button>
+          {% block topbar_actions %}{% endblock %}
+        </div>
+      </header>
+      <main class="content">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+
+  <!-- Command palette (Ctrl+K) -->
+  <div class="palette-backdrop" id="palette-backdrop" role="dialog" aria-label="Command palette">
+    <div class="palette">
+      <input type="search" class="palette-input" id="palette-input" placeholder="Jump to a page, account, or session…" autocomplete="off">
+      <div class="palette-results" id="palette-results"></div>
+      <div class="palette-foot">
+        <span><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
+        <span><kbd>Enter</kbd> open</span>
+        <span><kbd>Esc</kbd> close</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- First-run welcome tour — shown once per browser session until dismissed -->
+  <div class="tour-backdrop" id="tour-backdrop" role="dialog" aria-label="Welcome to Kilter">
+    <div class="tour">
+      <h2>Welcome to Kilter</h2>
+      <p style="color:var(--c-text-muted);margin:0 0 16px 0">A quick tour of the essentials.</p>
+      <div class="tour-step"><div class="num">1</div><div>
+        <div class="what">The dashboard is your landing pad</div>
+        <div class="how">Stat counters, 14-day match trend, ageing histogram and per-team breakdown — at a glance.</div>
+      </div></div>
+      <div class="tour-step"><div class="num">2</div><div>
+        <div class="what">Press <kbd>Ctrl</kbd><kbd>K</kbd> to jump anywhere</div>
+        <div class="how">Pages, accounts, recent sessions — fuzzy-search everything. Nothing is more than a keystroke away.</div>
+      </div></div>
+      <div class="tour-step"><div class="num">3</div><div>
+        <div class="what">Review a session in seconds</div>
+        <div class="how"><kbd>J</kbd>/<kbd>K</kbd> to move, <kbd>Space</kbd> to confirm, <kbd>X</kbd> to reject, <kbd>N</kbd> for a note. Press <kbd>?</kbd> on any page for shortcuts.</div>
+      </div></div>
+      <div class="tour-step"><div class="num">4</div><div>
+        <div class="what">Automation runs in the background</div>
+        <div class="how">Scan, auto-close, SLA alerts — all scheduled. Admin → <strong>Scheduler</strong> shows you what ran when.</div>
+      </div></div>
+      <div class="tour-actions">
+        <button type="button" class="btn btn-ghost" id="tour-dismiss">Don't show again</button>
+        <button type="button" class="btn btn-primary" id="tour-close">Got it</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Presenter-mode banner (shown only when ?presenter=1) -->
+  <div id="presenter-banner" style="display:none">
+    <span>🎥 Presenter mode · auto-refresh 60s</span>
+    <a href="#" onclick="event.preventDefault();const u=new URL(location.href);u.searchParams.delete('presenter');location.href=u.toString()" style="color:var(--c-primary)">Exit</a>
+  </div>
+
+  <!-- Keyboard-help overlay (pages may populate #kbd-help-rows) -->
+  <div class="kbd-help-backdrop" id="kbd-help-backdrop" role="dialog" aria-label="Keyboard shortcuts">
+    <div class="kbd-help">
+      <h3>Keyboard shortcuts</h3>
+      <table id="kbd-help-rows">
+        <tr><td><kbd>Ctrl</kbd><kbd>K</kbd></td><td>Open command palette</td></tr>
+        <tr><td><kbd>?</kbd></td><td>This help</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td>Close overlay</td></tr>
+      </table>
+      <div style="margin-top:14px;font-size:var(--t-small);color:var(--c-text-muted)">
+        More shortcuts may be available on the current page.
+      </div>
+    </div>
+  </div>
+
+<script>
+  // Apply theme before first paint to avoid flash-of-wrong-theme.
+  (function () {
+    try {
+      const saved = localStorage.getItem('kilter_theme');
+      if (saved === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+    } catch (e) {}
+  })();
+
+  const userDisplay = document.getElementById('user-display');
+  const roleDisplay = document.getElementById('role-display');
+  window.me = null;
+  window.sessionToken = () => localStorage.getItem('kilter_token') || '';
+
+  function redirectToLogin() {
+    localStorage.removeItem('kilter_token');
+    localStorage.removeItem('kilter_token_expires');
+    const next = encodeURIComponent(window.location.pathname + window.location.search);
+    window.location.href = `/login?next=${next}`;
+  }
+
+  function applyRoleVisibility(role) {
+    const isAdmin = role === 'admin';
+    const canSeeAudit = role === 'admin' || role === 'audit' || role === 'internal_control';
+    document.querySelectorAll('.admin-only').forEach(el => el.style.display = isAdmin ? '' : 'none');
+    document.querySelectorAll('.audit-visible').forEach(el => el.style.display = canSeeAudit ? '' : 'none');
+    if (isAdmin) refreshDiscoveredBadge();
+    document.dispatchEvent(new CustomEvent('me:loaded', { detail: { role, isAdmin, canSeeAudit } }));
+  }
+
+  async function refreshDiscoveredBadge() {
+    try {
+      const r = await fetch('/discovered-accounts');
+      if (!r.ok) return;
+      const rows = await r.json();
+      const pending = rows.filter(d => d.status === 'pending').length;
+      const el = document.getElementById('nav-discovered-badge');
+      if (!el) return;
+      if (pending > 0) { el.textContent = pending; el.style.display = ''; }
+      else el.style.display = 'none';
+    } catch (e) { /* silent */ }
+  }
+  window.refreshDiscoveredBadge = refreshDiscoveredBadge;
+
+  // Patch fetch so every request automatically carries X-Session-Token.
+  // A 401 response means the session died; bounce to /login.
+  const _origFetch = window.fetch;
+  window.fetch = async (input, init = {}) => {
+    const headers = new Headers(init.headers || {});
+    const token = window.sessionToken();
+    if (token && !headers.has('X-Session-Token')) headers.set('X-Session-Token', token);
+    const r = await _origFetch(input, { ...init, headers });
+    // Don't bounce on 401 from /login itself — user hasn't authenticated there yet.
+    if (r.status === 401 && !String(input).includes('/login')) {
+      redirectToLogin();
+    }
+    return r;
+  };
+
+  async function refreshMe() {
+    if (!window.sessionToken()) return redirectToLogin();
+    try {
+      const r = await fetch('/me');
+      if (!r.ok) return;  // fetch wrapper will have bounced on 401 already
+      window.me = await r.json();
+      userDisplay.textContent = window.me.display_name || window.me.username;
+      roleDisplay.textContent = window.me.role.replace('_', ' ');
+      applyRoleVisibility(window.me.role);
+    } catch (err) {
+      roleDisplay.textContent = 'network error';
+      applyRoleVisibility(null);
+    }
+  }
+
+  document.getElementById('logout-btn').addEventListener('click', async () => {
+    try { await fetch('/logout', { method: 'POST' }); } catch (e) {}
+    redirectToLogin();
+  });
+
+  // Highlight the sidebar link that matches this page.
+  (function () {
+    const navKey = document.body.dataset.nav;
+    if (!navKey) return;
+    const link = document.querySelector(`.sidebar nav a[data-nav="${navKey}"]`);
+    if (link) link.classList.add('active');
+  })();
+
+  // Instant click feedback — flip the active state the moment a sidebar link
+  // is clicked, before the new page starts loading. Without this the user
+  // sees nothing until the next page renders and the block above kicks in.
+  document.querySelectorAll('.sidebar nav a[data-nav]').forEach(link => {
+    link.addEventListener('click', (ev) => {
+      // Skip modifier-clicks (new-tab / new-window) — those shouldn't change the
+      // active state in this window.
+      if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.button === 1) return;
+      document.querySelectorAll('.sidebar nav a.active').forEach(a => a.classList.remove('active'));
+      link.classList.add('active');
+    });
+  });
+
+  // -------- Access-area picker --------
+  // Lives on every page. Click the topbar button to pick one or more areas;
+  // Apply persists to the server (user_sessions.active_access_areas) and
+  // reloads so Dashboard / Sessions / Cash accounts requery with the filter.
+  const scopePicker = {
+    trigger: document.getElementById('scope-trigger'),
+    panel:   document.getElementById('scope-panel'),
+    value:   document.getElementById('scope-value'),
+    search:  document.getElementById('scope-search'),
+    list:    document.getElementById('scope-list'),
+    count:   document.getElementById('scope-count'),
+    cancel:  document.getElementById('scope-cancel'),
+    apply:   document.getElementById('scope-apply'),
+    available: [],
+    selected: new Set(),       // the current dirty selection inside the panel
+    committed: null,            // null = all areas; array = specific set (server-confirmed)
+  };
+
+  function renderScopeLabel() {
+    const c = scopePicker.committed;
+    if (!c || c.length === 0) { scopePicker.value.textContent = 'All areas'; return; }
+    if (c.length === 1) { scopePicker.value.textContent = c[0]; return; }
+    scopePicker.value.textContent = `${c.length} areas`;
+    scopePicker.value.title = c.join(', ');
+  }
+
+  function renderScopeList(filter = '') {
+    const q = filter.trim().toLowerCase();
+    const rows = [];
+    rows.push(`<label class="all-row">
+        <input type="checkbox" id="scope-all" ${scopePicker.selected.size === 0 ? 'checked' : ''}>
+        <span>All areas</span></label>`);
+    for (const a of scopePicker.available) {
+      if (q && !a.name.toLowerCase().includes(q)) continue;
+      const checked = scopePicker.selected.has(a.name) ? 'checked' : '';
+      rows.push(`<label>
+          <input type="checkbox" class="scope-item" value="${esc(a.name)}" ${checked}>
+          <span>${esc(a.name)}</span></label>`);
+    }
+    scopePicker.list.innerHTML = rows.join('');
+    scopePicker.count.textContent = scopePicker.selected.size === 0
+      ? 'All areas' : `${scopePicker.selected.size} selected`;
+  }
+
+  function openScopePanel() {
+    // Seed the dirty selection from whatever's currently committed.
+    scopePicker.selected = new Set(scopePicker.committed || []);
+    scopePicker.search.value = '';
+    renderScopeList('');
+    scopePicker.panel.classList.add('open');
+    scopePicker.trigger.setAttribute('aria-expanded', 'true');
+    setTimeout(() => scopePicker.search.focus(), 0);
+  }
+  function closeScopePanel() {
+    scopePicker.panel.classList.remove('open');
+    scopePicker.trigger.setAttribute('aria-expanded', 'false');
+  }
+
+  scopePicker.trigger.addEventListener('click', (e) => {
+    e.stopPropagation();
+    scopePicker.panel.classList.contains('open') ? closeScopePanel() : openScopePanel();
+  });
+  scopePicker.panel.addEventListener('click', (e) => e.stopPropagation());
+  document.addEventListener('click', (e) => {
+    if (scopePicker.panel.classList.contains('open')) closeScopePanel();
+  });
+  scopePicker.search.addEventListener('input', (e) => renderScopeList(e.target.value));
+  scopePicker.list.addEventListener('change', (e) => {
+    const t = e.target;
+    if (t.id === 'scope-all') {
+      if (t.checked) scopePicker.selected.clear();
+      // unchecking the all-row alone is meaningless — it just means "pick some"
+      renderScopeList(scopePicker.search.value);
+      return;
+    }
+    if (t.classList.contains('scope-item')) {
+      if (t.checked) scopePicker.selected.add(t.value);
+      else scopePicker.selected.delete(t.value);
+      // Keep the count + all-row checkbox in sync without a full re-render;
+      // mutating the DOM in place preserves the user's scroll position.
+      scopePicker.count.textContent = scopePicker.selected.size === 0
+        ? 'All areas' : `${scopePicker.selected.size} selected`;
+      const allRow = document.getElementById('scope-all');
+      if (allRow) allRow.checked = scopePicker.selected.size === 0;
+    }
+  });
+  scopePicker.cancel.addEventListener('click', closeScopePanel);
+  scopePicker.apply.addEventListener('click', async () => {
+    const areas = scopePicker.selected.size === 0 ? null : [...scopePicker.selected];
+    const r = await fetch('/me/access-scope', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ areas }),
+    });
+    if (!r.ok) { alert((await r.json().catch(() => ({}))).detail || 'Failed to update scope'); return; }
+    // Easiest way to ensure every on-page datum respects the new scope: reload.
+    window.location.reload();
+  });
+
+  async function initScopePicker() {
+    try {
+      const r = await fetch('/me/access-scope');
+      if (!r.ok) return;
+      const data = await r.json();
+      scopePicker.available = data.available || [];
+      scopePicker.committed = Array.isArray(data.areas) && data.areas.length > 0 ? data.areas : null;
+      renderScopeLabel();
+    } catch (e) { /* silent — picker just shows "All areas" */ }
+  }
+
+  refreshMe();
+  initScopePicker();
+
+  // -------- Presenter mode --------
+  // ?presenter=1 on any URL hides the chrome and auto-refreshes the page
+  // every 60s. Meant for the pitch-demo big screen. Exiting removes the
+  // query param and reloads to normal layout.
+  (function () {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('presenter') === '1') {
+      document.body.classList.add('presenter');
+      setInterval(() => window.location.reload(), 60_000);
+    }
+  })();
+
+  // -------- First-run welcome tour --------
+  // Shows once per browser until dismissed. The "Got it" button leaves the
+  // flag alone so the tour reappears next session — the "Don't show again"
+  // button writes a permanent flag to localStorage.
+  (function () {
+    const backdrop = document.getElementById('tour-backdrop');
+    if (!backdrop) return;
+    let seen = false;
+    try { seen = localStorage.getItem('kilter_tour_dismissed') === '1'; } catch (e) {}
+    // Show once per browser tab when the flag isn't set.
+    if (!seen && !sessionStorage.getItem('kilter_tour_shown_this_tab')) {
+      // Defer so it doesn't race the login redirect on first load.
+      setTimeout(() => {
+        if (window.me) {
+          backdrop.classList.add('open');
+          try { sessionStorage.setItem('kilter_tour_shown_this_tab', '1'); } catch (e) {}
+        }
+      }, 1500);
+    }
+    document.getElementById('tour-close').addEventListener('click', () => backdrop.classList.remove('open'));
+    document.getElementById('tour-dismiss').addEventListener('click', () => {
+      try { localStorage.setItem('kilter_tour_dismissed', '1'); } catch (e) {}
+      backdrop.classList.remove('open');
+    });
+  })();
+
+  // -------- Theme toggle --------
+  (function () {
+    const btn = document.getElementById('theme-toggle');
+    const icon = document.getElementById('theme-icon');
+    function render() {
+      const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      icon.textContent = isDark ? '☀️' : '🌙';
+      btn.title = isDark ? 'Switch to light mode' : 'Switch to dark mode';
+    }
+    render();
+    btn.addEventListener('click', () => {
+      const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      if (isDark) {
+        document.documentElement.removeAttribute('data-theme');
+        try { localStorage.setItem('kilter_theme', 'light'); } catch (e) {}
+      } else {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        try { localStorage.setItem('kilter_theme', 'dark'); } catch (e) {}
+      }
+      render();
+    });
+  })();
+
+  // -------- Command palette (Ctrl+K) --------
+  // Fuzzy-search jumping between pages, accounts, recent sessions.
+  // Data is loaded lazily on first open and cached for the session.
+  const palette = {
+    backdrop: document.getElementById('palette-backdrop'),
+    input:    document.getElementById('palette-input'),
+    results:  document.getElementById('palette-results'),
+    items:    [],          // flat list of {group, label, sub, href, ico}
+    filtered: [],
+    cursor:   0,
+    loaded:   false,
+  };
+
+  const NAV_ITEMS = [
+    { group: 'Navigate', label: 'Dashboard',          href: '/',                ico: '▣' },
+    { group: 'Navigate', label: 'Cash accounts',      href: '/cash-accounts',   ico: '▤' },
+    { group: 'Navigate', label: 'Sessions',           href: '/sessions-list',   ico: '⧉' },
+    { group: 'Navigate', label: 'Open items',         href: '/open-items-view', ico: '◉' },
+    { group: 'Navigate', label: 'Reports',            href: '/reports',         ico: '◫' },
+    { group: 'Navigate', label: 'Users',              href: '/admin/users',     ico: '◊', admin: true },
+    { group: 'Navigate', label: 'Discovered accounts',href: '/admin/discovered',ico: '?', admin: true },
+    { group: 'Navigate', label: 'Tolerance & rules',  href: '/tolerance-admin', ico: '≡', admin: true },
+    { group: 'Navigate', label: 'Currencies',         href: '/currencies-admin',ico: '¤', admin: true },
+    { group: 'Navigate', label: 'Banks',              href: '/banks-admin',     ico: '◐', admin: true },
+    { group: 'Navigate', label: 'Exchange rates',     href: '/fx-admin',        ico: '∑', admin: true },
+    { group: 'Navigate', label: 'Certificates',       href: '/certificates-admin', ico: '✎' },
+    { group: 'Navigate', label: 'SLA alerts',         href: '/sla-admin',       ico: '◔', admin: true },
+    { group: 'Navigate', label: 'Match patterns',     href: '/match-patterns',  ico: '◫', admin: true },
+    { group: 'Navigate', label: 'Scheduler',          href: '/scheduler-admin', ico: '⏱', admin: true },
+    { group: 'Navigate', label: 'Activity log',       href: '/admin/activity',  ico: '≣' },
+    { group: 'Manuals',  label: 'All manuals',             href: '/manuals',              ico: '📚' },
+    { group: 'Manuals',  label: 'Product Overview',        href: '/manuals/overview',    ico: '📖' },
+    { group: 'Manuals',  label: 'Setup & IT Manual',       href: '/manuals/setup',       ico: '📖' },
+    { group: 'Manuals',  label: 'Admin Manual',            href: '/manuals/admin',       ico: '📖' },
+    { group: 'Manuals',  label: 'Ops User Manual',         href: '/manuals/user',        ico: '📖' },
+    { group: 'Manuals',  label: 'Internal Control Manual', href: '/manuals/control',     ico: '📖' },
+    { group: 'Manuals',  label: 'Audit Manual',            href: '/manuals/audit',       ico: '📖' },
+    { group: 'Manuals',  label: 'Matching Engine Manual',  href: '/manuals/matching',    ico: '📖' },
+    { group: 'Manuals',  label: 'Training Curriculum (new hires)', href: '/manuals/training', ico: '📖' },
+    { group: 'Presenting', label: 'Stakeholder pitch deck',  href: '/pitch', ico: '🎯' },
+    { group: 'Presenting', label: '10-minute demo walkthrough', href: '/demo', ico: '🎬' },
+    { group: 'Actions',  label: 'Presenter mode (auto-refresh)', href: '/?presenter=1', ico: '🎥' },
+    { group: 'Actions',  label: 'Show welcome tour',  href: '#tour', ico: '★' },
+  ];
+
+  async function loadPaletteData() {
+    const items = [];
+    const role = window.me ? window.me.role : null;
+    const isAdmin = role === 'admin';
+    for (const n of NAV_ITEMS) {
+      if (n.admin && !isAdmin) continue;
+      items.push({ ...n, sub: n.href });
+    }
+    try {
+      const [aR, sR] = await Promise.all([fetch('/accounts'), fetch('/sessions')]);
+      if (aR.ok) {
+        const accts = await aR.json();
+        for (const a of accts) {
+          items.push({
+            group: 'Accounts', ico: '₵',
+            label: a.label,
+            sub: `${a.swift_account || '—'} ↔ ${a.flex_ac_no} (${a.currency})`,
+            href: `/cash-accounts#${a.id}`,
+          });
+        }
+      }
+      if (sR.ok) {
+        const sessions = await sR.json();
+        for (const s of sessions.slice(0, 30)) {
+          items.push({
+            group: 'Sessions', ico: '#',
+            label: `Session ${s.id} · ${s.account_label || 'Unregistered'}`,
+            sub: s.swift_currency || s.flex_currency || '',
+            href: `/sessions/${s.id}/review`,
+          });
+        }
+      }
+    } catch (e) { /* silent — nav items still work */ }
+    palette.items = items;
+    palette.loaded = true;
+  }
+
+  function fuzzyScore(item, q) {
+    if (!q) return 1;
+    const hay = (item.label + ' ' + (item.sub || '') + ' ' + item.group).toLowerCase();
+    const needle = q.toLowerCase();
+    if (hay.includes(needle)) return 2;
+    // char-by-char subsequence match as a softer fallback
+    let i = 0, j = 0;
+    while (i < needle.length && j < hay.length) {
+      if (needle[i] === hay[j]) i++;
+      j++;
+    }
+    return i === needle.length ? 1 : 0;
+  }
+
+  function renderPalette() {
+    const q = palette.input.value.trim();
+    palette.filtered = palette.items
+      .map(it => ({ it, score: fuzzyScore(it, q) }))
+      .filter(x => x.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 60)
+      .map(x => x.it);
+    if (palette.cursor >= palette.filtered.length) palette.cursor = 0;
+
+    const byGroup = {};
+    for (const it of palette.filtered) (byGroup[it.group] = byGroup[it.group] || []).push(it);
+
+    let html = '', flat = 0;
+    for (const g of Object.keys(byGroup)) {
+      html += `<div class="palette-group">${esc(g)}</div>`;
+      for (const it of byGroup[g]) {
+        const active = flat === palette.cursor ? 'active' : '';
+        html += `<div class="palette-item ${active}" data-idx="${flat}">
+          <span class="ico">${esc(it.ico || '•')}</span>
+          <span>${esc(it.label)}</span>
+          <span class="sub">${esc(it.sub || '')}</span>
+        </div>`;
+        flat++;
+      }
+    }
+    if (palette.filtered.length === 0) {
+      html = '<div class="palette-group" style="padding:16px 20px;font-size:var(--t-small);color:var(--c-text-subtle);text-transform:none;letter-spacing:0">No matches.</div>';
+    }
+    palette.results.innerHTML = html;
+  }
+
+  async function openPalette() {
+    if (!palette.loaded) await loadPaletteData();
+    palette.input.value = '';
+    palette.cursor = 0;
+    renderPalette();
+    palette.backdrop.classList.add('open');
+    setTimeout(() => palette.input.focus(), 0);
+  }
+  function closePalette() {
+    palette.backdrop.classList.remove('open');
+  }
+  function activatePaletteSelection() {
+    const it = palette.filtered[palette.cursor];
+    if (!it) return;
+    closePalette();
+    if (!it.href) return;
+    if (it.href === '#tour') {
+      try { localStorage.removeItem('kilter_tour_dismissed'); } catch (e) {}
+      try { sessionStorage.removeItem('kilter_tour_shown_this_tab'); } catch (e) {}
+      document.getElementById('tour-backdrop')?.classList.add('open');
+      return;
+    }
+    window.location.href = it.href;
+  }
+
+  palette.input.addEventListener('input', () => { palette.cursor = 0; renderPalette(); });
+  palette.results.addEventListener('click', (e) => {
+    const row = e.target.closest('.palette-item');
+    if (!row) return;
+    palette.cursor = parseInt(row.dataset.idx, 10) || 0;
+    activatePaletteSelection();
+  });
+  palette.results.addEventListener('mousemove', (e) => {
+    const row = e.target.closest('.palette-item');
+    if (!row) return;
+    const idx = parseInt(row.dataset.idx, 10) || 0;
+    if (idx !== palette.cursor) {
+      palette.cursor = idx;
+      document.querySelectorAll('.palette-item').forEach((el, i) => {
+        el.classList.toggle('active', i === idx);
+      });
+    }
+  });
+  palette.backdrop.addEventListener('click', (e) => {
+    if (e.target === palette.backdrop) closePalette();
+  });
+  palette.input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { closePalette(); return; }
+    if (e.key === 'Enter') { e.preventDefault(); activatePaletteSelection(); return; }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      palette.cursor = Math.min(palette.filtered.length - 1, palette.cursor + 1);
+      renderPalette();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      palette.cursor = Math.max(0, palette.cursor - 1);
+      renderPalette();
+    }
+  });
+  document.getElementById('palette-trigger').addEventListener('click', openPalette);
+
+  // Global keybindings: Ctrl/Cmd+K opens palette; ? opens help; Esc closes.
+  document.addEventListener('keydown', (e) => {
+    const tgt = e.target;
+    const isEditing = tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.isContentEditable);
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
+      e.preventDefault(); openPalette(); return;
+    }
+    if (e.key === 'Escape') {
+      closePalette();
+      const kh = document.getElementById('kbd-help-backdrop');
+      if (kh) kh.classList.remove('open');
+      return;
+    }
+    if (e.key === '?' && !isEditing) {
+      const kh = document.getElementById('kbd-help-backdrop');
+      if (kh) { kh.classList.add('open'); e.preventDefault(); }
+    }
+  });
+  document.getElementById('kbd-help-backdrop').addEventListener('click', (e) => {
+    if (e.target.id === 'kbd-help-backdrop') e.target.classList.remove('open');
+  });
+
+  // Tiny helpers used by most pages.
+  window.esc = (s) => (s ?? '').toString().replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  window.fmtAmount = (n) => n == null ? '' : Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  window.fmtDate = (d) => {
+    if (!d) return '';
+    const s = String(d);
+    if (s.length !== 8) return s;
+    return `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}`;
+  };
+  window.fmtDateTime = (iso) => {
+    if (!iso) return '';
+    return new Date(iso + (iso.endsWith('Z') ? '' : 'Z')).toLocaleString();
+  };
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

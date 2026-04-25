@@ -1,0 +1,197 @@
+{% extends "manual_base.html" %}
+{% block title %}Kilter · Internal Control Manual{% endblock %}
+{% block bar_label %}Internal Control{% endblock %}
+{% block footer_left %}Internal Control Manual{% endblock %}
+{% block cover_eyebrow %}Internal Control role{% endblock %}
+{% block cover_title %}Internal Control Manual{% endblock %}
+{% block cover_subtitle %}Maker / checker / approver, certificate review, tolerance-exception sampling, segregation of duties.{% endblock %}
+{% block audience %}Internal Control{% endblock %}
+
+{% block toc %}
+<div class="toc">
+  <h2>Contents</h2>
+  <ol>
+    <li>What the Internal Control role can do</li>
+    <li>Segregation of duties — how Kilter enforces it</li>
+    <li>The certificate review flow</li>
+    <li>What to check before you hit "Review"</li>
+    <li>Rejecting a certificate</li>
+    <li>Tolerance-exception review</li>
+    <li>Write-off review</li>
+    <li>Audit sampling</li>
+    <li>Red flags to watch for</li>
+    <li>Monthly / quarterly cadence</li>
+  </ol>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<h2 id="role">1. What the Internal Control role can do</h2>
+
+<p>Internal Control sits between the operations team (who prepare certificates) and the admin (who signs them). The role is read-only across most of Kilter with one critical write capability:</p>
+
+<ul>
+  <li><strong>Read</strong> — every session, assignment, open item, audit log entry, activity log, certificate.</li>
+  <li><strong>Write</strong> — the <strong>Review</strong> transition on certificates (the "checker" step). Cannot prepare or sign.</li>
+</ul>
+
+<p>This role is intentionally narrow. It exists so the month-end sign-off has three distinct people in three distinct roles — a segregation requirement for regulatory review.</p>
+
+<h2 id="sod">2. Segregation of duties — how Kilter enforces it</h2>
+
+<table>
+  <thead><tr><th>Step</th><th>Role required</th><th>What happens</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Generate draft</strong></td><td>Ops OR Admin</td><td>Pulls live figures from the ledger.</td></tr>
+    <tr><td><strong>Prepare</strong> (maker)</td><td>Ops OR Admin</td><td>Attests figures are ready for review. Writes <code>prepared_by</code>, <code>prepared_at</code>.</td></tr>
+    <tr><td><strong>Review</strong> (checker)</td><td><strong>Internal Control</strong> OR Admin</td><td>Independent confirmation figures are correct. Writes <code>reviewed_by</code>, <code>reviewed_at</code>.</td></tr>
+    <tr><td><strong>Sign</strong> (approver)</td><td>Admin only</td><td>Freezes the figures into an immutable JSON snapshot. Writes <code>signed_by</code>, <code>signed_at</code>.</td></tr>
+  </tbody>
+</table>
+
+<p>Kilter refuses to let the same person perform adjacent roles on a single certificate if you set up accounts correctly. The key control: the admin who signs should not also be the one who prepared. Where Admin is the only role available (small team, after hours) the audit log still shows the sequence clearly and the risk is explicit.</p>
+
+<div class="callout">
+  <strong>Why this matters.</strong> An audit trail that shows one person prepared-reviewed-signed a certificate is not a control. An audit trail that shows three distinct users is evidence of review. Kilter's roles are the mechanism; your staffing model enforces it.
+</div>
+
+<h2 id="flow">3. The certificate review flow</h2>
+
+<p>When ops prepares a certificate, its status transitions from <em>draft</em> to <em>prepared</em>. That's your signal to pick it up.</p>
+
+<ol>
+  <li>Sign in. From the dashboard, navigate to <span class="path">Certificates</span>.</li>
+  <li>Filter by account if the volume is high; look for status = <em>prepared</em>.</li>
+  <li>Click <strong>PDF 🖨</strong> on the row to open the print-ready page. The figures you're reviewing are whatever the live ledger says <em>right now</em> — unsigned certificates are dynamic.</li>
+  <li>Go through the checklist in section 4.</li>
+  <li>If everything is in order, click <strong>Review</strong>, add an optional note, confirm. The status becomes <em>reviewed</em> and the admin can sign.</li>
+</ol>
+
+<h2 id="checklist">4. What to check before you hit "Review"</h2>
+
+<p>The review step is a real control, not a rubber stamp. Here's the checklist applied in order of effort:</p>
+
+<h3>A. Balance reasonableness</h3>
+<ul>
+  <li><strong>Opening balance</strong> matches the prior month's signed closing balance? If yes, fine. If no, flag it — either the prior month was unsigned or there's been a back-dated entry.</li>
+  <li><strong>Closing balance</strong> is within a plausible order of magnitude for this account?</li>
+</ul>
+
+<h3>B. Match rate</h3>
+<ul>
+  <li>Confirmed ÷ (Confirmed + Rejected + Pending) should typically be ≥ 95% by month-end. A lower figure suggests the analyst is preparing too early.</li>
+  <li>Pending decisions should be zero or very low. If non-zero, the certificate is premature — tell ops to clear the queue first.</li>
+</ul>
+
+<h3>C. Open-items total</h3>
+<ul>
+  <li>The "Open items by functional team" table should not contain surprises. If one team has a disproportionate count for this account, that's a red flag.</li>
+  <li>Absolute amount outstanding — is it stable vs prior months? A sudden 10× increase is worth investigating.</li>
+</ul>
+
+<h3>D. Drill through (sampled)</h3>
+<ul>
+  <li>Pick 2–3 open items at random. Open <span class="path">Open items</span>, filter to this account, click <strong>History</strong> on each.</li>
+  <li>Verify: the item was opened a plausible time ago, has at least one note if older than 7 days, hasn't been sitting silently.</li>
+</ul>
+
+<h3>E. Audit trail spot-check</h3>
+<ul>
+  <li>Open <span class="path">Activity log</span>. Filter by <code>actor = {prepared_by username}</code> and the last month.</li>
+  <li>Scan for anomalies — late-night decisions, bulk reject-then-manual-match patterns, tolerance changes.</li>
+</ul>
+
+<h2 id="reject">5. Rejecting a certificate</h2>
+
+<p>Kilter doesn't have an explicit "reject" button on certificates — by design. If the review fails, you have three options:</p>
+
+<ol>
+  <li><strong>Don't click Review.</strong> Leave the certificate in <em>prepared</em>. Send an audit-log note (use comments on a representative open item) explaining what you need fixed. Ops re-prepares after the fix.</li>
+  <li><strong>Ask ops to generate a new draft.</strong> The old <em>prepared</em> certificate stays in the table but a fresh draft with the same period can be produced. The old one stays visible as a historical record.</li>
+  <li><strong>Escalate to admin</strong> if you suspect control failure.</li>
+</ol>
+
+<div class="callout warn">
+  <strong>Do not "Review" a certificate you have concerns about.</strong> Once reviewed, the only remaining step is signing. Your review is the last independent pair of eyes. A flawed certificate that got signed requires a new period-superseding certificate, which is messier than a brief delay.
+</div>
+
+<h2 id="tolerance">6. Tolerance-exception review</h2>
+
+<p>Tolerance rules (<span class="path">Admin → Tolerance &amp; rules</span>) are set by the Admin role. Your job is to sanity-check that the thresholds in use match what's appropriate.</p>
+
+<h3>Red flags on tolerance</h3>
+<ul>
+  <li>An account with <code>amount_tol_pct</code> &gt; 1% — usually too loose. Either the account has a genuine FX component (in which case set <code>fx_tol_bps</code> instead), or someone's hiding small errors.</li>
+  <li>An account with <code>date_tol_days</code> &gt; 5 — typically too loose. Legitimate weekend lag is 3–4 days; more than that and something upstream is slow.</li>
+  <li>Lots of <strong>tier 4</strong> confirmed matches (dates differ, no ref link) — the engine is having to guess. Is the upstream system sending sparse data?</li>
+</ul>
+
+<h3>Quarterly sweep</h3>
+<p>Once a quarter, pull <span class="path">Admin → Tolerance &amp; rules</span> and scan for tolerances that look out of line. Anything set to a non-default value should have a one-line rationale in the <code>notes</code> field. If not, ask the admin to add one or reset to default.</p>
+
+<h2 id="writeoff">7. Write-off review</h2>
+
+<p>Write-offs are terminal — once an open item is written off, it's out of the reconciliation. Your role is to sample + second-guess.</p>
+
+<h3>Finding recent write-offs</h3>
+<p>Use the activity log:</p>
+<ol>
+  <li>Go to <span class="path">Activity log</span>.</li>
+  <li>Filter: action = <code>open_item_written_off</code>, date range = last month.</li>
+  <li>Review the list. Each entry carries the item ID, the reason, and the actor.</li>
+</ol>
+
+<h3>What to challenge</h3>
+<ul>
+  <li>Write-offs with no reason or generic reasons ("error") — push back.</li>
+  <li>Write-offs where the amount is material (&gt; your risk threshold) — should have a pre-approval email attached; ask for it.</li>
+  <li>One-day-old write-offs — ops is giving up too fast.</li>
+</ul>
+
+<h3>Documenting your review</h3>
+<p>Kilter doesn't have an explicit write-off-reviewed flag. Post a comment on the open item (use the History drawer) with your initials + date + finding. The comment is permanent and surfaces in future audit exports.</p>
+
+<h2 id="sampling">8. Audit sampling</h2>
+
+<p>Use <span class="path">Match patterns</span> as a sampling-ratio guide:</p>
+
+<ul>
+  <li>Tokens with very high confirm rate (&gt; 95%) are the auto-pilot band — sample at 1:100.</li>
+  <li>Tokens with mixed rate (40–80%) are the borderline band — sample at 1:10. These are where genuine errors slip through.</li>
+  <li>Tokens with low rate (&lt; 40%) usually aren't matched anyway — low-value sample.</li>
+</ul>
+
+<p>Pick N confirmed assignments from the borderline band, open each, and spot-check the narration + amount + date make sense. Record findings in a monthly review note.</p>
+
+<h2 id="flags">9. Red flags to watch for</h2>
+
+<table>
+  <thead><tr><th>Signal</th><th>What it might mean</th></tr></thead>
+  <tbody>
+    <tr><td>Burst of force-matches from one user</td><td>Either legitimate clean-up or someone bypassing the engine's judgement. Look at the rejection rate before.</td></tr>
+    <tr><td>High rejection rate on tier-1 matches</td><td>Engine is wrong, or ops is wrong. Dig into 2–3 examples.</td></tr>
+    <tr><td>Sudden drop in pending count overnight</td><td>Auto-close ran — normal — OR someone bulk-rejected to clear the queue. Activity log tells you which.</td></tr>
+    <tr><td>Same user appears in maker AND checker on many certificates</td><td>Segregation breakdown. Flag to Admin.</td></tr>
+    <tr><td>Very old open items with no comments</td><td>Nobody is actually working them — write-off candidates.</td></tr>
+    <tr><td>Categorisation changes from <code>genuine_break</code> to <code>timing_diff</code> then write-off</td><td>Someone's re-classifying to avoid the genuine-break label. Investigate.</td></tr>
+    <tr><td>Scheduler showing repeated errors on a specific job</td><td>Upstream system broken or credentials expired. Admin needs to investigate.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="cadence">10. Monthly / quarterly cadence</h2>
+
+<table>
+  <thead><tr><th>When</th><th>Do</th></tr></thead>
+  <tbody>
+    <tr><td>Month-end (days 1–5 of next month)</td><td>Review every certificate in <em>prepared</em> state. Target: clear within 3 business days.</td></tr>
+    <tr><td>Weekly</td><td>Skim the activity log for unusual patterns. Sample 1 write-off at random.</td></tr>
+    <tr><td>Weekly</td><td>Glance at Open items aged &gt; 30 days — are comments being posted?</td></tr>
+    <tr><td>Quarterly</td><td>Tolerance-rule sweep (section 6).</td></tr>
+    <tr><td>Quarterly</td><td>Audit sampling against match patterns (section 8). Document findings.</td></tr>
+    <tr><td>Quarterly</td><td>Confirm user list is current — ask Admin for the roster.</td></tr>
+    <tr><td>Annually</td><td>External audit support — produce the certificate chain for the prior year (see Audit Manual).</td></tr>
+  </tbody>
+</table>
+
+{% endblock %}

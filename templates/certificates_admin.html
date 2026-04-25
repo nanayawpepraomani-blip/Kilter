@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block title %}Certificates — Kilter{% endblock %}
+{% block crumbs %}<span class="current">Certificates</span>{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Reconciliation certificates</h1>
+    <div class="subtitle">Month-end sign-off with maker / checker / approver separation. Unsigned certificates redraw figures on each download; signed ones use a frozen snapshot so history stays stable.</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <h2>Generate a certificate</h2>
+  </div>
+  <div class="card-body">
+    <form id="gen-form" class="form-grid">
+      <div class="field"><label>Account *</label>
+        <select class="input" name="account_id" required id="account-select">
+          <option value="">Select…</option>
+        </select></div>
+      <div class="field"><label>Period start *</label>
+        <input class="input" type="date" name="period_start" required></div>
+      <div class="field" style="grid-column:1/-1"><label>Period end *</label>
+        <input class="input" type="date" name="period_end" required></div>
+      <div style="grid-column:1/-1">
+        <button type="submit" class="btn btn-primary">Generate draft</button>
+        <span class="status" id="gen-status"></span>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <h2>Existing certificates</h2>
+    <select class="input" id="account-filter" style="width:280px;font-size:var(--t-small);padding:6px 10px">
+      <option value="">All accounts</option>
+    </select>
+  </div>
+  <div class="card-body tight">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Account</th><th>Period</th><th>Status</th>
+          <th>Prepared</th><th>Reviewed</th><th>Signed</th>
+          <th style="width:240px"></th>
+        </tr>
+      </thead>
+      <tbody id="body"><tr class="empty-row"><td colspan="7">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.body.dataset.nav = 'certs';
+
+let accounts = [];
+let myRole = null;
+
+document.addEventListener('me:loaded', (ev) => {
+  myRole = ev.detail.role;
+});
+
+async function loadAccounts() {
+  const r = await fetch('/accounts');
+  accounts = r.ok ? await r.json() : [];
+  const opts = '<option value="">Select…</option>' +
+    accounts.map(a => `<option value="${a.id}">${esc(a.label)} — ${esc(a.currency)}</option>`).join('');
+  document.getElementById('account-select').innerHTML = opts;
+  const filterOpts = '<option value="">All accounts</option>' +
+    accounts.map(a => `<option value="${a.id}">${esc(a.label)}</option>`).join('');
+  document.getElementById('account-filter').innerHTML = filterOpts;
+}
+
+async function loadCerts() {
+  const accountId = document.getElementById('account-filter').value;
+  const target = accountId
+    ? [accountId]
+    : accounts.map(a => a.id);
+  const all = [];
+  for (const id of target) {
+    const r = await fetch(`/accounts/${id}/certificates`);
+    if (!r.ok) continue;
+    const rows = await r.json();
+    for (const row of rows) {
+      const acct = accounts.find(a => a.id === row.account_id);
+      all.push({ ...row, _label: acct?.label || `Account ${row.account_id}` });
+    }
+  }
+  all.sort((a, b) => (b.period_end || '').localeCompare(a.period_end || '') ||
+                      (b.id - a.id));
+  const body = document.getElementById('body');
+  if (all.length === 0) {
+    body.innerHTML = '<tr class="empty-row"><td colspan="7">No certificates yet.</td></tr>';
+    return;
+  }
+  const badgeClass = {
+    draft: 'badge-neutral', prepared: 'badge-info',
+    reviewed: 'badge-warn', signed: 'badge-success',
+    superseded: 'badge-neutral',
+  };
+  body.innerHTML = all.map(c => {
+    const canPrepare = myRole === 'admin' || myRole === 'ops';
+    const canReview  = myRole === 'admin' || myRole === 'internal_control';
+    const canSign    = myRole === 'admin';
+    const actions = [];
+    if (c.status === 'draft' && canPrepare) actions.push(`<button class="btn btn-ghost btn-sm" onclick="doAction(${c.id},'prepare')">Prepare</button>`);
+    if (c.status === 'prepared' && canReview) actions.push(`<button class="btn btn-ghost btn-sm" onclick="doAction(${c.id},'review')">Review</button>`);
+    if (c.status === 'reviewed' && canSign) actions.push(`<button class="btn btn-primary btn-sm" onclick="doAction(${c.id},'sign')">Sign</button>`);
+    actions.push(`<a class="btn btn-default btn-sm" href="/certificates/${c.id}/print" target="_blank" title="Print / save as PDF">PDF 🖨</a>`);
+    actions.push(`<a class="btn btn-default btn-sm" href="/certificates/${c.id}/download">xlsx ↓</a>`);
+    return `
+      <tr>
+        <td><strong>${esc(c._label)}</strong></td>
+        <td class="muted">${esc(c.period_start)} → ${esc(c.period_end)}</td>
+        <td><span class="badge ${badgeClass[c.status] || 'badge-neutral'}">${esc(c.status)}</span></td>
+        <td class="muted">${esc(c.prepared_by || '')}${c.prepared_at ? '<br><span style="font-size:var(--t-micro)">'+fmtDateTime(c.prepared_at)+'</span>' : ''}</td>
+        <td class="muted">${esc(c.reviewed_by || '')}${c.reviewed_at ? '<br><span style="font-size:var(--t-micro)">'+fmtDateTime(c.reviewed_at)+'</span>' : ''}</td>
+        <td class="muted">${esc(c.signed_by || '')}${c.signed_at ? '<br><span style="font-size:var(--t-micro)">'+fmtDateTime(c.signed_at)+'</span>' : ''}</td>
+        <td>${actions.join(' ')}</td>
+      </tr>`;
+  }).join('');
+}
+
+async function doAction(id, action) {
+  const note = prompt(`${action.charAt(0).toUpperCase() + action.slice(1)} this certificate — optional note?`) || '';
+  const r = await fetch(`/certificates/${id}/${action}`, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ note }),
+  });
+  if (!r.ok) { alert((await r.json().catch(()=>({}))).detail || 'Failed'); return; }
+  loadCerts();
+}
+
+document.getElementById('gen-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const account_id = fd.get('account_id');
+  const period_start = fd.get('period_start');
+  const period_end = fd.get('period_end');
+  const status = document.getElementById('gen-status');
+  status.className = 'status'; status.textContent = 'Generating…';
+  const r = await fetch(`/accounts/${account_id}/certificates?period_start=${period_start}&period_end=${period_end}`, { method: 'POST' });
+  if (!r.ok) { status.className='status error'; status.textContent=(await r.json().catch(()=>({}))).detail || 'Failed'; return; }
+  status.className='status success'; status.textContent='Draft created.';
+  loadCerts();
+});
+
+document.getElementById('account-filter').addEventListener('change', loadCerts);
+
+(async () => {
+  await loadAccounts();
+  loadCerts();
+  // Default period = first-of-month to today
+  const d = new Date();
+  const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), today = d.toISOString().slice(0,10);
+  document.querySelector('[name=period_start]').value = `${y}-${m}-01`;
+  document.querySelector('[name=period_end]').value = today;
+})();
+</script>
+{% endblock %}

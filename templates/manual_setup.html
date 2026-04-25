@@ -1,0 +1,349 @@
+{% extends "manual_base.html" %}
+{% block title %}Kilter · Setup & IT{% endblock %}
+{% block bar_label %}Setup & IT{% endblock %}
+{% block footer_left %}Setup & IT Manual{% endblock %}
+{% block cover_eyebrow %}IT / Infrastructure{% endblock %}
+{% block cover_title %}Setup & IT Manual{% endblock %}
+{% block cover_subtitle %}Install, configure, back up, upgrade, and operate Kilter in a new environment.{% endblock %}
+{% block audience %}IT Operations{% endblock %}
+
+{% block toc %}
+<div class="toc">
+  <h2>Contents</h2>
+  <ol>
+    <li>Architecture at a glance</li>
+    <li>Server specifications</li>
+    <li>Prerequisites &amp; network</li>
+    <li>Installation from scratch</li>
+    <li>Environment variables</li>
+    <li>First-run admin enrollment</li>
+    <li>Running as a service (Windows / Linux)</li>
+    <li>Reverse proxy &amp; TLS</li>
+    <li>Backups &amp; disaster recovery</li>
+    <li>Upgrades</li>
+    <li>Monitoring &amp; log collection</li>
+    <li>Flexcube Oracle connectivity</li>
+    <li>Troubleshooting</li>
+    <li>IT readiness checklist</li>
+  </ol>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<h2 id="arch">1. Architecture at a glance</h2>
+
+<p>Kilter is a single-process Python web application. No external message queue, no separate scheduler daemon, no cache tier. This is deliberate — fewer moving parts for IT to audit, fewer failure modes for ops.</p>
+
+<table>
+  <thead><tr><th>Layer</th><th>Technology</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td>Web framework</td><td>FastAPI (Python)</td><td>HTTP API + HTML pages</td></tr>
+    <tr><td>Application server</td><td>Uvicorn</td><td>ASGI server hosting FastAPI</td></tr>
+    <tr><td>Database</td><td>SQLite 3 (single file)</td><td>All state — sessions, assignments, open items, users, audit log</td></tr>
+    <tr><td>Scheduler</td><td>Stdlib threading (daemon thread)</td><td>Runs scan / close / alerts / extract on schedule</td></tr>
+    <tr><td>Auth</td><td>Microsoft Authenticator (TOTP)</td><td>MFA — no passwords</td></tr>
+    <tr><td>File I/O</td><td>openpyxl, stdlib <code>xml.etree.ElementTree</code></td><td>xlsx generation; SWIFT MT940/950 parsing; ISO 20022 camt.053/camt.054 XML parsing</td></tr>
+    <tr><td>FCUBS ingest (optional)</td><td><code>oracledb</code> Python driver</td><td>Direct pull from Oracle — only needed when using scheduled Flexcube extract</td></tr>
+    <tr><td>SMTP (optional)</td><td>Stdlib <code>smtplib</code></td><td>Email SLA alerts</td></tr>
+  </tbody>
+</table>
+
+<p>Filesystem layout under the install directory:</p>
+
+<pre><code>d:\Kilter\
+├── app.py                  # FastAPI application
+├── scheduler.py            # In-process job runner
+├── recon_engine.py         # Match proposer (1:1 + splits + FX)
+├── open_items.py           # Rolling ledger + carry-forward
+├── scanner.py              # Intake folder watcher
+├── ingest.py               # SWIFT + Flex file parsing
+├── swift_loader.py         # MT940/950 .out parser
+├── iso20022_loader.py      # camt.053/054 .xml/.txt parser
+├── certificates.py         # Month-end certificate generator
+├── sla.py                  # Teams / email dispatchers
+├── db.py                   # SQLite schema + migrations
+├── auth.py                 # TOTP / session tokens
+├── extract_flex_xlsx.py    # Oracle puller (optional)
+├── templates/              # Jinja2 HTML templates
+├── messages/
+│   ├── swift/              # Scanner intake — SWIFT statements (.out MT, .xml/.txt camt)
+│   ├── flexcube/           # Scanner intake — Flex .xlsx files
+│   ├── processed/          # Archived after successful ingest
+│   └── unloaded/           # Files that failed to ingest
+├── exports/                # Generated xlsx reports
+├── uploads/                # Manual-upload landing zone
+└── kilter.db             # The whole database</code></pre>
+
+<h2 id="specs">2. Server specifications</h2>
+
+<h3>Minimum (dev / pilot)</h3>
+<table>
+  <tbody>
+    <tr><td>CPU</td><td>2 vCPU, x86-64</td></tr>
+    <tr><td>RAM</td><td>4 GB</td></tr>
+    <tr><td>Disk</td><td>20 GB SSD</td></tr>
+    <tr><td>OS</td><td>Windows Server 2019+, Windows 10/11, or Linux (Ubuntu 22.04 / RHEL 9)</td></tr>
+    <tr><td>Python</td><td>3.12</td></tr>
+  </tbody>
+</table>
+
+<h3>Recommended (production, up to ~100 registered accounts, 50k sessions/year)</h3>
+<table>
+  <tbody>
+    <tr><td>CPU</td><td>4 vCPU, x86-64</td></tr>
+    <tr><td>RAM</td><td>8 GB</td></tr>
+    <tr><td>Disk</td><td>100 GB SSD (database + 2 years of exports + archived messages)</td></tr>
+    <tr><td>Network</td><td>Outbound 443 to Teams webhook; SMTP to your corporate mail relay; Oracle 1521 to FCUBS scan listener (if Flexcube)</td></tr>
+    <tr><td>Uptime target</td><td>Business hours primary; 24×7 fine because scheduler is idle outside work window</td></tr>
+  </tbody>
+</table>
+
+<div class="callout">
+  <strong>Why so modest?</strong> SQLite happily handles hundreds of millions of rows on a single SSD. The bottleneck for this workload is not database throughput — it's the Oracle round-trip during the Flexcube pull. Right-size by network, not compute.
+</div>
+
+<h3>When to scale up</h3>
+<ul>
+  <li><strong>&gt; 500 registered accounts</strong> — SQLite is still fine but consider migrating the audit log and job_runs tables to a separate archive DB to keep main queries fast.</li>
+  <li><strong>Concurrent analysts &gt; 20</strong> — upgrade Uvicorn to <code>--workers 2</code> behind a reverse proxy and put SQLite in WAL mode (already default in the schema).</li>
+  <li><strong>Multi-region / HA</strong> — out of scope for this build. Migrate to PostgreSQL + dedicated scheduler process; the code is ready for either, but contact the team for the transition plan.</li>
+</ul>
+
+<h2 id="prereq">3. Prerequisites &amp; network</h2>
+
+<ul>
+  <li><strong>Python 3.12</strong> on the host. <code>python --version</code> should print <code>Python 3.12.x</code>.</li>
+  <li><strong>pip</strong> — standard with Python.</li>
+  <li><strong>Write access</strong> to the install directory.</li>
+  <li><strong>TCP 8000</strong> open on localhost (or wherever you bind).</li>
+  <li>For Flexcube pull: <strong>Oracle 1521</strong> egress to the FCUBS SCAN listener; DB credentials with read access to <code>acvw_all_ac_entries_new</code> and <code>sttm_dates</code>.</li>
+  <li>For email alerts: <strong>SMTP 587</strong> egress to your corporate mail relay with STARTTLS support.</li>
+  <li>For Teams alerts: <strong>HTTPS 443</strong> egress to <code>*.webhook.office.com</code>.</li>
+</ul>
+
+<h2 id="install">4. Installation from scratch</h2>
+
+<p>Steps assume a Windows host; Linux steps are identical apart from path separators.</p>
+
+<pre><code># 1. Pull the Kilter repository to the install root
+mkdir d:\Kilter
+# (copy the source tree, or clone from your git host)
+
+# 2. Install Python dependencies
+cd d:\Kilter
+python -m pip install --upgrade pip
+python -m pip install fastapi uvicorn jinja2 openpyxl pydantic pyotp qrcode[pil] python-multipart
+
+# 3. Optional: Oracle driver for scheduled Flexcube pulls
+python -m pip install oracledb
+
+# 4. Optional: smoke-test the Python install
+python -c "import app; print('ok, routes:', len(app.app.routes))"
+
+# 5. Initialise the database + start the server (development)
+python -m uvicorn app:app --host 127.0.0.1 --port 8000 --reload
+
+# 6. First-run enrollment token is printed to the console. Example:
+#   ==================================================================
+#     FIRST-RUN ADMIN ENROLLMENT
+#     Open: http://localhost:8000/enroll?user=admin&token=abc123...
+#   ==================================================================</code></pre>
+
+<h2 id="env">5. Environment variables</h2>
+
+<p>All configuration is optional — defaults ship in the code. Override via the process environment.</p>
+
+<table>
+  <thead><tr><th>Variable</th><th>Default</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td><code>FCUBS_USER</code></td><td>(empty)</td><td>Oracle user for the Flexcube pull job. Without this, the scheduled flex_extract job returns a clear diagnostic and stays idle.</td></tr>
+    <tr><td><code>FCUBS_PASSWD</code></td><td>(empty)</td><td>Oracle password. Mount via a secret manager rather than plain env var for production.</td></tr>
+    <tr><td><code>FCUBS_WORKERS</code></td><td>24</td><td>Parallel workers when calling <code>extract_flex_xlsx.py</code> from the CLI. The in-app scheduler runs serially.</td></tr>
+    <tr><td><code>FCUBS_OUTPUT_DIR</code></td><td><code>flex_statements</code></td><td>Where the extractor writes xlsx. The scheduled job overrides this to <code>messages/flexcube/</code>.</td></tr>
+  </tbody>
+</table>
+
+<p>Database path is hardcoded to <code>kilter.db</code> next to <code>db.py</code>. Move it by editing <code>DB_PATH</code> in <code>db.py</code> and symlinking if you need.</p>
+
+<h2 id="enroll">6. First-run admin enrollment</h2>
+
+<p>On first startup, Kilter creates a single admin user and prints a one-time enrollment URL to stdout. Open it in a browser:</p>
+
+<ol>
+  <li>Scan the QR code with Microsoft Authenticator.</li>
+  <li>Enter the first 6-digit code to confirm enrollment.</li>
+  <li>The enrollment token is consumed — navigate to <span class="path">/login</span> and sign in as <code>admin</code>.</li>
+</ol>
+
+<div class="callout warn">
+  <strong>If you miss the console output</strong>, you can re-issue a token from another admin account via <span class="path">Users</span> → <span class="path">Reset enrollment</span>. If no admin is available, stop the service, delete the <code>totp_secret</code> and <code>totp_enrolled_at</code> fields on the admin row via <code>sqlite3 kilter.db</code>, and restart — the app will reissue a token.
+</div>
+
+<h2 id="service">7. Running as a service</h2>
+
+<h3>Windows — NSSM</h3>
+<p>Wrap uvicorn with the Non-Sucking Service Manager so it survives reboots:</p>
+<pre><code>nssm install Kilter "C:\Python312\python.exe" "-m uvicorn app:app --host 127.0.0.1 --port 8000"
+nssm set Kilter AppDirectory "d:\Kilter"
+nssm set Kilter AppStdout "d:\Kilter\logs\stdout.log"
+nssm set Kilter AppStderr "d:\Kilter\logs\stderr.log"
+nssm set Kilter Start SERVICE_AUTO_START
+nssm start Kilter</code></pre>
+
+<h3>Windows — Task Scheduler alternative</h3>
+<p>If NSSM is not approved, create a task that runs at startup, action = <code>python -m uvicorn app:app --host 127.0.0.1 --port 8000</code>, working directory = the install root. Set "If the task fails, restart every 5 minutes" on the Settings tab.</p>
+
+<h3>Linux — systemd</h3>
+<pre><code># /etc/systemd/system/kilter.service
+[Unit]
+Description=Kilter reconciliation service
+After=network.target
+
+[Service]
+User=kilter
+WorkingDirectory=/opt/kilter
+Environment="FCUBS_USER=KILTER_REPORT_GENERATOR"
+EnvironmentFile=-/etc/kilter/secrets.env   # keeps passwords out of unit files
+ExecStart=/usr/bin/python3.12 -m uvicorn app:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target</code></pre>
+
+<h2 id="proxy">8. Reverse proxy &amp; TLS</h2>
+
+<p>Kilter binds to <code>127.0.0.1:8000</code> by default. Put it behind your organisation's TLS certificate via IIS, nginx, or Apache so analysts hit <code>https://kilter.example.local</code> (replace with your internal domain) instead.</p>
+
+<h4>nginx sample</h4>
+<pre><code>server {
+    listen 443 ssl http2;
+    server_name kilter.example.local;
+    ssl_certificate     /etc/ssl/certs/kilter.crt;
+    ssl_certificate_key /etc/ssl/private/kilter.key;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 120s;   # xlsx exports can take ~30s on large sessions
+    }
+}</code></pre>
+
+<p>The TOTP login flow works unchanged; session tokens are issued over HTTPS and marked HttpOnly+Secure by the reverse proxy when you enable the corresponding options.</p>
+
+<h2 id="backups">9. Backups &amp; disaster recovery</h2>
+
+<h3>What to back up</h3>
+<ol>
+  <li><code>kilter.db</code> — the whole application state. Single file, back it up atomically.</li>
+  <li><code>exports/</code> — generated certificates + daily breaks workbooks. Optional but cheap.</li>
+  <li><code>messages/processed/</code> — historic SWIFT + Flex inputs. Size-sensitive; rotate to archive storage monthly.</li>
+</ol>
+
+<h3>Atomic SQLite backup</h3>
+<p>Never copy an open SQLite file directly — use the built-in online backup API:</p>
+<pre><code># Windows batch / Linux shell
+python -c "import sqlite3; s=sqlite3.connect('d:/Kilter/kilter.db'); d=sqlite3.connect('d:/backups/kilter-%DATE%.db'); s.backup(d); d.close(); s.close()"</code></pre>
+
+<p>Schedule nightly via Task Scheduler / cron. Retain 30 daily + 12 monthly + 7 yearly snapshots in tiered storage.</p>
+
+<h3>Recovery</h3>
+<ol>
+  <li>Stop the Kilter service.</li>
+  <li>Move the corrupt <code>kilter.db</code> aside (don't delete — keep it for forensics).</li>
+  <li>Copy the most recent backup into place as <code>kilter.db</code>.</li>
+  <li>Start the service. The scheduler auto-resumes and will re-ingest any files still in <code>messages/swift/</code> and <code>messages/flexcube/</code>.</li>
+</ol>
+
+<h2 id="upgrades">10. Upgrades</h2>
+
+<p>Kilter's schema uses additive migrations — new columns and tables are added on startup; existing rows are preserved. The process:</p>
+<ol>
+  <li>Back up <code>kilter.db</code>.</li>
+  <li>Stop the service.</li>
+  <li>Replace the source tree with the new version.</li>
+  <li>Install any new Python dependencies: <code>pip install -r requirements.txt</code> if provided.</li>
+  <li>Start the service. Watch the log for "ALTER TABLE" lines — that's the migration running.</li>
+  <li>Verify the login page renders and one session opens cleanly.</li>
+</ol>
+
+<div class="callout warn">
+  <strong>Destructive migrations</strong> (column drops, rename of existing data) are rare but do happen. They're always accompanied by a release note saying "take a backup first". If a release note is silent on migrations, it's additive-only.
+</div>
+
+<h2 id="monitoring">11. Monitoring &amp; log collection</h2>
+
+<h3>Application health</h3>
+<ul>
+  <li><code>GET /</code> on an authenticated session is the liveness check.</li>
+  <li><code>GET /scheduled-jobs</code> (admin) returns <code>scheduler_running: true/false</code> — the single best indicator of "is the automation actually happening?"</li>
+  <li>The audit log accumulates <code>scheduler_run</code> entries for every fired job — a gap &gt; 30 minutes during business hours indicates the daemon has died.</li>
+</ul>
+
+<h3>Forwarding logs</h3>
+<p>Uvicorn writes to stdout/stderr. Point NSSM / systemd / Task Scheduler at a log directory, then forward to your central log platform (Splunk, Graylog, Loki).</p>
+
+<h3>What to alert on</h3>
+<table>
+  <thead><tr><th>Signal</th><th>Meaning</th><th>Severity</th></tr></thead>
+  <tbody>
+    <tr><td><code>scheduler_tick_error</code> in audit_log</td><td>Scheduler loop hit an uncaught error</td><td>Warn</td></tr>
+    <tr><td>No <code>scheduler_run</code> in last 30 min (08:00–18:00 UTC)</td><td>Daemon likely dead</td><td>Critical</td></tr>
+    <tr><td>Any <code>job_runs</code> with status=error for 3 consecutive runs</td><td>Upstream system down or credentials expired</td><td>Warn</td></tr>
+    <tr><td>Disk &gt; 85% on the install volume</td><td>Message archive or exports eating space</td><td>Warn</td></tr>
+  </tbody>
+</table>
+
+<h2 id="oracle">12. Flexcube Oracle connectivity</h2>
+
+<p>The direct-from-Oracle extract is optional but is the strongest pitch differentiator vs Corona ("ops never touches a file"). To enable:</p>
+
+<ol>
+  <li>Install the driver: <code>pip install oracledb</code>.</li>
+  <li>Provision a read-only Oracle user with grants on <code>fcubsawa.acvw_all_ac_entries_new</code>, <code>fcubsawa.sttm_dates</code>, and <code>fcubsawa.sttm_branch</code>.</li>
+  <li>Set env vars on the Kilter service: <code>FCUBS_USER</code>, <code>FCUBS_PASSWD</code>.</li>
+  <li>Enable the <strong>Flexcube pull (pre-scan)</strong> job at <span class="path">Scheduler</span>. First run will probe the connection; on success, daily extracts land in <code>messages/flexcube/</code> at 05:45 UTC.</li>
+</ol>
+
+<div class="callout danger">
+  <strong>Do not embed production Oracle credentials in systemd unit files or Windows scheduled task definitions.</strong> Use a secrets file with restricted ACL, or integrate with the bank's secret manager (CyberArk, HashiCorp Vault). The app reads from the process environment only.
+</div>
+
+<h2 id="trouble">13. Troubleshooting</h2>
+
+<table>
+  <thead><tr><th>Symptom</th><th>Likely cause</th><th>Fix</th></tr></thead>
+  <tbody>
+    <tr><td>Login screen loops back after entering code</td><td>Clock drift on the server</td><td>Sync NTP. TOTP tolerates &plusmn;30 s; more than that and codes never validate.</td></tr>
+    <tr><td>Scheduler shows red dot on admin page</td><td>Daemon thread died on startup</td><td>Check service log for the startup exception. Restart the service.</td></tr>
+    <tr><td><code>PermissionError: [Errno 13]</code> on scan</td><td>messages/ directory ACL</td><td>Ensure the service account has read+delete on <code>messages/swift/</code> and <code>messages/flexcube/</code>.</td></tr>
+    <tr><td>SWIFT file shows up as "no_partner"</td><td>No matching Flex file in the same scan window</td><td>Expected for shared-correspondent accounts; wait for the Flex file, or upload manually.</td></tr>
+    <tr><td>Ingest crashes with <code>UNIQUE constraint failed</code></td><td>Duplicate file re-dropped into messages/</td><td>Files are deduplicated by SHA-256; look in <code>messages/unloaded/duplicate/</code>.</td></tr>
+    <tr><td>"Error binding parameter" in job output</td><td>Misconfigured custom job params_json</td><td>Validate JSON in the job editor; empty is fine.</td></tr>
+    <tr><td>Reconcile engine runs slow</td><td>Very large session (10k+ rows) exercising the 1:1 proposer's O(N&times;M) scan</td><td>Raise <code>min_ref_len</code> tolerance to prune early; split statements upstream.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="checklist">14. IT readiness checklist</h2>
+
+<ul>
+  <li>☐ Python 3.12 installed; <code>python --version</code> verified.</li>
+  <li>☐ Install directory created with write access for service account.</li>
+  <li>☐ Python dependencies installed.</li>
+  <li>☐ Service registered (NSSM / systemd / Task Scheduler) and starts on boot.</li>
+  <li>☐ Reverse proxy + TLS configured; HTTP &rarr; HTTPS redirect in place.</li>
+  <li>☐ Backup job created and tested with a recovery drill.</li>
+  <li>☐ Log forwarding active; scheduler-dead alert configured.</li>
+  <li>☐ Oracle read-only user provisioned, tested; env vars set.</li>
+  <li>☐ Teams webhook URL created + tested via <span class="path">SLA alerts</span> → Dry-run.</li>
+  <li>☐ SMTP relay access verified from the host.</li>
+  <li>☐ Admin account enrolled; second admin enrolled as break-glass.</li>
+  <li>☐ Ops &amp; Internal Control users enrolled; MFA tested.</li>
+  <li>☐ Runbook added to internal wiki linking to this manual.</li>
+</ul>
+
+{% endblock %}

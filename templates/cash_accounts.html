@@ -1,0 +1,389 @@
+{% extends "base.html" %}
+{% block title %}Cash accounts · Kilter{% endblock %}
+{% block crumbs %}<a href="/">Dashboard</a><span class="sep">/</span><span class="current">Cash accounts</span>{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Cash accounts</h1>
+    <div class="subtitle">Registered nostro / GL pairs. Used to auto-label sessions on upload and pair files on scan.</div>
+  </div>
+  <button class="btn btn-primary" onclick="document.getElementById('new-account').open = true">+ New cash account</button>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <h2>Registry</h2>
+    <div class="hint"><span id="account-count">0</span> active</div>
+  </div>
+  <div class="card-body tight">
+    <div id="tree"></div>
+  </div>
+</div>
+
+<details id="new-account" style="margin-top:20px">
+  <summary>Register a new cash account</summary>
+  <div class="card" style="margin-top:8px">
+    <div class="card-body">
+      <form id="new-form" class="form-grid">
+        <div class="field"><label>Access area</label>
+          <select class="input" name="access_area" id="new-access-area">
+            <option value="">(none)</option>
+          </select>
+        </div>
+        <div class="field"><label>Shortname</label><input class="input" name="shortname" placeholder="e.g. BOG GHS"></div>
+        <div class="field" style="grid-column:1/-1"><label>Label (full name)</label><input class="input" name="label" placeholder="e.g. Nostro at Citibank London (USD)" required></div>
+        <div class="field"><label>Correspondent BIC</label>
+          <div style="display:flex;gap:6px">
+            <select class="input" name="bic" id="new-bic" style="flex:1">
+              <option value="">(none)</option>
+            </select>
+            <button type="button" class="btn btn-default btn-sm" onclick="openAddBank('new')">+ Add bank</button>
+          </div>
+          <span class="hint" style="font-size:var(--t-small);color:var(--c-text-muted)">Manage list in <a href="/banks-admin">Banks</a></span>
+        </div>
+        <div class="field"><label>Currency *</label>
+          <select class="input" name="currency" id="new-currency" required>
+            <option value="">Loading…</option>
+          </select>
+          <span class="hint" style="font-size:var(--t-small);color:var(--c-text-muted)">Manage list in <a href="/currencies-admin">Currencies</a></span>
+        </div>
+        <div class="field"><label>SWIFT account (Their side)</label><input class="input" name="swift_account" placeholder="e.g. 0120730006000" required></div>
+        <div class="field"><label>Flexcube GL (Our side)</label><input class="input" name="flex_ac_no" placeholder="e.g. 4441001259366" required></div>
+        <div class="field" style="grid-column:1/-1"><label>Notes</label><input class="input" name="notes"></div>
+        <div style="grid-column:1/-1">
+          <button type="submit" class="btn btn-primary">Register</button>
+          <span class="status" id="new-status"></span>
+        </div>
+      </form>
+    </div>
+  </div>
+</details>
+
+<!-- Edit modal -->
+<div id="edit-modal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.55);z-index:100;align-items:flex-start;justify-content:center;padding:50px 20px;overflow-y:auto">
+  <div class="card" style="max-width:640px;width:100%;margin:0">
+    <div class="card-head">
+      <h2>Edit cash account</h2>
+      <button class="btn btn-ghost btn-sm" onclick="closeEdit()">Close</button>
+    </div>
+    <div class="card-body">
+      <form id="edit-form" class="form-grid">
+        <input type="hidden" name="id">
+        <div class="field"><label>Access area</label>
+          <select class="input" name="access_area" id="edit-access-area">
+            <option value="">(none)</option>
+          </select>
+        </div>
+        <div class="field"><label>Shortname</label><input class="input" name="shortname"></div>
+        <div class="field" style="grid-column:1/-1"><label>Label (full name) *</label><input class="input" name="label" required></div>
+        <div class="field"><label>Correspondent BIC</label>
+          <div style="display:flex;gap:6px">
+            <select class="input" name="bic" id="edit-bic" style="flex:1">
+              <option value="">(none)</option>
+            </select>
+            <button type="button" class="btn btn-default btn-sm" onclick="openAddBank('edit')">+ Add bank</button>
+          </div>
+        </div>
+        <div class="field"><label>Active</label>
+          <select class="input" name="active">
+            <option value="1">Yes</option>
+            <option value="0">No (hide from scanner pairing)</option>
+          </select>
+        </div>
+        <div class="field" style="grid-column:1/-1"><label>Notes</label><input class="input" name="notes"></div>
+        <div class="field" style="grid-column:1/-1">
+          <label style="color:var(--c-text-muted)">Identity fields (read-only — changing these would orphan historic sessions)</label>
+          <div style="display:grid;grid-template-columns:1fr 1fr 80px;gap:10px;font-family:var(--f-mono);font-size:var(--t-small);background:var(--c-bg-sub);padding:10px;border-radius:6px;border:1px solid var(--c-border)">
+            <div><span class="muted">SWIFT:</span> <span id="edit-swift">—</span></div>
+            <div><span class="muted">Flex GL:</span> <span id="edit-flex">—</span></div>
+            <div><span class="muted">CCY:</span> <span id="edit-ccy">—</span></div>
+          </div>
+        </div>
+        <div style="grid-column:1/-1;display:flex;gap:10px;align-items:center">
+          <button type="submit" class="btn btn-primary" id="edit-submit">Save changes</button>
+          <button type="button" class="btn btn-ghost" onclick="closeEdit()">Cancel</button>
+          <span class="status" id="edit-status"></span>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Inline Add-bank modal (shared by both forms) -->
+<div id="bank-modal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.55);z-index:110;align-items:flex-start;justify-content:center;padding:60px 20px;overflow-y:auto">
+  <div class="card" style="max-width:480px;width:100%;margin:0">
+    <div class="card-head">
+      <h2>Add bank</h2>
+      <button class="btn btn-ghost btn-sm" onclick="closeAddBank()">Close</button>
+    </div>
+    <div class="card-body">
+      <form id="bank-form" class="form-grid">
+        <div class="field"><label>BIC (8–11 chars) *</label>
+          <input class="input" name="bic" required maxlength="11" style="text-transform:uppercase" placeholder="e.g. CITIGB2L"></div>
+        <div class="field"><label>Name *</label>
+          <input class="input" name="name" required placeholder="e.g. Citibank London"></div>
+        <div class="field"><label>Nickname</label>
+          <input class="input" name="nickname" placeholder="optional"></div>
+        <div class="field"><label>Origin</label>
+          <select class="input" name="origin">
+            <option value="their">Their (correspondent)</option>
+            <option value="our">Our (own bank)</option>
+          </select></div>
+        <div class="field"><label>Type</label>
+          <select class="input" name="type">
+            <option value="bank">Bank</option>
+            <option value="broker">Broker</option>
+          </select></div>
+        <div style="grid-column:1/-1;display:flex;gap:10px;align-items:center">
+          <button type="submit" class="btn btn-primary">Add &amp; select</button>
+          <button type="button" class="btn btn-ghost" onclick="closeAddBank()">Cancel</button>
+          <span class="status" id="bank-status"></span>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.body.dataset.nav = 'cash-accounts';
+
+let accountsCache = [];
+let accessAreas = [];
+let canEdit = false;
+
+document.addEventListener('me:loaded', (ev) => {
+  canEdit = ev.detail.role === 'admin' || ev.detail.role === 'ops';
+  render();
+});
+
+let banksCache = [];
+let addBankTarget = 'new';   // 'new' | 'edit' — which form's select to update after add
+
+async function load() {
+  const [aR, areasR, cR, bR] = await Promise.all([
+    fetch('/accounts'), fetch('/access-areas'), fetch('/currencies'), fetch('/banks'),
+  ]);
+  accountsCache = aR.ok ? await aR.json() : [];
+  accessAreas   = areasR.ok ? await areasR.json() : [];
+  const currencies = cR.ok ? await cR.json() : [];
+  banksCache    = bR.ok ? await bR.json() : [];
+
+  // Populate BIC dropdowns on both the new and edit forms.
+  const bankHtml = '<option value="">(none)</option>' +
+    banksCache.map(b => {
+      const label = b.nickname ? `${b.bic} — ${b.nickname}` : `${b.bic} — ${b.name}`;
+      return `<option value="${esc(b.bic)}">${esc(label)}</option>`;
+    }).join('');
+  const newBic  = document.getElementById('new-bic');
+  const editBic = document.getElementById('edit-bic');
+  if (newBic)  newBic.innerHTML  = bankHtml;
+  if (editBic) editBic.innerHTML = bankHtml;
+
+  // Populate both access area dropdowns from the same list.
+  const optsHtml = '<option value="">(none)</option>' +
+    accessAreas.map(a => `<option value="${esc(a.name)}">${esc(a.name)}</option>`).join('');
+  document.getElementById('new-access-area').innerHTML  = optsHtml;
+  document.getElementById('edit-access-area').innerHTML = optsHtml;
+
+  // Populate currency dropdown on the 'new account' form from managed list.
+  const ccyHtml = '<option value="">(select currency)</option>' +
+    currencies.map(c => `<option value="${esc(c.iso_code)}">${esc(c.iso_code)} — ${esc(c.name)}</option>`).join('');
+  const ccyEl = document.getElementById('new-currency');
+  if (ccyEl) ccyEl.innerHTML = ccyHtml;
+
+  render();
+}
+
+function render() {
+  document.getElementById('account-count').textContent = accountsCache.length;
+  const tree = document.getElementById('tree');
+  if (accountsCache.length === 0) {
+    tree.innerHTML = `
+      <div class="empty-state">
+        <h3>No cash accounts yet</h3>
+        <p>Register your first account above so scans can auto-pair files.</p>
+      </div>`;
+    return;
+  }
+
+  const groups = {};
+  for (const a of accountsCache) {
+    const key = a.access_area || '(no access area)';
+    (groups[key] = groups[key] || []).push(a);
+  }
+
+  tree.innerHTML = Object.keys(groups).sort().map(area => `
+    <div style="border-bottom:1px solid var(--c-border)">
+      <div style="padding:10px 20px;background:var(--c-surface-2);font-size:var(--t-small);font-weight:600;color:var(--c-text-muted);letter-spacing:0.3px;text-transform:uppercase;">
+        ${esc(area)}
+        <span style="float:right;color:var(--c-text-subtle);font-weight:500;text-transform:none;letter-spacing:0">${groups[area].length}</span>
+      </div>
+      <table class="table" style="border-radius:0">
+        <thead>
+          <tr>
+            <th style="width:120px">Shortname</th>
+            <th>Label</th>
+            <th>BIC</th>
+            <th>SWIFT acct (Their)</th>
+            <th>Flex GL (Our)</th>
+            <th style="width:70px">CCY</th>
+            <th style="width:80px"></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${groups[area].sort((a,b) => (a.shortname || a.label).localeCompare(b.shortname || b.label)).map(a => `
+            <tr>
+              <td><strong>${esc(a.shortname || '')}</strong></td>
+              <td>${esc(a.label)}${a.notes ? `<br><span class="muted" style="font-size:var(--t-small)">${esc(a.notes)}</span>` : ''}</td>
+              <td class="muted"><code>${esc(a.bic || '')}</code></td>
+              <td class="muted"><code>${esc(a.swift_account)}</code></td>
+              <td class="muted"><code>${esc(a.flex_ac_no)}</code></td>
+              <td><span class="badge badge-neutral">${esc(a.currency)}</span></td>
+              <td>${canEdit ? `<button class="btn btn-ghost btn-sm" onclick="openEdit(${a.id})">Edit</button>` : ''}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`).join('');
+}
+
+function openEdit(id) {
+  const a = accountsCache.find(x => x.id === id);
+  if (!a) return;
+  const form = document.getElementById('edit-form');
+  form.id.value           = a.id;
+  form.access_area.value  = a.access_area || '';
+  form.shortname.value    = a.shortname || '';
+  form.label.value        = a.label;
+  form.bic.value          = a.bic || '';
+  form.notes.value        = a.notes || '';
+  form.active.value       = String(a.active ?? 1);
+  document.getElementById('edit-swift').textContent = a.swift_account;
+  document.getElementById('edit-flex').textContent  = a.flex_ac_no;
+  document.getElementById('edit-ccy').textContent   = a.currency;
+  document.getElementById('edit-status').textContent = '';
+  document.getElementById('edit-modal').style.display = 'flex';
+}
+
+function closeEdit() {
+  document.getElementById('edit-modal').style.display = 'none';
+}
+
+document.getElementById('edit-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const id = fd.get('id');
+  const payload = {
+    label:       fd.get('label'),
+    shortname:   fd.get('shortname') || null,
+    access_area: fd.get('access_area') || null,
+    bic:         fd.get('bic') || null,
+    notes:       fd.get('notes') || null,
+    active:      parseInt(fd.get('active'), 10),
+  };
+  const status = document.getElementById('edit-status');
+  const btn = document.getElementById('edit-submit');
+  btn.disabled = true;
+  status.className = 'status';
+  status.textContent = 'Saving...';
+  try {
+    const r = await fetch(`/accounts/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!r.ok) throw new Error((await r.json()).detail || 'Failed');
+    status.className = 'status success';
+    status.textContent = 'Saved.';
+    setTimeout(() => { closeEdit(); load(); }, 600);
+  } catch (err) {
+    status.className = 'status error';
+    status.textContent = err.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('new-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const payload = Object.fromEntries(fd.entries());
+  payload.currency = (payload.currency || '').toUpperCase();
+  for (const k of ['bic', 'notes', 'shortname', 'access_area']) if (!payload[k]) payload[k] = null;
+  const status = document.getElementById('new-status');
+  try {
+    const r = await fetch('/accounts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!r.ok) throw new Error((await r.json()).detail || 'Failed');
+    e.target.reset();
+    status.className = 'status success';
+    status.textContent = 'Registered.';
+    document.getElementById('new-account').open = false;
+    load();
+  } catch (err) {
+    status.className = 'status error';
+    status.textContent = err.message;
+  }
+});
+
+// --- Inline Add-bank -------------------------------------------------------
+// Lets ops register a counterparty without leaving the account form. After
+// POSTing, we re-fetch /banks, repopulate the two dropdowns, and select the
+// newly-created BIC on whichever form triggered the flow.
+function openAddBank(target) {
+  addBankTarget = target;
+  const f = document.getElementById('bank-form');
+  f.reset();
+  document.getElementById('bank-status').textContent = '';
+  document.getElementById('bank-modal').style.display = 'flex';
+}
+function closeAddBank() {
+  document.getElementById('bank-modal').style.display = 'none';
+}
+
+document.getElementById('bank-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const payload = Object.fromEntries(fd.entries());
+  payload.bic = (payload.bic || '').toUpperCase().trim();
+  for (const k of ['nickname']) if (!payload[k]) payload[k] = null;
+  const status = document.getElementById('bank-status');
+  status.className = 'status';
+  status.textContent = 'Saving…';
+  try {
+    const r = await fetch('/banks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!r.ok) throw new Error((await r.json().catch(()=>({}))).detail || 'Failed');
+    // Re-fetch banks and repopulate both selects. Then select the new BIC on
+    // whichever form opened the modal.
+    const bR = await fetch('/banks');
+    banksCache = bR.ok ? await bR.json() : [];
+    const bankHtml = '<option value="">(none)</option>' +
+      banksCache.map(b => {
+        const label = b.nickname ? `${b.bic} — ${b.nickname}` : `${b.bic} — ${b.name}`;
+        return `<option value="${esc(b.bic)}">${esc(label)}</option>`;
+      }).join('');
+    const newBic  = document.getElementById('new-bic');
+    const editBic = document.getElementById('edit-bic');
+    if (newBic)  newBic.innerHTML  = bankHtml;
+    if (editBic) editBic.innerHTML = bankHtml;
+    if (addBankTarget === 'new'  && newBic)  newBic.value  = payload.bic;
+    if (addBankTarget === 'edit' && editBic) editBic.value = payload.bic;
+    closeAddBank();
+  } catch (err) {
+    status.className = 'status error';
+    status.textContent = err.message;
+  }
+});
+
+load();
+</script>
+{% endblock %}

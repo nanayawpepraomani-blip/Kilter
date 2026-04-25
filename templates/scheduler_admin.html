@@ -1,0 +1,263 @@
+{% extends "base.html" %}
+{% block title %}Scheduler — Kilter{% endblock %}
+{% block crumbs %}<span class="current">Scheduler</span>{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Scheduler</h1>
+    <div class="subtitle">Automations that run without a human. In-process daemon polls every 30 seconds. Times are UTC.</div>
+  </div>
+  <button class="btn btn-primary admin-only" id="add-btn" style="display:none">Add job</button>
+</div>
+
+<div class="card" style="margin-bottom:16px">
+  <div class="card-body" style="display:flex;align-items:center;gap:16px;padding:14px 20px">
+    <div>
+      <span id="daemon-light" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--c-text-subtle);margin-right:8px;vertical-align:middle"></span>
+      Scheduler daemon: <strong id="daemon-status">—</strong>
+    </div>
+    <div style="color:var(--c-text-muted);font-size:var(--t-small)">Now (UTC): <code id="now-utc">—</code></div>
+    <div style="color:var(--c-text-muted);font-size:var(--t-small)">History retained per job: 20 runs</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head"><h2>Active schedule</h2></div>
+  <div class="card-body tight">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Job</th><th>Type</th><th>Schedule</th><th>Next run</th>
+          <th>Last run</th><th>Status</th>
+          <th>Enabled</th><th style="width:200px"></th>
+        </tr>
+      </thead>
+      <tbody id="body"><tr class="empty-row"><td colspan="8">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Run-history drawer -->
+<div id="history-modal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.55);z-index:100;align-items:flex-start;justify-content:center;padding:40px 20px;overflow-y:auto">
+  <div class="card" style="max-width:800px;width:100%;margin:0">
+    <div class="card-head">
+      <h2 id="history-title">Run history</h2>
+      <button class="btn btn-ghost btn-sm" onclick="closeHistory()">Close</button>
+    </div>
+    <div class="card-body tight" id="history-body" style="max-height:60vh;overflow-y:auto">
+      Loading…
+    </div>
+  </div>
+</div>
+
+<!-- Add/edit job modal -->
+<div id="edit-modal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.55);z-index:100;align-items:flex-start;justify-content:center;padding:50px 20px;overflow-y:auto">
+  <div class="card" style="max-width:560px;width:100%;margin:0">
+    <div class="card-head">
+      <h2 id="edit-title">Add job</h2>
+      <button class="btn btn-ghost btn-sm" onclick="closeEdit()">Close</button>
+    </div>
+    <div class="card-body">
+      <form id="form" class="form-grid">
+        <input type="hidden" name="id">
+        <div class="field" style="grid-column:1/-1"><label>Name *</label>
+          <input class="input" name="name" required placeholder="e.g. Morning scan"></div>
+        <div class="field"><label>Job type *</label>
+          <select class="input" name="job_type" required>
+            <option value="scan">scan</option>
+            <option value="daily_close">daily_close</option>
+            <option value="sla_check">sla_check</option>
+            <option value="daily_breaks_report">daily_breaks_report</option>
+            <option value="flex_extract">flex_extract</option>
+          </select></div>
+        <div class="field"><label>Schedule *</label>
+          <select class="input" name="schedule_kind" id="sched-kind" required>
+            <option value="interval">Every N minutes</option>
+            <option value="daily_at">Once a day at HH:MM (UTC)</option>
+          </select></div>
+        <div class="field" id="kind-interval"><label>Interval minutes</label>
+          <input class="input" type="number" name="interval_minutes" min="1" placeholder="e.g. 15"></div>
+        <div class="field" id="kind-daily" style="display:none"><label>Time (UTC, HH:MM)</label>
+          <input class="input" name="daily_at_utc" placeholder="e.g. 07:00"></div>
+        <div class="field" style="grid-column:1/-1"><label>Params (JSON, optional)</label>
+          <input class="input" name="params_json" placeholder='e.g. {"min_age_hours": 12}'></div>
+        <div class="field"><label>Enabled</label>
+          <select class="input" name="enabled"><option value="1">Yes</option><option value="0">No</option></select></div>
+        <div style="grid-column:1/-1;display:flex;gap:10px;align-items:center">
+          <button type="submit" class="btn btn-primary">Save</button>
+          <button type="button" class="btn btn-ghost" onclick="closeEdit()">Cancel</button>
+          <span class="status" id="edit-status"></span>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.body.dataset.nav = 'scheduler';
+
+document.addEventListener('me:loaded', (ev) => {
+  const canEdit = ev.detail.role === 'admin';
+  document.querySelectorAll('.admin-only').forEach(el => { el.style.display = canEdit ? '' : 'none'; });
+});
+
+function scheduleText(j) {
+  if (j.schedule_kind === 'interval') return `every ${j.interval_minutes} min`;
+  if (j.schedule_kind === 'daily_at') return `daily @ ${j.daily_at_utc} UTC`;
+  return j.schedule_kind;
+}
+
+function statusBadge(s) {
+  if (!s) return '<span class="muted">—</span>';
+  if (s === 'ok') return '<span class="badge badge-success">ok</span>';
+  if (s === 'error') return '<span class="badge badge-danger">error</span>';
+  return `<span class="badge badge-neutral">${esc(s)}</span>`;
+}
+
+function tickClock() {
+  document.getElementById('now-utc').textContent = new Date().toISOString().replace('T',' ').slice(0,19);
+}
+setInterval(tickClock, 1000); tickClock();
+
+async function load() {
+  const r = await fetch('/scheduled-jobs');
+  if (!r.ok) {
+    document.getElementById('body').innerHTML = `<tr><td colspan="8">Load failed — admin only.</td></tr>`;
+    document.getElementById('daemon-status').textContent = 'unknown (auth required)';
+    return;
+  }
+  const data = await r.json();
+  const light = document.getElementById('daemon-light');
+  light.style.background = data.scheduler_running ? 'var(--c-success)' : 'var(--c-danger)';
+  document.getElementById('daemon-status').textContent = data.scheduler_running ? 'RUNNING' : 'stopped';
+  const body = document.getElementById('body');
+  if (data.jobs.length === 0) {
+    body.innerHTML = `<tr class="empty-row"><td colspan="8">No scheduled jobs.</td></tr>`;
+    return;
+  }
+  body.innerHTML = data.jobs.map(j => `
+    <tr>
+      <td><strong>${esc(j.name)}</strong></td>
+      <td><code style="font-size:var(--t-small)">${esc(j.job_type)}</code></td>
+      <td class="muted">${esc(scheduleText(j))}</td>
+      <td class="muted" style="font-size:var(--t-small)">${j.next_run_at_computed ? fmtDateTime(j.next_run_at_computed) : '<em>disabled</em>'}</td>
+      <td class="muted" style="font-size:var(--t-small)">${j.last_run_at ? fmtDateTime(j.last_run_at) : '—'}${j.last_run_ms ? `<br><span style="font-size:var(--t-micro)">${j.last_run_ms} ms</span>` : ''}</td>
+      <td>${statusBadge(j.last_run_status)}${j.last_run_output ? `<div style="font-size:var(--t-micro);color:var(--c-text-muted);max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(j.last_run_output)}">${esc(j.last_run_output)}</div>` : ''}</td>
+      <td>${j.enabled ? '<span class="badge badge-success">On</span>' : '<span class="badge badge-neutral">Off</span>'}</td>
+      <td>
+        <button class="btn btn-primary btn-sm" onclick="runNow(${j.id}, this)">Run now</button>
+        <button class="btn btn-ghost btn-sm" onclick="viewHistory(${j.id}, ${JSON.stringify(esc(j.name))})">History</button>
+        <button class="btn btn-ghost btn-sm" onclick='openEdit(${JSON.stringify(j)})'>Edit</button>
+      </td>
+    </tr>`).join('');
+}
+
+async function runNow(id, btn) {
+  btn.disabled = true;
+  const orig = btn.textContent;
+  btn.textContent = 'Running…';
+  try {
+    const r = await fetch(`/scheduled-jobs/${id}/run`, { method: 'POST' });
+    if (!r.ok) throw new Error((await r.json().catch(()=>({}))).detail || 'Failed');
+    const j = await r.json();
+    alert(`${j.status.toUpperCase()} (${j.duration_ms} ms)\n\n${j.output}`);
+    load();
+  } catch (err) {
+    alert('Failed: ' + err.message);
+  } finally {
+    btn.disabled = false; btn.textContent = orig;
+  }
+}
+
+async function viewHistory(id, name) {
+  document.getElementById('history-title').textContent = `Run history — ${name}`;
+  document.getElementById('history-modal').style.display = 'flex';
+  const body = document.getElementById('history-body');
+  body.innerHTML = 'Loading…';
+  const r = await fetch(`/scheduled-jobs/${id}/runs?limit=20`);
+  if (!r.ok) { body.innerHTML = 'Load failed.'; return; }
+  const rows = await r.json();
+  if (rows.length === 0) { body.innerHTML = '<div style="padding:20px;color:var(--c-text-muted)">No runs yet.</div>'; return; }
+  body.innerHTML = `
+    <table class="table">
+      <thead><tr><th>Started</th><th>Duration</th><th>Status</th><th>Output</th></tr></thead>
+      <tbody>${rows.map(r => `
+        <tr>
+          <td class="muted" style="font-size:var(--t-small)">${fmtDateTime(r.started_at)}</td>
+          <td class="num" style="font-size:var(--t-small)">${r.duration_ms ?? '—'} ms</td>
+          <td>${statusBadge(r.status)}</td>
+          <td style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:var(--t-small);white-space:pre-wrap;max-width:520px;word-break:break-word">${esc(r.output || '')}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+function closeHistory() { document.getElementById('history-modal').style.display = 'none'; }
+
+function openAdd() {
+  const f = document.getElementById('form');
+  f.reset();
+  f.id.value = '';
+  document.getElementById('edit-title').textContent = 'Add job';
+  document.getElementById('edit-status').textContent = '';
+  document.getElementById('sched-kind').dispatchEvent(new Event('change'));
+  document.getElementById('edit-modal').style.display = 'flex';
+}
+function openEdit(j) {
+  const f = document.getElementById('form');
+  f.reset();
+  f.id.value = j.id;
+  f.name.value = j.name;
+  f.job_type.value = j.job_type;
+  f.schedule_kind.value = j.schedule_kind;
+  f.interval_minutes.value = j.interval_minutes || '';
+  f.daily_at_utc.value = j.daily_at_utc || '';
+  f.params_json.value = j.params_json || '';
+  f.enabled.value = String(j.enabled);
+  document.getElementById('edit-title').textContent = `Edit ${j.name}`;
+  document.getElementById('edit-status').textContent = '';
+  document.getElementById('sched-kind').dispatchEvent(new Event('change'));
+  document.getElementById('edit-modal').style.display = 'flex';
+}
+function closeEdit() { document.getElementById('edit-modal').style.display = 'none'; }
+
+document.getElementById('sched-kind').addEventListener('change', (e) => {
+  document.getElementById('kind-interval').style.display = e.target.value === 'interval' ? '' : 'none';
+  document.getElementById('kind-daily').style.display    = e.target.value === 'daily_at' ? '' : 'none';
+});
+
+document.getElementById('form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = e.target;
+  const id = f.id.value;
+  const body = {
+    name: f.name.value.trim(),
+    job_type: f.job_type.value,
+    schedule_kind: f.schedule_kind.value,
+    interval_minutes: f.interval_minutes.value ? parseInt(f.interval_minutes.value, 10) : null,
+    daily_at_utc: f.daily_at_utc.value.trim() || null,
+    params_json: f.params_json.value.trim() || null,
+    enabled: parseInt(f.enabled.value, 10),
+  };
+  const url = id ? `/scheduled-jobs/${id}` : '/scheduled-jobs';
+  const method = id ? 'PATCH' : 'POST';
+  const status = document.getElementById('edit-status');
+  status.className = 'status'; status.textContent = 'Saving…';
+  try {
+    const r = await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    if (!r.ok) throw new Error((await r.json().catch(()=>({}))).detail || 'Failed');
+    status.className = 'status success'; status.textContent = 'Saved.';
+    closeEdit(); load();
+  } catch (err) {
+    status.className = 'status error'; status.textContent = err.message;
+  }
+});
+
+document.getElementById('add-btn').addEventListener('click', openAdd);
+
+load();
+setInterval(load, 20000);  // refresh next-run times while page is open
+</script>
+{% endblock %}

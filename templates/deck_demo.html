@@ -1,0 +1,323 @@
+{% extends "deck_base.html" %}
+{% block title %}Kilter — 10-Minute Demo Walkthrough{% endblock %}
+
+{% block slides %}
+
+<!-- =========== Cover =========== -->
+<section class="slide cover" data-notes="
+  Welcome note. Total run time is 10 minutes. Split-screen set-up: this deck on
+  one monitor, the actual app (open at <code>/</code>) on the other. When a
+  slide says 'SHOW →', switch to the app monitor and do the action.">
+  <div class="slide-inner">
+    <div class="eyebrow">Live Demo · 10 minutes</div>
+    <h1>Kilter</h1>
+    <div class="sub">A scripted walkthrough. Present this deck on one screen, the live app on the other.</div>
+    <div class="gradient-line"></div>
+    <div class="meta">Demo walkthrough · {{ generated_at }}</div>
+  </div>
+</section>
+
+<!-- =========== Context =========== -->
+<section class="slide" data-notes="
+  Set the scene. This is the hook — the audience needs to imagine themselves
+  in the middle of a working day.">
+  <div class="slide-inner">
+    <h3>Set the scene</h3>
+    <h2>It's Monday, 08:00.</h2>
+    <p class="lead" style="margin-top: 30px">
+      You're a reconciliation analyst on the PSC desk. Overnight, 30 correspondent-bank
+      statements dropped into the SFTP pipeline. The Flexcube ledger posted
+      hundreds of journal entries.
+    </p>
+    <p class="lead">
+      In the old world you'd spend the next hour trying to piece them together.
+      In Kilter, it's already done.
+    </p>
+    <p class="muted" style="margin-top: 40px; font-size: 18px">→ Switch to the app. Open the <strong>Dashboard</strong>. Continue with the next slide.</p>
+  </div>
+</section>
+
+<!-- =========== Step 1: Dashboard =========== -->
+<section class="slide" data-notes="
+  SHOW: the dashboard. Point at each chart and callout. 60 seconds.
+  Talking points:<br>
+  - 'Stat counters — pending, confirmed, open sessions, accounts.'<br>
+  - 'The sparkline — 14 days of match activity at a glance.'<br>
+  - 'Ageing histogram — nothing over 30 days today; if there were, you'd see a red callout.'<br>
+  - 'Per-team breakdown — PSC TROPS vs TREASURY vs the rest.'<br>
+  If you want extra drama: press <kbd>Ctrl</kbd><kbd>K</kbd> → 'Presenter mode' and hit enter. Watch it go full-screen.">
+  <div class="slide-inner">
+    <h3>Step 1 / 8 · Dashboard</h3>
+    <h2>Ops walks in to a reconciled ledger.</h2>
+    <div class="cols-2" style="margin-top: 40px">
+      <div>
+        <h3 style="color: var(--brand-2)">SHOW →</h3>
+        <ul>
+          <li>Stat counters (pending / confirmed / open sessions / accounts)</li>
+          <li>Match activity sparkline — last 14 days</li>
+          <li>Ageing histogram — 0-1d through 30d+</li>
+          <li>By-functional-team breakdown</li>
+          <li>Recent sessions table</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3 style="color: var(--success);margin-bottom:12px">What you're selling</h3>
+        <p>Corona's dashboard is a list of pending work. This dashboard tells a story — <strong>where are we vs last week</strong>, <strong>what's aging</strong>, <strong>which team owns what</strong>. One screen, one glance.</p>
+      </div>
+    </div>
+    <div style="background: var(--bg-card); padding: 14px 20px; border-radius: 8px; margin-top: 30px; font-size: 16px; color: var(--ink-muted); border-left: 3px solid var(--brand)">
+      <strong style="color: var(--ink)">Pro move:</strong> press <kbd>Ctrl</kbd>+<kbd>K</kbd> → "Presenter mode" for the big-screen moment.
+    </div>
+  </div>
+</section>
+
+<!-- =========== Step 2: Review queue =========== -->
+<section class="slide" data-notes="
+  SHOW: open a session from Recent sessions, land on the Review tab.
+  2 minutes. This is where the speed sells the product.<br>
+  - Show the tier banner.<br>
+  - Point to SWIFT left, Flex right, amount-diff pill.<br>
+  - Hit <kbd>Space</kbd> to confirm. Then <kbd>Space</kbd> again. Rapid-fire.<br>
+  - If a tier-3 or tier-4 comes up, say 'this one needs a second look' and slow down.<br>
+  - Demo <kbd>N</kbd> to add a note.<br>
+  - Demo <kbd>?</kbd> for the shortcut overlay.">
+  <div class="slide-inner">
+    <h3>Step 2 / 8 · Review queue</h3>
+    <h2>Confirm a match in one keystroke.</h2>
+    <div class="cols-2" style="margin-top: 40px">
+      <div>
+        <h3 style="color: var(--brand-2)">SHOW →</h3>
+        <ul>
+          <li>Open a session from Recent sessions</li>
+          <li>Tier banner (green = tier 1 = confident)</li>
+          <li>SWIFT left, Flex right, tier reason on top</li>
+          <li><kbd>Space</kbd> confirm · <kbd>X</kbd> reject · <kbd>J</kbd> next</li>
+          <li>Rapid-fire: clear five matches in &lt;10 seconds</li>
+          <li><kbd>N</kbd> for a note · <kbd>?</kbd> for keyboard help</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3 style="color: var(--success);margin-bottom:12px">The talking beat</h3>
+        <p>"A hundred pending matches — not a hundred clicks. <strong>Space. Space. Space.</strong> When a weaker-tier match comes up, slow down, check the narration, make the call."</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =========== Step 3: Split view =========== -->
+<section class="slide" data-notes="
+  SHOW: switch to Split view tab. Click a SWIFT row. Click multiple Flex rows.
+  Watch the amount-tie pill go green. Hit <kbd>M</kbd>.
+  1 minute. This is a visceral 'Corona can't do this' moment.<br>
+  If there's no natural split in today's data, just demo the UI and say
+  'here's what it looks like when you need it.'">
+  <div class="slide-inner">
+    <h3>Step 3 / 8 · Split view</h3>
+    <h2>SWIFT posts one aggregate. Flex posts three rows.</h2>
+    <div class="cols-2" style="margin-top: 40px">
+      <div>
+        <h3 style="color: var(--brand-2)">SHOW →</h3>
+        <ul>
+          <li>Switch to Split view tab</li>
+          <li>SWIFT left pane, Flex right pane</li>
+          <li>Click a SWIFT row. Click 3 Flex rows.</li>
+          <li>Watch the amount-tie pill turn green</li>
+          <li><kbd>M</kbd> to match</li>
+          <li>Badges appear: "split" on each row of the group</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3 style="color: var(--success);margin-bottom:12px">The talking beat</h3>
+        <p>"In Corona this is a break. Analyst writes an email. It sits for a week until someone untangles it by hand. <strong>In Kilter: five seconds and four keystrokes.</strong>"</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =========== Step 4: Open items =========== -->
+<section class="slide" data-notes="
+  SHOW: navigate to Open items. Filter by min age 30 days. Click 'History'
+  on any row. Show the timeline drawer. 1.5 minutes.
+  Key talking point: 'Corona's break exists only until the session closes.
+  Kilter's break has a life story.'">
+  <div class="slide-inner">
+    <h3>Step 4 / 8 · Open items + history</h3>
+    <h2>Every break has a life story.</h2>
+    <div class="cols-2" style="margin-top: 40px">
+      <div>
+        <h3 style="color: var(--brand-2)">SHOW →</h3>
+        <ul>
+          <li><span class="badge badge-blue">Ctrl+K</span> → "Open items"</li>
+          <li>Filter: <strong>min age 30 days</strong></li>
+          <li>Coloured ageing badges (neutral → info → warn → danger)</li>
+          <li>Click <strong>History</strong> on a row</li>
+          <li>Timeline drawer: opened → comments → audit → cleared</li>
+          <li>Show a write-off with its reason</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3 style="color: var(--success);margin-bottom:12px">The talking beat</h3>
+        <p>"This is what Internal Control has been asking for. <strong>One click — every touch on this break, in order, with who and when.</strong> Audit ready."</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =========== Step 5: Daily breaks report =========== -->
+<section class="slide" data-notes="
+  SHOW: back to Dashboard. Click 'Download xlsx' on the Daily breaks report card.
+  Open the downloaded file. 45 seconds.
+  Scroll through the tabs: Summary, BOG USD/EUR/GBP, TREASURY, PSC TROPS, etc.
+  'This is the workbook ops builds by hand every morning. Now it's one click.'">
+  <div class="slide-inner">
+    <h3>Step 5 / 8 · The BoG daily report</h3>
+    <h2>Manual workbook → one click.</h2>
+    <div class="cols-2" style="margin-top: 40px">
+      <div>
+        <h3 style="color: var(--brand-2)">SHOW →</h3>
+        <ul>
+          <li>Dashboard → Daily breaks report card</li>
+          <li>Click <strong>Download xlsx</strong></li>
+          <li>Open the file</li>
+          <li>Scroll through tabs: Summary · BOG USD / EUR / GBP · TREASURY · PSC TROPS · TRADE SWITCHES · CASH MGT · GRA · TPU</li>
+          <li>Same layout as the manual workbook today</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3 style="color: var(--success);margin-bottom:12px">The talking beat</h3>
+        <p>"Yesterday: an analyst spent 40 minutes copy-pasting from Corona exports into this workbook. Today: <strong>one click, identical output, with live figures.</strong>"</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =========== Step 6: Certificate =========== -->
+<section class="slide" data-notes="
+  SHOW: Ctrl+K → Certificates. Pick an account, set period, Generate draft.
+  Click PDF button — opens print-ready page. Point at the Maker / Checker /
+  Approver block. 1 minute.
+  'The maker-checker-approver flow the regulator asks about, enforced by role.'">
+  <div class="slide-inner">
+    <h3>Step 6 / 8 · Certificates</h3>
+    <h2>Month-end sign-off with segregation of duties.</h2>
+    <div class="cols-2" style="margin-top: 40px">
+      <div>
+        <h3 style="color: var(--brand-2)">SHOW →</h3>
+        <ul>
+          <li><kbd>Ctrl</kbd>+<kbd>K</kbd> → "Certificates"</li>
+          <li>Pick an account, period, <strong>Generate draft</strong></li>
+          <li>Click <strong>PDF 🖨</strong> — print-ready page opens</li>
+          <li>Point at the 3 signature boxes: Maker, Checker, Approver</li>
+          <li>Describe the flow: Ops prepares → IC reviews → Admin signs</li>
+          <li>"Signing freezes the figures — immutable from that moment"</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3 style="color: var(--success);margin-bottom:12px">The talking beat</h3>
+        <p>"Corona has no equivalent. This is the regulator's <strong>'show me your sign-off trail'</strong> question, answered structurally — not by PDF-ing an email thread."</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =========== Step 7: Scheduler =========== -->
+<section class="slide" data-notes="
+  SHOW: Ctrl+K → Scheduler. Point at the green 'running' pill.
+  Point at each job's Next run time. Click History on any job.
+  1 minute.
+  Talking point: 'This is the engine room. Everything that happens without
+  a human lives here. It's also the audit trail for what's running.'">
+  <div class="slide-inner">
+    <h3>Step 7 / 8 · Scheduler</h3>
+    <h2>The engine room.</h2>
+    <div class="cols-2" style="margin-top: 40px">
+      <div>
+        <h3 style="color: var(--brand-2)">SHOW →</h3>
+        <ul>
+          <li><kbd>Ctrl</kbd>+<kbd>K</kbd> → "Scheduler"</li>
+          <li>Green pill = daemon running</li>
+          <li>Five seeded jobs: scan · daily_close · sla_check · report · flex_extract</li>
+          <li>Next run times visible per job</li>
+          <li>Click <strong>History</strong> on any job — last 20 runs with timings</li>
+          <li>Click <strong>Run now</strong> on the scan job — fires immediately</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3 style="color: var(--success);margin-bottom:12px">The talking beat</h3>
+        <p>"Corona requires a person for every pull, every scan, every report. <strong>Kilter's calendar runs the day.</strong> Ops investigates the exceptions; the machine does the rest."</p>
+        <p style="margin-top:12px;font-size:16px;color:var(--ink-muted)">If asked about formats: the scan job accepts MT940/950 <code>.out</code>, ISO 20022 camt.053/054 <code>.xml</code> and BoG's RTGS <code>.txt</code> side-by-side — no reconfiguration.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =========== Step 8: Audit trail =========== -->
+<section class="slide" data-notes="
+  SHOW: Ctrl+K → Activity log. Drop in a date filter. Filter by action =
+  'decision_confirm'. 45 seconds. Then filter by actor = your username.
+  'The entire app writes to this log. Nothing is edited. Nothing is deleted.'">
+  <div class="slide-inner">
+    <h3>Step 8 / 8 · Activity log</h3>
+    <h2>Append-only. Forever.</h2>
+    <div class="cols-2" style="margin-top: 40px">
+      <div>
+        <h3 style="color: var(--brand-2)">SHOW →</h3>
+        <ul>
+          <li><kbd>Ctrl</kbd>+<kbd>K</kbd> → "Activity log"</li>
+          <li>Summary strip: total entries, distinct actors, distinct actions</li>
+          <li>Filter by action — dropdown shows live counts</li>
+          <li>Filter by actor, session ID, date range, details search</li>
+          <li><strong>Download CSV</strong> — evidence export in one click</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3 style="color: var(--success);margin-bottom:12px">The closing beat</h3>
+        <p>"You came in at 08:00 to a reconciled ledger. You leave at 17:00 with a perfect audit trail. <strong>That's the before/after of adopting Kilter.</strong>"</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =========== Wrap =========== -->
+<section class="slide section-title" data-notes="
+  Wrap. Two beats:<br>
+  1. Summarise what they just saw.<br>
+  2. 'Questions?' Wait.">
+  <div class="slide-inner">
+    <div class="kicker">In 10 minutes</div>
+    <h1 style="font-size: 72px">Five hours of<br>manual work,<br>now fifteen minutes.</h1>
+    <p style="margin-top: 40px; font-size: 24px; color: var(--ink-muted)">
+      Dashboard &middot; review queue &middot; split match &middot; break history &middot;
+      BoG report &middot; certificate &middot; scheduler &middot; audit log.
+    </p>
+    <div class="gradient-line" style="margin: 40px auto"></div>
+    <p style="font-size: 18px; color: var(--ink-dim); margin-top: 20px">
+      Full pitch at <code>/pitch</code> &middot; Manuals at <code>/manuals</code>
+    </p>
+  </div>
+</section>
+
+<!-- =========== Live demo launcher =========== -->
+<section class="slide cover" data-notes="
+  Final slide — the 'go live now' button. When it's time to open the app,
+  click the big button or press <kbd>Enter</kbd>.">
+  <div class="slide-inner" style="text-align: center">
+    <div class="eyebrow">Ready?</div>
+    <h1>Go live</h1>
+    <p class="sub" style="margin-top: 24px">Open the real app and walk through the 8 steps for real.</p>
+    <div style="margin-top: 50px">
+      <a href="/?presenter=1" target="_blank" style="display: inline-block; font-size: 22px; padding: 18px 40px;
+         background: linear-gradient(135deg, var(--brand), var(--accent));
+         color: white; text-decoration: none; border-radius: 10px;
+         font-weight: 700; letter-spacing: 0.5px;
+         box-shadow: 0 10px 30px rgba(37, 99, 235, 0.4);">
+        Launch live app → Presenter mode
+      </a>
+    </div>
+    <p class="muted" style="margin-top: 40px; font-size: 15px">
+      The app opens in a new tab. Keep this deck open in the original tab — alt-tab between them.
+    </p>
+  </div>
+</section>
+
+{% endblock %}

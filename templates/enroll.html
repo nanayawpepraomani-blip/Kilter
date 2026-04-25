@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Enrol Microsoft Authenticator · Kilter</title>
+  <style>
+    :root {
+      --c-bg:#f7f8fa; --c-surface:#ffffff; --c-border:#e4e7eb; --c-border-strong:#cbd2d9;
+      --c-text:#0f172a; --c-text-muted:#52606d; --c-text-subtle:#9aa5b1;
+      --c-primary:#1f3a8a; --c-primary-hover:#1e40af; --c-primary-soft:#eff4fb;
+      --c-success:#059669; --c-success-soft:#d1fae5;
+      --c-danger:#b91c1c; --c-danger-soft:#fee2e2;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh;
+      display: flex; align-items: center; justify-content: center;
+      background: linear-gradient(135deg, #0b1220 0%, #1e3a8a 100%);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, sans-serif;
+      color: var(--c-text); padding: 24px;
+    }
+    .card {
+      width: 100%; max-width: 560px;
+      background: var(--c-surface); border-radius: 12px;
+      box-shadow: 0 25px 50px rgba(0,0,0,0.35);
+      padding: 32px 36px;
+    }
+    .brand { display:flex;align-items:center;gap:12px;margin-bottom:20px; }
+    .brand .mark {
+      width:36px;height:36px;border-radius:8px;
+      background:linear-gradient(135deg,#2563eb 0%,#0891b2 100%);
+      color:white;display:flex;align-items:center;justify-content:center;font-weight:800;
+    }
+    .brand .name { font-size:20px;font-weight:700; }
+    h1 { margin:0 0 6px 0; font-size:22px; font-weight:700; }
+    .sub { color: var(--c-text-muted); font-size: 14px; margin-bottom: 22px; }
+    .step-no {
+      display: inline-block; background: var(--c-primary); color: white;
+      width: 22px; height: 22px; border-radius: 50%;
+      text-align: center; line-height: 22px; font-size: 12px; font-weight: 700;
+      margin-right: 8px;
+    }
+    .step-heading { font-weight: 600; margin-top: 18px; margin-bottom: 8px; font-size: 15px; }
+    .qr-panel { text-align: center; padding: 20px; background: #fafbfc; border-radius: 10px; margin: 12px 0; }
+    .qr-panel img { width: 220px; height: 220px; display: block; margin: 0 auto; }
+    .secret {
+      font-family: ui-monospace, Menlo, Consolas, monospace;
+      background: #f1f3f6; border: 1px solid var(--c-border);
+      padding: 8px 12px; border-radius: 6px; font-size: 13px;
+      word-break: break-all; letter-spacing: 1px;
+    }
+    .field { margin-bottom: 14px; }
+    .field label { display:block;font-size:13px;color:var(--c-text-muted);margin-bottom:4px;font-weight:500; }
+    .field input {
+      width:100%;padding:10px 12px;font-size:14px;
+      border:1px solid var(--c-border-strong);border-radius:6px;
+      font-family: inherit; background:#fafbfc;
+    }
+    .field input.code {
+      font-size:22px;letter-spacing:6px;text-align:center;
+      font-family: ui-monospace, Menlo, Consolas, monospace;
+    }
+    .field input:focus { outline: none; border-color: var(--c-primary); box-shadow: 0 0 0 3px var(--c-primary-soft); }
+    button {
+      background: var(--c-primary); color: white; border: 0;
+      padding: 11px 20px; border-radius: 6px; font-size: 14px;
+      font-weight: 600; cursor: pointer;
+    }
+    button.full { width: 100%; }
+    button:hover:not(:disabled) { background: var(--c-primary-hover); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .error, .success {
+      margin-top: 12px; padding: 10px 12px; border-radius: 6px; font-size: 13px; display: none;
+    }
+    .error { background: var(--c-danger-soft); color: var(--c-danger); }
+    .success { background: var(--c-success-soft); color: #065f46; }
+    ol.instructions { margin: 0 0 0 18px; padding: 0; color: var(--c-text-muted); font-size: 13px; }
+    ol.instructions li { margin-bottom: 4px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="brand"><div class="mark">K</div><div class="name">Kilter</div></div>
+    <h1>Set up Microsoft Authenticator</h1>
+    <p class="sub">Two-factor authentication is required. This is a one-time setup — after this, you'll sign in with your username and a rotating 6-digit code from the app.</p>
+
+    <div id="step1">
+      <div class="step-heading"><span class="step-no">1</span>Verify your enrollment link</div>
+      <form id="start-form">
+        <div class="field"><label>Username</label><input id="s-user" type="text" required></div>
+        <div class="field"><label>Enrollment token</label><input id="s-token" type="text" required></div>
+        <button type="submit" class="full" id="s-btn">Continue</button>
+        <div class="error" id="s-error"></div>
+      </form>
+    </div>
+
+    <div id="step2" style="display:none">
+      <div class="step-heading"><span class="step-no">2</span>Scan the QR code with Microsoft Authenticator</div>
+      <ol class="instructions">
+        <li>Open Microsoft Authenticator on your phone.</li>
+        <li>Tap <strong>+</strong> → <strong>Work or school account</strong> → <strong>Scan a QR code</strong>.</li>
+        <li>Point the camera at the code below. A "Kilter" entry will appear.</li>
+        <li>If you can't scan, tap "Enter code manually" and paste the key shown below the QR.</li>
+      </ol>
+      <div class="qr-panel">
+        <img id="qr" alt="Microsoft Authenticator QR">
+        <div style="margin-top:12px">
+          <div style="font-size:12px;color:var(--c-text-subtle);margin-bottom:4px">Manual key:</div>
+          <div class="secret" id="secret-text"></div>
+        </div>
+      </div>
+
+      <div class="step-heading"><span class="step-no">3</span>Enter the 6-digit code to confirm</div>
+      <form id="complete-form">
+        <div class="field">
+          <input id="c-code" class="code" type="text" inputmode="numeric" pattern="[0-9]{6}"
+                 maxlength="6" autocomplete="one-time-code" required placeholder="000000">
+        </div>
+        <button type="submit" class="full" id="c-btn">Complete enrollment</button>
+        <div class="error" id="c-error"></div>
+        <div class="success" id="c-success"></div>
+      </form>
+    </div>
+  </div>
+
+<script>
+  // Pre-fill from URL: /enroll?user=X&token=Y
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('user')) document.getElementById('s-user').value = params.get('user');
+  if (params.get('token')) document.getElementById('s-token').value = params.get('token');
+
+  let currentSecret = null;
+  let currentUsername = null;
+  let currentToken = null;
+
+  const sError = document.getElementById('s-error');
+  const sBtn = document.getElementById('s-btn');
+
+  document.getElementById('start-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    sError.style.display = 'none';
+    sBtn.disabled = true; sBtn.textContent = 'Checking...';
+    const username = document.getElementById('s-user').value.trim();
+    const token = document.getElementById('s-token').value.trim();
+    try {
+      const r = await fetch('/enroll/start', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, enrollment_token: token }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.detail || 'Failed');
+      currentSecret = j.secret;
+      currentUsername = username;
+      currentToken = token;
+      document.getElementById('qr').src = j.qr;
+      document.getElementById('secret-text').textContent = j.secret.match(/.{1,4}/g).join(' ');
+      document.getElementById('step1').style.display = 'none';
+      document.getElementById('step2').style.display = '';
+      document.getElementById('c-code').focus();
+    } catch (err) {
+      sError.textContent = err.message;
+      sError.style.display = 'block';
+      sBtn.disabled = false; sBtn.textContent = 'Continue';
+    }
+  });
+
+  const cError = document.getElementById('c-error');
+  const cSuccess = document.getElementById('c-success');
+  const cBtn = document.getElementById('c-btn');
+
+  document.getElementById('complete-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    cError.style.display = cSuccess.style.display = 'none';
+    cBtn.disabled = true; cBtn.textContent = 'Verifying...';
+    const code = document.getElementById('c-code').value.trim();
+    try {
+      const r = await fetch('/enroll/complete', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: currentUsername,
+          enrollment_token: currentToken,
+          secret: currentSecret,
+          totp_code: code,
+        }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.detail || 'Failed');
+      cSuccess.innerHTML = 'Enrollment complete. Redirecting to sign-in...';
+      cSuccess.style.display = 'block';
+      setTimeout(() => window.location.href = '/login', 1500);
+    } catch (err) {
+      cError.textContent = err.message;
+      cError.style.display = 'block';
+      cBtn.disabled = false; cBtn.textContent = 'Complete enrollment';
+      document.getElementById('c-code').value = '';
+      document.getElementById('c-code').focus();
+    }
+  });
+</script>
+</body>
+</html>

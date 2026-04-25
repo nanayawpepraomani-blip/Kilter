@@ -1,0 +1,302 @@
+{% extends "manual_base.html" %}
+{% block title %}Kilter · Matching Engine Manual{% endblock %}
+{% block bar_label %}Matching Engine{% endblock %}
+{% block footer_left %}Matching Engine Manual{% endblock %}
+{% block cover_eyebrow %}Engine reference{% endblock %}
+{% block cover_title %}Matching Engine Manual{% endblock %}
+{% block cover_subtitle %}How the reconciliation engine thinks — tiers, reference normalisation, splits, FX, carry-forward, and how to tune it.{% endblock %}
+{% block audience %}Admin / Senior analyst{% endblock %}
+
+{% block toc %}
+<div class="toc">
+  <h2>Contents</h2>
+  <ol>
+    <li>Engine architecture</li>
+    <li>The five match tiers</li>
+    <li>Reference normalisation</li>
+    <li>Amount tolerance — absolute, percentage, FX</li>
+    <li>Sign mirroring rules</li>
+    <li>Date tolerance</li>
+    <li>Split matching (1:N / N:1)</li>
+    <li>The resolution step — winner, competing, orphan</li>
+    <li>Carry-forward (sliding lookback)</li>
+    <li>Auto-categorisation &amp; auto-grouping</li>
+    <li>Tuning guide by symptom</li>
+    <li>Match-pattern analytics</li>
+    <li>Proposer-to-ledger data flow</li>
+  </ol>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<h2 id="arch">1. Engine architecture</h2>
+
+<p>The match engine lives in <code>recon_engine.py</code>. It's a pure-function proposer — given a list of SWIFT rows and a list of Flex rows, it emits ranked match candidates without touching the database. Persistence happens in <code>ingest.py</code>, which calls the engine and writes the results.</p>
+
+<p>The engine is <strong>format-agnostic</strong>. Whether the SWIFT rows originated from an MT940/950 <code>.out</code> file (parsed by <code>swift_loader.py</code>) or from an ISO 20022 camt.053/camt.054 <code>.xml</code>/<code>.txt</code> file (parsed by <code>iso20022_loader.py</code>), they reach the engine as the same dict shape — same keys, same normalisation. A single registered account can receive MT one day and camt the next and the engine doesn't care. This matters for the SWIFT MT-to-ISO 20022 migration: no engine changes are required as correspondents flip.</p>
+
+<p>The engine runs in four passes:</p>
+
+<ol>
+  <li><strong>1:1 proposer</strong> (<code>propose_candidates</code>) — enumerates every plausible pair, scoring each at its strongest qualifying tier (1–4).</li>
+  <li><strong>Resolve</strong> (<code>resolve</code>) — greedy assignment: strongest tier first, tightest amount diff as tiebreak. Losers attach to winners as "competing candidates".</li>
+  <li><strong>Split proposer</strong> (<code>propose_splits</code>) — looks at rows the 1:1 pass couldn't pair, finds 1:N / N:1 aggregates with shared references.</li>
+  <li><strong>Carry-forward</strong> (<code>open_items.carry_forward_match</code>) — matches <em>prior</em> open items on this account against still-unpaired rows in the current session.</li>
+</ol>
+
+<p>The order matters. 1:1 runs first so confident single matches don't get consumed by speculative splits. Carry-forward runs last because it's cross-session — it should only touch rows that the current session couldn't pair internally.</p>
+
+<h2 id="tiers">2. The five match tiers</h2>
+
+<p>Every engine-produced match carries a tier — 1 (strongest) to 5 (split). The tier shows on the review queue banner and is stored on <code>assignments.tier</code> for every match.</p>
+
+<table>
+  <thead><tr><th>Tier</th><th>Rule</th><th>When you see it</th></tr></thead>
+  <tbody>
+    <tr><td><strong>1</strong></td><td>Ref in narration + amount within tolerance + sign mirror</td><td>Correspondent posted our reference and the amounts match. The confident band — confirm unless something looks odd.</td></tr>
+    <tr><td><strong>2</strong></td><td>Ref in narration + sign mirror, amounts outside tolerance</td><td>Ref matches but amounts differ. Usually FX (swap to FX branch if set up) or a partial posting.</td></tr>
+    <tr><td><strong>3</strong></td><td>No ref link; same value date; amount within tolerance; sign mirror</td><td>Reference was stripped or missing but the date/amount/sign all line up. Usually genuine.</td></tr>
+    <tr><td><strong>4</strong></td><td>No ref link; amount within tolerance; sign mirror; dates within N days</td><td>Weakest engine tier. Date mismatch ≤ <code>date_tol_days</code>. Scrutinise — use the narration as corroboration.</td></tr>
+    <tr><td><strong>5</strong></td><td>Split: 1:N or N:1 aggregate with shared normalised reference</td><td>One correspondent statement row matches the sum of N Flex rows (or vice versa). Ref-gated — no amount-only splits.</td></tr>
+  </tbody>
+</table>
+
+<p>Tiers below 5 are 1:1. Tier 5 is always a split and always involves 2–4 rows on one side.</p>
+
+<h2 id="norm">3. Reference normalisation</h2>
+
+<p>The same counterparty reference can travel through multiple systems and emerge formatted differently: <code>ABC/12-3</code> vs <code>ABC-12-3</code> vs <code>000ABC123</code> vs <code>ABC 123</code>. Kilter's <code>normalize_ref()</code> collapses all of these to a single canonical form.</p>
+
+<h3>The rules</h3>
+<p>Applied in order:</p>
+<ol>
+  <li>Strip whitespace and these punctuation characters: <code>/ \ - _ . , ; : | ( ) [ ] { } " '</code></li>
+  <li>Upper-case everything.</li>
+  <li>Strip leading zeros, keeping at least one character so <code>"000000"</code> → <code>"0"</code> rather than empty.</li>
+</ol>
+
+<h3>Examples</h3>
+<table>
+  <thead><tr><th>Input</th><th>Normalised</th></tr></thead>
+  <tbody>
+    <tr><td><code>ABC/123</code></td><td><code>ABC123</code></td></tr>
+    <tr><td><code>&nbsp;&nbsp;abc-123&nbsp;&nbsp;</code></td><td><code>ABC123</code></td></tr>
+    <tr><td><code>000123</code></td><td><code>123</code></td></tr>
+    <tr><td><code>REF 123/456</code></td><td><code>REF123456</code></td></tr>
+    <tr><td><code>OUR.REF:ABC-123</code></td><td><code>OURREFABC123</code></td></tr>
+  </tbody>
+</table>
+
+<h3>Where it's applied</h3>
+<ul>
+  <li><code>_ref_in_narration()</code> — tier 1/2 ref lookups. Both the needle (SWIFT <code>:20:</code> ref) and the hay (Flex narration + external_ref + trn_ref) get a dual-pass comparison: raw uppercase first, then normalised. A hit on either version matches.</li>
+  <li><code>carry_forward_match</code> — same dual-pass logic for prior-open-item lookups.</li>
+  <li><code>propose_splits</code> — uses normalised refs as the bucketing key when grouping rows for subset-sum matches.</li>
+</ul>
+
+<h3>Why the short-ref fallback</h3>
+<p>After normalisation, a very short string (&lt; 3 chars) is treated as "don't use normalised" — otherwise common fragments like <code>"US"</code> or <code>"GH"</code> would collide unrelated transactions. The engine falls back to the raw uppercase match in that case. For the legacy-path ref threshold, the <code>min_ref_len</code> tolerance (default 6) applies to the <em>raw</em> ref.</p>
+
+<h2 id="amount">4. Amount tolerance — absolute, percentage, FX</h2>
+
+<p><code>Tolerance.amount_ok(swift_amt, flex_amt, fx_rate)</code> is the central function every tier consults. Three checks in order; any pass returns True:</p>
+
+<h3>Absolute — <code>amount_tol_abs</code></h3>
+<p>Pass if <code>|flex − swift| ≤ amount_tol_abs</code>. Default 0.01 — matches exact-cent amounts plus rounding.</p>
+
+<h3>Percentage — <code>amount_tol_pct</code></h3>
+<p>Pass if <code>(|flex − swift| / max(|swift|, |flex|, 1.0)) × 100 ≤ amount_tol_pct</code>. Default 0 (disabled). Use when a specific account has inherent percentage-based adjustments (e.g. commission take-outs).</p>
+
+<h3>FX — <code>fx_tol_bps</code> (requires <code>fx_rate</code>)</h3>
+<p>Pass if <code>(|flex − swift × fx_rate| / max(|swift × fx_rate|, |flex|, 1.0)) × 10_000 ≤ fx_tol_bps</code>. bps = basis points; 100 bps = 1%.</p>
+
+<p>Only the 1:1 proposer and carry-forward can supply an FX rate today — split matching does not cross currency.</p>
+
+<h2 id="sign">5. Sign mirroring rules</h2>
+
+<p>SWIFT uses <code>C</code> (credit) / <code>D</code> (debit); Flexcube uses <code>CR</code> / <code>DR</code>. The engine only considers a pairing when the signs mirror:</p>
+
+<pre><code>MIRROR_SIGN = {'C': 'DR', 'D': 'CR'}</code></pre>
+
+<p>Meaning: a SWIFT credit matches a Flex debit, and vice versa. Same-sign pairs never match — that would be a bookkeeping error.</p>
+
+<p>For splits, every row in the "many" side must have the same sign — no netting across CR/DR.</p>
+
+<h2 id="date">6. Date tolerance</h2>
+
+<p><code>date_tol_days</code> (default 1) controls tier 4. The rule uses <code>_days_between(d1, d2)</code> which computes <code>|d1 − d2|</code> in calendar days.</p>
+
+<p>Typical settings:</p>
+<ul>
+  <li><strong>1</strong> (default) — tolerate a weekend or single-day lag. Good for USD / EUR accounts settling through bridge times.</li>
+  <li><strong>3</strong> — tolerate long public holidays. Use for EUR accounts during Christmas week.</li>
+  <li><strong>5+</strong> — problematic. If you need this much slack, the upstream is sending data too sparsely; investigate upstream first.</li>
+</ul>
+
+<h2 id="split">7. Split matching (1:N / N:1)</h2>
+
+<p><code>propose_splits</code> runs on the rows the 1:1 proposer left unmatched. Strict constraints to avoid false positives:</p>
+
+<ol>
+  <li><strong>Ref gate</strong> is mandatory. No amount-only subset-sum matches — too many common amounts would create spurious matches.</li>
+  <li><strong>Subset size is capped at 4</strong> by default. Beyond 4 the combinatorial explosion makes the proposer slow and the false-positive rate rises.</li>
+  <li><strong>All subset rows must share a normalised ref</strong> (or a ref that's a substring / superset of the single-side ref).</li>
+  <li><strong>All subset rows must share the same sign</strong> — no mixed CR/DR aggregates.</li>
+  <li>Both directions are searched: 1 SWIFT → N Flex, AND N SWIFT → 1 Flex. Duplicates (the same Flex row being claimed by both) are de-duped.</li>
+</ol>
+
+<p>The subset-sum search prefers smaller groups — it tries pairs first, then triples, then quads. This means "1:2 beats 1:3" when both are valid, which reduces the chance of over-splitting.</p>
+
+<h3>Storage of a split match</h3>
+<p>A 1:3 split creates three rows in <code>assignments</code>, each pointing at the single SWIFT row and one of the three Flex rows, all sharing the same UUID <code>split_group_id</code>. Each row's <code>amount_diff</code> is the total delta divided by the row count (for accounting purposes). The UI groups them for display via the split_group_id.</p>
+
+<h2 id="resolve">8. The resolution step</h2>
+
+<p><code>resolve()</code> consumes the flat candidate list and decides who gets what:</p>
+
+<ol>
+  <li>Sort candidates by <code>(tier, abs(amount_diff))</code> — strongest tier first, tightest amount as tiebreak.</li>
+  <li>Walk the sorted list. For each candidate:
+    <ul>
+      <li>If either the SWIFT row or the Flex row is already claimed → this candidate becomes a <strong>competing candidate</strong> on the winner. Surfaced in the review queue.</li>
+      <li>Otherwise → claim both rows, this candidate becomes an <strong>assignment</strong>.</li>
+    </ul>
+  </li>
+</ol>
+
+<p>What you never see: rows claimed by multiple assignments. The greedy pass is deterministic and produces a clean set of 1:1 pairings.</p>
+
+<p>Anything that didn't get claimed goes into <code>unmatched_swift</code> / <code>unmatched_flex</code>, which feeds the split proposer next.</p>
+
+<h2 id="carry">9. Carry-forward (sliding lookback)</h2>
+
+<p>The rolling-ledger equivalent of re-matching. <code>carry_forward_match</code> runs once per session ingest, after the main proposer has finished but before <code>seed_open_items_for_session</code>.</p>
+
+<h3>What it does</h3>
+<p>For every <strong>open item</strong> on this session's account (status = <code>open</code>, any age), try to pair it against the current session's still-unclaimed rows. Matching uses the same Tolerance object as the main engine, so ref normalisation, amount tolerance, and date tolerance all carry over.</p>
+
+<h3>Why it's not time-limited</h3>
+<p>A 90-day-old open item finding its counterpart today is exactly the value of the rolling ledger. Arbitrary age cut-offs (e.g. "only look back 30 days") would re-introduce the session-bound-break bug that Corona suffers from.</p>
+
+<h3>What gets recorded</h3>
+<p>A carry-forward clear creates an assignment with <code>source='auto_carry'</code> and <code>open_item_id</code> set, plus updates the open_item to <code>status='cleared', cleared_via='auto_carry'</code>. The audit log records <code>open_item_auto_cleared</code>.</p>
+
+<h2 id="rules">10. Auto-categorisation &amp; auto-grouping</h2>
+
+<p>Both are rule-lists evaluated in priority order; first match wins. They run at the moment an open item is <em>seeded</em> (end of session close) — not at match time, because matched rows never become open items.</p>
+
+<h3>Auto-categorisation</h3>
+<p>Tags the <strong>break type</strong>: <code>timing_diff</code>, <code>fx_mismatch</code>, <code>internal_journal</code>, <code>reversal_pending</code>, <code>bank_error</code>, <code>genuine_break</code>, <code>written_off</code>, <code>uncategorized</code>. Rule fields: side, narration-contains, type-equals, amount-min, amount-max, category.</p>
+
+<h3>Auto-grouping</h3>
+<p>Tags the <strong>owning team</strong>: TREASURY, TRADE SWITCHES, PSC TROPS, CSD FEES, GRA, CASH MGT, TPU. Rule fields: side, narration-contains, ref-contains, type-equals, amount-min, amount-max, functional_group.</p>
+
+<p>Default priorities:</p>
+<ul>
+  <li>10–19: individual Flex user IDs (most reliable).</li>
+  <li>20–29: ref prefixes (deterministic for specific codes).</li>
+  <li>30–39: narration keyword fallback (catches generic users doing team-specific work).</li>
+  <li>99: catch-all default (PSC TROPS).</li>
+</ul>
+
+<h2 id="tuning">11. Tuning guide by symptom</h2>
+
+<table>
+  <thead><tr><th>Symptom</th><th>Likely cause</th><th>Tuning</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>Many tier-1 matches get rejected</td>
+      <td>The engine is wrong or the analyst is. Check 3 rejected cases.</td>
+      <td>If the engine is wrong: your upstream ref is being reused (non-unique). Bump <code>min_ref_len</code> on that account to force higher-tier matches. If the analyst is wrong: coach.</td>
+    </tr>
+    <tr>
+      <td>High tier-4 rate with lots of skips</td>
+      <td>Engine is grasping — dates misaligned.</td>
+      <td>Reduce <code>date_tol_days</code> to 0 if same-day feeds are reliable — you'll fall to more unmatched but cleaner output.</td>
+    </tr>
+    <tr>
+      <td>Amount-off-by-a-few-cents misses</td>
+      <td>Rounding in the upstream.</td>
+      <td>Raise <code>amount_tol_abs</code> to 0.05 or 0.10 depending on currency and volume.</td>
+    </tr>
+    <tr>
+      <td>Cross-currency near-misses</td>
+      <td>FX rounding over conversion.</td>
+      <td>Populate <code>fx_rates</code> for the pair, set <code>fx_tol_bps</code> to 25.</td>
+    </tr>
+    <tr>
+      <td>Lots of splits where there shouldn't be</td>
+      <td>Shared reference across unrelated rows.</td>
+      <td>Bump <code>min_ref_len</code>. If that doesn't help, disable split matching for this account by setting a very high <code>max_group_size=1</code> override (requires code change).</td>
+    </tr>
+    <tr>
+      <td>Split matches confirm then get unwound</td>
+      <td>The engine found a false aggregate.</td>
+      <td>Tighten normalisation or raise min_ref_len. Post-mortem on the false positive to understand the pattern.</td>
+    </tr>
+    <tr>
+      <td>Nothing matches after a format change upstream</td>
+      <td>Reference format changed; normalisation no longer sees the common fragment.</td>
+      <td>Check what ref the SWIFT is sending; if it dropped the prefix, update the ref_contains rules in auto-grouping to match the new format. Consider extending <code>normalize_ref</code>.</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="patterns">12. Match-pattern analytics</h2>
+
+<p><span class="path">Match patterns</span> is the engine's self-reflection. It mines decided assignments (confirmed + rejected) and computes:</p>
+<ul>
+  <li>Narration tokens — any ≥4-char uppercase word, excluding stopwords, seen in ≥ N assignments.</li>
+  <li>Ref prefixes — the first 4 characters of <code>trn_ref</code>.</li>
+  <li>Flex user IDs — the posting user from the Flex side.</li>
+  <li>Flex modules — the module that generated the entry (AR, FX, etc.).</li>
+</ul>
+
+<p>For each key, you see the <strong>confirm rate</strong> — what fraction of decided assignments containing this key were confirmed vs rejected.</p>
+
+<h3>Promotion threshold</h3>
+<p>Tokens with confirm rate ≥ 80% and ≥ 3 samples show a <strong>Create auto-rule</strong> button. The promotion doesn't change engine behaviour — it creates an auto-grouping or auto-categorisation rule that fires on the next open-item seed.</p>
+
+<h3>What to read from the data</h3>
+<ul>
+  <li><strong>High confirm, high count</strong> — rock-solid pattern. Promote without hesitation.</li>
+  <li><strong>Low confirm, high count</strong> — dangerous. A frequent pattern that often produces wrong matches. Consider bumping <code>min_ref_len</code> so the engine ignores this key.</li>
+  <li><strong>Low count</strong> — insufficient data. Wait for more decisions before acting.</li>
+</ul>
+
+<h2 id="flow">13. Proposer-to-ledger data flow</h2>
+
+<p>For debugging: what happens from file arrival to an open item?</p>
+
+<pre><code>1. scanner.scan() picks up a SWIFT file (.out MT940/950, or .xml/.txt camt.053/054)
+   + a Flexcube .xlsx that share an account key.
+
+2. ingest.ingest_pair():
+   a. loaders parse the files into dicts (swift_loader for MT, iso20022_loader
+      for camt — both emit the same txn + meta dict shape)
+   b. account_meta.lookup_account_match() finds the cash_accounts row
+   c. load_tolerance(account_id) builds the per-account Tolerance
+   d. propose_candidates(swift_txns, flex_txns, tol=tol) → list[Candidate]
+   e. resolve(candidates, ...) → Resolution (assignments + unmatched)
+   f. INSERT INTO sessions, swift_txns, flex_txns, candidates, assignments
+   g. propose_splits(..., unmatched_swift, unmatched_flex, tol=tol)
+   h. INSERT INTO assignments for each split row, sharing a split_group_id
+   i. carry_forward_match(session_id, tol) → re-try prior open_items against
+      the session's still-unassigned rows. New confirmed assignments + the
+      open_items get flagged cleared.
+   j. seed_open_items_for_session(session_id): whatever's still unmatched
+      becomes an open_item, auto-categorised + auto-grouped.
+
+3. audit_log rows are written at every step: session_created, open_items_seeded,
+   open_item_auto_cleared.
+
+4. Ops walks in, reviews the pending assignments, confirms/rejects. Each
+   decision writes an audit_log row and updates assignments.status.
+
+5. At day-end the scheduler runs daily_close, which closes sessions with
+   pending &gt; 12h old. Final open_items become the rolling ledger.</code></pre>
+
+<p>Every step above is observable in the audit log and in the database. If a break has a story — "opened, commented twice, carried forward three times, cleared on day 47" — you can reconstruct every step from the data.</p>
+
+{% endblock %}

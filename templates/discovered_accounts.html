@@ -1,0 +1,291 @@
+{% extends "base.html" %}
+{% block title %}Discovered accounts · Kilter{% endblock %}
+{% block crumbs %}<a href="/">Dashboard</a><span class="sep">/</span><span class="current">Discovered accounts</span>{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Discovered accounts</h1>
+    <div class="subtitle">Account identifiers the scanner has seen in <code>messages/</code> that aren't yet in the registry. Pair and register them to make future scans auto-ingest.</div>
+  </div>
+  <button class="btn btn-ghost" onclick="load()">Refresh</button>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <h2>Pending</h2>
+    <div class="hint"><span id="pending-count">0</span> awaiting registration</div>
+  </div>
+  <div class="card-body tight">
+    <div id="pending-wrap">
+      <div class="empty-state"><p>Loading…</p></div>
+    </div>
+  </div>
+</div>
+
+<div class="card" style="margin-top:20px">
+  <div class="card-head">
+    <h2>Resolved</h2>
+    <div class="hint"><span id="resolved-count">0</span> historic</div>
+  </div>
+  <div class="card-body tight">
+    <table class="table" id="resolved-table">
+      <thead>
+        <tr><th>Kind</th><th>Identifier</th><th>CCY</th><th>Status</th><th>Resolved by</th><th>Resolved at</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Register modal -->
+<div id="reg-modal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.55);z-index:100;align-items:flex-start;justify-content:center;padding:50px 20px;overflow-y:auto">
+  <div class="card" style="max-width:640px;width:100%;margin:0">
+    <div class="card-head">
+      <h2>Register cash account</h2>
+      <button class="btn btn-ghost btn-sm" onclick="closeReg()">Close</button>
+    </div>
+    <div class="card-body">
+      <form id="reg-form" class="form-grid">
+        <div class="field"><label>Access area</label>
+          <select class="input" name="access_area" id="reg-access-area">
+            <option value="">(none)</option>
+          </select>
+        </div>
+        <div class="field"><label>Shortname</label><input class="input" name="shortname" placeholder="e.g. BOG GHS"></div>
+        <div class="field" style="grid-column:1/-1"><label>Label (full name) *</label><input class="input" name="label" required></div>
+        <div class="field"><label>Currency *</label><input class="input" name="currency" maxlength="3" required style="text-transform:uppercase"></div>
+        <div class="field"><label>Correspondent BIC</label><input class="input" name="bic"></div>
+        <div class="field"><label>SWIFT account (Their side) *</label><input class="input" name="swift_account" required></div>
+        <div class="field"><label>Flexcube GL (Our side) *</label><input class="input" name="flex_ac_no" required></div>
+        <div class="field" style="grid-column:1/-1"><label>Notes</label><input class="input" name="notes"></div>
+        <div style="grid-column:1/-1;display:flex;gap:10px;align-items:center">
+          <button type="submit" class="btn btn-primary" id="reg-submit">Register &amp; requeue files</button>
+          <button type="button" class="btn btn-ghost" onclick="closeReg()">Cancel</button>
+          <span class="status" id="reg-status"></span>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.body.dataset.nav = 'discovered';
+
+let all = [];
+let accessAreas = [];
+
+async function load() {
+  const [dR, aR] = await Promise.all([
+    fetch('/discovered-accounts'),
+    fetch('/access-areas'),
+  ]);
+  if (!dR.ok) return;
+  all = await dR.json();
+  if (aR.ok) {
+    accessAreas = await aR.json();
+    const sel = document.getElementById('reg-access-area');
+    sel.innerHTML = '<option value="">(none)</option>' +
+      accessAreas.map(a => `<option value="${esc(a.name)}">${esc(a.name)}</option>`).join('');
+  }
+  render();
+  if (window.refreshDiscoveredBadge) window.refreshDiscoveredBadge();
+}
+
+function render() {
+  const pending  = all.filter(d => d.status === 'pending');
+  const resolved = all.filter(d => d.status !== 'pending');
+  document.getElementById('pending-count').textContent = pending.length;
+  document.getElementById('resolved-count').textContent = resolved.length;
+
+  const wrap = document.getElementById('pending-wrap');
+  if (pending.length === 0) {
+    wrap.innerHTML = `
+      <div class="empty-state">
+        <h3>Nothing pending</h3>
+        <p>Scans are landing in registered accounts. When an unknown SWIFT account or Flexcube GL is encountered, it'll appear here.</p>
+      </div>`;
+  } else {
+    const byCcy = {};
+    for (const d of pending) (byCcy[d.currency] = byCcy[d.currency] || []).push(d);
+    wrap.innerHTML = Object.keys(byCcy).sort().map(ccy => {
+      const swift = byCcy[ccy].filter(d => d.kind === 'swift');
+      const flex  = byCcy[ccy].filter(d => d.kind === 'flexcube');
+      return `
+        <div style="border-bottom:1px solid var(--c-border);padding:14px 20px">
+          <div style="font-size:var(--t-small);font-weight:600;color:var(--c-text-muted);letter-spacing:0.3px;text-transform:uppercase;margin-bottom:10px">
+            ${esc(ccy)} <span style="color:var(--c-text-subtle);font-weight:500;text-transform:none;letter-spacing:0">· ${swift.length} SWIFT · ${flex.length} Flexcube</span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+            <div>
+              <div style="font-weight:600;margin-bottom:6px">SWIFT accounts (Their side)</div>
+              ${swift.length ? swift.map(d => row(d, ccy)).join('') : '<div class="muted" style="padding:8px">None</div>'}
+            </div>
+            <div>
+              <div style="font-weight:600;margin-bottom:6px">Flexcube GLs (Our side)</div>
+              ${flex.length ? flex.map(d => row(d, ccy)).join('') : '<div class="muted" style="padding:8px">None</div>'}
+            </div>
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  const tbody = document.querySelector('#resolved-table tbody');
+  if (resolved.length === 0) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="6">No resolved discoveries yet.</td></tr>';
+  } else {
+    tbody.innerHTML = resolved.map(d => `
+      <tr>
+        <td><span class="badge ${d.kind === 'swift' ? 'badge-info' : 'badge-neutral'}">${esc(d.kind)}</span></td>
+        <td><code>${esc(d.identifier)}</code></td>
+        <td>${esc(d.currency)}</td>
+        <td><span class="badge ${d.status === 'registered' ? 'badge-success' : 'badge-neutral'}">${esc(d.status)}</span></td>
+        <td class="muted">${esc(d.resolved_by || '')}</td>
+        <td class="muted">${fmtDateTime(d.resolved_at)}</td>
+      </tr>`).join('');
+  }
+}
+
+function row(d, ccy) {
+  const bank = bankFromBic(d.bic);
+  const bicLine = d.bic
+    ? `<div style="font-size:var(--t-micro);margin-top:2px">
+         <span class="badge badge-info" style="font-size:10px;padding:1px 6px">${esc(d.bic)}</span>
+         ${bank ? `<span style="margin-left:6px">${esc(bank.full)}</span>` : ''}
+       </div>` : '';
+  return `
+    <div style="border:1px solid var(--c-border);border-radius:6px;padding:10px;margin-bottom:6px;background:var(--c-surface)">
+      <div style="display:flex;justify-content:space-between;align-items:start;gap:10px">
+        <div style="min-width:0">
+          <div style="font-family:var(--f-mono);font-weight:600;font-size:var(--t-small)">${esc(d.identifier)}</div>
+          ${bicLine}
+          <div class="muted" style="font-size:var(--t-micro);margin-top:3px">
+            seen ${d.seen_count}× · first ${fmtDateTime(d.first_seen_at)}<br>
+            sample: <code>${esc(d.sample_file || '')}</code>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0">
+          <button class="btn btn-primary btn-sm" onclick='openReg(${JSON.stringify(d)})'>Register</button>
+          <button class="btn btn-ghost btn-sm" onclick="ignoreDiscovery(${d.id})">Ignore</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+// Short bank name lookup keyed by first 4 BIC chars (bank code). Seeded
+// with major global correspondents. Extend with your bank's own
+// correspondents as new BICs show up on the Discovered page — every
+// future registration with the same BIC will pick up the friendly name
+// automatically.
+const BIC_BANK_NAMES = {
+  'CITI': { short: 'Citi',      full: 'Citibank' },
+  'DEUT': { short: 'Deutsche',  full: 'Deutsche Bank' },
+  'CHAS': { short: 'Chase',     full: 'JPMorgan Chase' },
+  'HSBC': { short: 'HSBC',      full: 'HSBC' },
+  'BNPA': { short: 'BNPP',      full: 'BNP Paribas' },
+  'SCBL': { short: 'StanChart', full: 'Standard Chartered' },
+  'BOFA': { short: 'BofA',      full: 'Bank of America' },
+  'IRVT': { short: 'BNYM',      full: 'BNY Mellon' },
+};
+
+function bankFromBic(bic) {
+  if (!bic) return null;
+  return BIC_BANK_NAMES[bic.slice(0, 4).toUpperCase()] || null;
+}
+
+function openReg(d) {
+  const form = document.getElementById('reg-form');
+  form.reset();
+  form.currency.value = d.currency;
+
+  // Find the partner discovery (same currency, opposite side) so we can copy its
+  // identifier AND its BIC (Flex discoveries don't carry one of their own).
+  let partner = null;
+  if (d.kind === 'swift') {
+    form.swift_account.value = d.identifier;
+    form.swift_account.readOnly = true;
+    form.flex_ac_no.readOnly = false;
+    const matches = all.filter(x => x.status === 'pending' && x.kind === 'flexcube' && x.currency === d.currency);
+    if (matches.length === 1) { partner = matches[0]; form.flex_ac_no.value = partner.identifier; }
+  } else {
+    form.flex_ac_no.value = d.identifier;
+    form.flex_ac_no.readOnly = true;
+    form.swift_account.readOnly = false;
+    const matches = all.filter(x => x.status === 'pending' && x.kind === 'swift' && x.currency === d.currency);
+    if (matches.length === 1) { partner = matches[0]; form.swift_account.value = partner.identifier; }
+  }
+
+  // Sensible auto-fills so the admin can just click Register for known-good pairs.
+  // Everything's editable — tweak per institution before submit or rename later.
+  const ccy = d.currency;
+  const bic = d.bic || partner?.bic || '';      // SWIFT side has it; Flex side borrows from partner
+  const bank = bankFromBic(bic);
+
+  form.access_area.value = '';
+  form.bic.value         = bic;
+
+  if (bank) {
+    // Friendly name known — e.g. "Citi USD" and "Nostro at Citibank (USD)"
+    form.shortname.value = `${bank.short} ${ccy}`;
+    form.label.value     = `Nostro at ${bank.full} (${ccy})`;
+  } else if (bic) {
+    // BIC only — readable but raw. Admin usually renames once; future discoveries
+    // with the same BIC will still be raw until BIC_BANK_NAMES is extended.
+    form.shortname.value = `${bic.slice(0, 4)} ${ccy}`;
+    form.label.value     = `Nostro at ${bic} (${ccy})`;
+  } else {
+    // No BIC at all (pure Flex-side discovery with no SWIFT partner) — fall back.
+    form.shortname.value = `${ccy} ${(form.flex_ac_no.value || '').slice(-4)}`.trim();
+    form.label.value     = `Nostro ${form.swift_account.value || '—'} ↔ ${form.flex_ac_no.value || '—'} (${ccy})`;
+  }
+
+  document.getElementById('reg-status').textContent = '';
+  document.getElementById('reg-modal').style.display = 'flex';
+}
+
+function closeReg() {
+  document.getElementById('reg-modal').style.display = 'none';
+}
+
+document.getElementById('reg-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const payload = Object.fromEntries(fd.entries());
+  payload.currency = (payload.currency || '').toUpperCase();
+  for (const k of ['bic', 'notes', 'shortname']) if (!payload[k]) payload[k] = null;
+  const status = document.getElementById('reg-status');
+  const btn = document.getElementById('reg-submit');
+  btn.disabled = true;
+  status.className = 'status';
+  status.textContent = 'Registering...';
+  try {
+    const r = await fetch('/discovered-accounts/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!r.ok) throw new Error((await r.json()).detail || 'Failed');
+    const j = await r.json();
+    status.className = 'status success';
+    const q = j.requeued;
+    status.textContent = `Registered "${j.label}". Requeued ${q.swift} SWIFT + ${q.flexcube} Flex file(s). Run a scan to ingest.`;
+    setTimeout(() => { closeReg(); load(); }, 1500);
+  } catch (err) {
+    status.className = 'status error';
+    status.textContent = err.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+async function ignoreDiscovery(id) {
+  if (!confirm('Ignore this discovery? It will be hidden from the pending list.')) return;
+  const r = await fetch(`/discovered-accounts/${id}/ignore`, { method: 'POST' });
+  if (r.ok) load();
+}
+
+load();
+</script>
+{% endblock %}

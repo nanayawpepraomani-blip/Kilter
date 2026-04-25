@@ -1,0 +1,132 @@
+{% extends "manual_base.html" %}
+{% block title %}Kilter · Overview{% endblock %}
+{% block bar_label %}Overview{% endblock %}
+{% block footer_left %}Overview & Quick Start{% endblock %}
+{% block cover_eyebrow %}Product Overview{% endblock %}
+{% block cover_title %}Kilter — what it is, who uses it, how the day runs{% endblock %}
+{% block cover_subtitle %}The 10-minute tour. Hand this to a new starter, a stakeholder, or a reviewer.{% endblock %}
+{% block audience %}All roles{% endblock %}
+
+{% block toc %}
+<div class="toc">
+  <h2>Contents</h2>
+  <ol>
+    <li>What Kilter does</li>
+    <li>Who uses it (roles)</li>
+    <li>Key concepts</li>
+    <li>A day in the life</li>
+    <li>How it fits beside Corona</li>
+    <li>Quick start — your first reconciliation</li>
+  </ol>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<h2 id="what">1. What Kilter does</h2>
+
+<p>Kilter is a nostro-and-GL reconciliation service for correspondent-banking treasuries. For each registered cash account it pairs the correspondent bank's SWIFT statement (MT940/950 or ISO 20022 camt.053/camt.054) against the core-banking GL's posting journal, proposes matches, and carries unresolved breaks forward as a rolling ledger until they clear or are written off.</p>
+
+<p>The system replaces manual reconciliation over Excel workbooks with an auditable web application that:</p>
+
+<ul>
+  <li>Ingests SWIFT and Flexcube statements automatically on a schedule.</li>
+  <li>Pairs transactions across five tiers of match strength, including many-to-one splits and FX-aware tolerances.</li>
+  <li>Keeps an indelible audit trail — every decision carries who/when/why.</li>
+  <li>Produces the daily breaks workbook and month-end sign-off certificates on demand.</li>
+  <li>Alerts ops when breaks age past their SLA thresholds, via Teams webhook or SMTP email.</li>
+</ul>
+
+<h2 id="roles">2. Who uses it — the four roles</h2>
+
+<table>
+  <thead><tr><th>Role</th><th>What they do</th><th>Primary screens</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><span class="role-pill role-admin">Admin</span></td>
+      <td>Configures the system — users, registries (cash accounts, currencies, banks, FX rates), tolerance rules, scheduler, SLA channels. Signs certificates.</td>
+      <td>Cash accounts · Scheduler · Users · Match patterns</td>
+    </tr>
+    <tr>
+      <td><span class="role-pill role-ops">Ops</span></td>
+      <td>Drives the daily reconciliation — scans intake, reviews the match queue, clears open items, posts notes, prepares certificates.</td>
+      <td>Dashboard · Sessions · Review · Open items</td>
+    </tr>
+    <tr>
+      <td><span class="role-pill role-ic">Internal Control</span></td>
+      <td>Reviews certificates between preparer and approver (the "checker" in maker-checker-approver). Sanity-checks tolerance exceptions and write-offs.</td>
+      <td>Certificates · Activity log · Open items</td>
+    </tr>
+    <tr>
+      <td><span class="role-pill role-audit">Audit</span></td>
+      <td>Reads the activity log, drills into the history of any break, exports evidence for regulatory review.</td>
+      <td>Activity log · Break history</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>All roles sign in via Microsoft Authenticator (TOTP). No passwords — your one-time enrollment produces a TOTP secret bound to your account; every subsequent login is a 6-digit code.</p>
+
+<h2 id="concepts">3. Key concepts</h2>
+
+<h3>Session</h3>
+<p>One <em>session</em> is a single pairing of one SWIFT statement with one Flexcube journal for one registered cash account on one day. A session has an opening balance, a closing balance, a list of SWIFT rows, a list of Flex rows, and the engine's proposed matches between them.</p>
+
+<h3>Assignment</h3>
+<p>The engine's proposed pair between one SWIFT row and one Flex row, tagged with a <em>tier</em> that expresses how confident the match is. Analysts confirm, reject, or skip. Once confirmed, it stays confirmed — no silent edits.</p>
+
+<h3>Open item</h3>
+<p>A SWIFT or Flex row that finished its session without a counterpart. Open items are keyed by <em>account</em>, not session — they outlive session boundaries and can be cleared later by a matching row arriving in a future session (carry-forward), hand-matched by an analyst, or written off with a reason.</p>
+
+<h3>Functional group</h3>
+<p>The team that owns a given break — TREASURY, PSC TROPS, TRADE SWITCHES, CASH MGT, GRA, TPU, CSD FEES. Auto-assigned by rules (user ID, ref prefix, narration keywords); editable per item. Drives the per-team tabs in the daily breaks report.</p>
+
+<h3>Certificate</h3>
+<p>The month-end sign-off artefact. Generated from the live ledger in <em>draft</em>; transitions through <em>prepared</em> (maker) → <em>reviewed</em> (checker) → <em>signed</em> (approver). Signing freezes the figures into an immutable JSON snapshot — later ledger changes cannot rewrite history.</p>
+
+<h2 id="day">4. A day in the life</h2>
+
+<p>Scheduled automation takes Kilter from "a tool" to "a service". A typical business day runs like this:</p>
+
+<table>
+  <thead><tr><th>Time (UTC)</th><th>What happens</th><th>Who sees it</th></tr></thead>
+  <tbody>
+    <tr><td>05:45</td><td><strong>Flexcube pull</strong> — scheduler runs <code>extract_flex_xlsx.py</code> against Oracle for every registered account, drops xlsx files into <code>messages/flexcube/</code>.</td><td>Nobody; silent.</td></tr>
+    <tr><td>06:00–09:00</td><td><strong>SWIFT files arrive</strong> — correspondents' MT940/950 (<code>.out</code>) and ISO 20022 camt.053 / camt.054 (<code>.xml</code> or <code>.txt</code>) drop into <code>messages/swift/</code> via your existing SFTP pipeline. Some RTGS feeds emit <code>.txt</code> on disk; others send <code>.xml</code>. The scanner auto-detects either.</td><td>Nobody; silent.</td></tr>
+    <tr><td>every 15 min</td><td><strong>Intake scan</strong> — scheduler pairs new files to registered accounts, runs the match engine, seeds open items.</td><td>Dashboard counters update.</td></tr>
+    <tr><td>07:00</td><td><strong>Daily breaks report</strong> — ready to download at Dashboard → <span class="path">Daily breaks report</span>.</td><td>Ops inbox / Teams.</td></tr>
+    <tr><td>07:30</td><td><strong>SLA alerts fan out</strong> — any open item past its threshold triggers the configured Teams / email channels.</td><td>Functional team inboxes.</td></tr>
+    <tr><td>08:00 onward</td><td>Ops walks into <span class="path">Dashboard</span>, clears the review queue, posts notes, writes off stale items.</td><td>Ops workstation.</td></tr>
+    <tr><td>last week of month</td><td>Ops generates month-end <strong>certificates</strong> at <span class="path">Certificates</span>. Maker prepares → Checker reviews → Approver signs.</td><td>Certificate desk.</td></tr>
+    <tr><td>23:00</td><td><strong>Auto-close</strong> — sessions open &gt;12h with no pending rows are closed automatically, seeding their one-sided items into the rolling ledger.</td><td>Scheduler history.</td></tr>
+  </tbody>
+</table>
+
+<div class="callout tip">
+  <strong>The pitch line.</strong> Corona's reconciliation is session-bound and requires a human to trigger every step. Kilter's ledger outlives sessions and its scheduler runs unattended — once provisioned, the ops team walks in to a reconciled ledger and a ready-to-send report.
+</div>
+
+<h2 id="vs-corona">5. How it fits beside Corona</h2>
+
+<p>Kilter is not a Corona plugin — it's a parallel service that reads the same SWIFT feed and the same core-banking data, and produces the daily breaks workbook and month-end certificates your ops team already recognise. The format is the same; the workflow is automated.</p>
+
+<p>During the transition you may run both in parallel for a period: Kilter in production for the accounts you've registered, Corona as a fallback. The two systems don't talk to each other — Kilter's data is self-contained in its SQLite ledger and can be exported wholesale if ever needed.</p>
+
+<h2 id="quickstart">6. Quick start — your first reconciliation</h2>
+
+<p>Assuming the service is installed and you've been enrolled with MFA:</p>
+
+<ol>
+  <li><strong>Sign in</strong> at <span class="path">/login</span>. Enter your username and the 6-digit Authenticator code.</li>
+  <li><strong>Register a cash account.</strong> Go to <span class="path">Cash accounts</span> → <span class="path">+ New cash account</span>. Pick access area, SWIFT account + BIC, Flexcube GL, currency.</li>
+  <li><strong>Drop files into intake.</strong> Place the day's SWIFT statement — <code>.out</code> (MT940/950), <code>.xml</code> or <code>.txt</code> (camt.053/054) — in <code>messages/swift/</code> and the matching Flexcube <code>{gl}.xlsx</code> in <code>messages/flexcube/</code>.</li>
+  <li><strong>Scan.</strong> On the Dashboard, click <span class="path">Scan now</span>. New sessions appear in Recent sessions.</li>
+  <li><strong>Review.</strong> Click any session. Use <kbd>J</kbd> / <kbd>K</kbd> to navigate the queue, <kbd>Space</kbd> to confirm, <kbd>X</kbd> to reject, <kbd>N</kbd> to add a note. Unmatched rows become open items when the session is closed.</li>
+  <li><strong>Close.</strong> Click <span class="path">Close session</span> on the review page. Open items flow into <span class="path">Open items</span> for follow-up.</li>
+</ol>
+
+<div class="callout">
+  <strong>Next:</strong> each role has a dedicated manual — Admin, Ops, Internal Control, Audit, Matching, and IT/Setup. The Ops User Manual is the right deep-dive after this overview.
+</div>
+
+{% endblock %}

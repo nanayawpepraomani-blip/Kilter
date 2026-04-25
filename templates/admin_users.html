@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+{% block title %}Users · Kilter{% endblock %}
+{% block crumbs %}<a href="/">Dashboard</a><span class="sep">/</span><span class="current">Users</span>{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Users</h1>
+    <div class="subtitle">Control who can sign in and what they can do. Intake is restricted to admins; reviewers use the Ops role.</div>
+  </div>
+  <div style="display:flex;gap:8px">
+    <button class="btn btn-default" onclick="exportUsers()">Download CSV</button>
+    <button class="btn btn-primary" onclick="document.getElementById('new-user').open = true">+ New user</button>
+  </div>
+</div>
+
+<div id="not-authorized" class="card" style="display:none">
+  <div class="card-body">
+    <div class="empty-state">
+      <h3>Admin-only page</h3>
+      <p>You need the admin role to view or manage users.</p>
+    </div>
+  </div>
+</div>
+
+<div id="authorized">
+  <div class="card">
+    <div class="card-head">
+      <h2>Active users</h2>
+      <div class="hint"><span id="user-count">0</span> total</div>
+    </div>
+    <div class="card-body tight">
+      <table class="table" id="users-table">
+        <thead>
+          <tr>
+            <th>Username</th><th>Name</th><th>Role</th><th>Status</th>
+            <th>Last seen</th><th>Created</th><th></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <details id="new-user" style="margin-top:20px">
+    <summary>Register a new user</summary>
+    <div class="card" style="margin-top:8px">
+      <div class="card-body">
+        <form id="new-form" class="form-grid">
+          <div class="field"><label>Username</label><input class="input" name="username" placeholder="e.g. ypepra" required></div>
+          <div class="field"><label>Display name</label><input class="input" name="display_name" placeholder="Full name"></div>
+          <div class="field"><label>Role</label>
+            <select class="input" name="role" required>
+              <option value="ops">Ops (reviewer)</option>
+              <option value="admin">Admin / IT</option>
+              <option value="audit">Audit</option>
+              <option value="internal_control">Internal control</option>
+            </select>
+          </div>
+          <div class="field" style="align-self:end">
+            <button type="submit" class="btn btn-primary">Create user</button>
+          </div>
+          <div style="grid-column:1/-1"><span class="status" id="new-status"></span></div>
+        </form>
+      </div>
+    </div>
+  </details>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.body.dataset.nav = 'users';
+
+const ROLE_LABEL = {
+  admin: 'Admin / IT', ops: 'Ops', audit: 'Audit', internal_control: 'Internal control',
+};
+const ROLE_BADGE = {
+  admin: 'badge-info', ops: 'badge-success',
+  audit: 'badge-neutral', internal_control: 'badge-neutral',
+};
+
+document.addEventListener('me:loaded', () => {
+  if (!window.me || window.me.role !== 'admin') {
+    document.getElementById('not-authorized').style.display = '';
+    document.getElementById('authorized').style.display = 'none';
+    return;
+  }
+  document.getElementById('not-authorized').style.display = 'none';
+  document.getElementById('authorized').style.display = '';
+  load();
+});
+
+async function load() {
+  const r = await fetch('/users');
+  if (!r.ok) return;
+  const users = await r.json();
+  document.getElementById('user-count').textContent = users.length;
+  const tbody = document.querySelector('#users-table tbody');
+  if (users.length === 0) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="7">No users yet.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = users.map(u => `
+    <tr>
+      <td><strong>${esc(u.username)}</strong></td>
+      <td>${esc(u.display_name || '')}</td>
+      <td><span class="badge ${ROLE_BADGE[u.role] || 'badge-neutral'}">${esc(ROLE_LABEL[u.role] || u.role)}</span></td>
+      <td>${u.active
+        ? '<span class="badge badge-success">Active</span>'
+        : '<span class="badge badge-danger">Deactivated</span>'}</td>
+      <td class="muted">${u.last_seen_at ? fmtDateTime(u.last_seen_at) : '—'}</td>
+      <td class="muted">${fmtDateTime(u.created_at)}</td>
+      <td>
+        ${roleSelector(u)}
+        ${toggleButton(u)}
+      </td>
+    </tr>`).join('');
+}
+
+function roleSelector(u) {
+  const me = window.me || {};
+  if (u.username === me.username) {
+    return '<span class="muted" style="font-size:var(--t-small)">you</span>';
+  }
+  return `
+    <select onchange="changeRole('${esc(u.username)}', this.value)" style="font-size:var(--t-small);padding:2px 6px">
+      ${['admin','ops','audit','internal_control'].map(r =>
+        `<option value="${r}" ${r === u.role ? 'selected' : ''}>${ROLE_LABEL[r]}</option>`
+      ).join('')}
+    </select>`;
+}
+
+function toggleButton(u) {
+  const me = window.me || {};
+  if (u.username === me.username) return '';
+  const label = u.active ? 'Deactivate' : 'Reactivate';
+  const cls = u.active ? 'btn-danger-soft' : 'btn-default';
+  return `<button class="btn ${cls} btn-sm" onclick="toggleActive('${esc(u.username)}', ${!u.active})">${label}</button>`;
+}
+
+async function changeRole(username, role) {
+  const r = await fetch(`/users/${encodeURIComponent(username)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role }),
+  });
+  if (!r.ok) { alert((await r.json()).detail || 'Failed'); return; }
+  load();
+}
+
+async function toggleActive(username, active) {
+  const r = await fetch(`/users/${encodeURIComponent(username)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ active }),
+  });
+  if (!r.ok) { alert((await r.json()).detail || 'Failed'); return; }
+  load();
+}
+
+document.getElementById('new-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const payload = Object.fromEntries(fd.entries());
+  if (!payload.display_name) payload.display_name = null;
+  const status = document.getElementById('new-status');
+  try {
+    const r = await fetch('/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.detail || 'Failed');
+    e.target.reset();
+    const enrollUrl = window.location.origin + j.enrollment_url;
+    status.className = 'status success';
+    status.innerHTML = `User <strong>${esc(payload.username)}</strong> created. Share this enrollment link so they can set up Microsoft Authenticator: <br>
+      <code style="user-select:all;display:inline-block;margin-top:6px;padding:6px 10px;background:var(--c-bg-sub);border-radius:4px;font-size:12px">${esc(enrollUrl)}</code>`;
+    load();
+  } catch (err) {
+    status.className = 'status error';
+    status.textContent = err.message;
+  }
+});
+
+async function exportUsers() {
+  // Fetching via /users/export via window.fetch preserves the auth header,
+  // but we want to trigger a download. Get the blob, then click a temp link.
+  const r = await fetch('/users/export');
+  if (!r.ok) { alert((await r.json()).detail || 'Export failed'); return; }
+  const blob = await r.blob();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'kilter_users.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+</script>
+{% endblock %}

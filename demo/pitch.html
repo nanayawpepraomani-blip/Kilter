@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Kilter — Pitch</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reset.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/theme/white.css">
+  <style>
+    :root { --ink: #0f172a; --muted: #52606d; --primary: #1f3a8a; --accent: #0891b2;
+            --warn: #b45309; --warn-soft: #fef3c7; --success: #059669;
+            --border: #e4e7eb; --surface: #ffffff; }
+    .reveal { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, Helvetica, Arial, sans-serif; color: var(--ink); }
+    .reveal h1 { font-size: 2.6em; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 0.4em; color: var(--primary); }
+    .reveal h2 { font-size: 1.8em; font-weight: 700; letter-spacing: -0.3px; color: var(--primary); margin-bottom: 0.4em; text-transform: none; }
+    .reveal h3 { font-size: 1.2em; font-weight: 600; color: var(--ink); text-transform: none; }
+    .reveal section { text-align: left; }
+    .reveal section.center { text-align: center; }
+    .reveal p, .reveal li { color: var(--ink); line-height: 1.45; }
+    .reveal .muted { color: var(--muted); font-size: 0.85em; }
+    .reveal code { background: #eef1f5; padding: 1px 6px; border-radius: 4px; font-size: 0.92em; color: var(--primary); }
+    .reveal em { color: var(--muted); font-style: italic; }
+    .reveal strong { color: var(--ink); font-weight: 700; }
+    .reveal .tag { display: inline-block; background: var(--warn-soft); color: var(--warn); padding: 2px 8px; border-radius: 4px; font-size: 0.7em; font-weight: 600; letter-spacing: 0.3px; text-transform: uppercase; vertical-align: middle; }
+    .reveal .fill { display: inline-block; background: #fff3cd; color: var(--warn); padding: 0 6px; border-radius: 3px; font-size: 0.85em; font-weight: 600; }
+    .reveal table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.7em; }
+    .reveal table th { background: #f5f7fa; color: var(--muted); padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: left; font-weight: 600; }
+    .reveal table td { padding: 8px 10px; border-bottom: 1px solid #f0f2f5; vertical-align: top; }
+    .reveal table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .reveal ul { margin-left: 1em; }
+    .reveal ul li { margin-bottom: 0.35em; }
+    .reveal blockquote { background: #f5f7fa; border-left: 4px solid var(--primary); padding: 12px 18px; margin: 0.5em 0; font-style: normal; box-shadow: none; font-size: 0.85em; }
+    .reveal blockquote p { margin: 0; }
+    .reveal .brand-badge {
+      display: inline-block; background: var(--primary); color: white;
+      width: 60px; height: 60px; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.8em; font-weight: 800;
+      margin: 0 auto 20px;
+    }
+    .reveal .slide-number { color: var(--muted); font-size: 0.6em; }
+    .reveal .subtitle { color: var(--muted); font-size: 1.1em; font-weight: 500; margin-top: -0.3em; }
+    .reveal .tier-row td:first-child { font-weight: 600; color: var(--primary); white-space: nowrap; }
+    .reveal .ask-list { counter-reset: ask; padding: 0; list-style: none; }
+    .reveal .ask-list li { counter-increment: ask; position: relative; padding-left: 2.2em; margin-bottom: 0.8em; }
+    .reveal .ask-list li::before {
+      content: counter(ask); position: absolute; left: 0; top: 2px;
+      width: 1.6em; height: 1.6em; border-radius: 50%; background: var(--primary); color: white;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 0.8em;
+    }
+    .reveal .pill { display: inline-block; background: var(--primary); color: white; padding: 3px 10px; border-radius: 20px; font-size: 0.7em; font-weight: 600; letter-spacing: 0.3px; }
+    .reveal .pill-soft { background: #eff4fb; color: var(--primary); }
+    .reveal .pill-ok { background: #d1fae5; color: var(--success); }
+    .reveal .footnote { color: var(--muted); font-size: 0.65em; margin-top: 1.5em; font-style: italic; }
+    .reveal aside.notes { display: none; }
+  </style>
+</head>
+<body>
+<div class="reveal">
+  <div class="slides">
+
+    <!-- Slide 1 — Title -->
+    <section class="center">
+      <div class="brand-badge">E</div>
+      <h1 style="margin-bottom: 0.2em">Kilter</h1>
+      <p class="subtitle">A modern replacement for Corona 7.9 reconciliation.</p>
+      <p class="muted" style="margin-top: 2em">
+        Built in-house &middot; Runs on our stack &middot; Audit trail by default.
+      </p>
+      <p class="muted" style="margin-top: 3em; font-size: 0.8em">
+        <span class="fill">Presenter name</span> &middot; <span class="fill">Date</span>
+      </p>
+      <aside class="notes">
+        For 15+ years our month-end reconciliation has depended on Corona 7.9. Kilter is the
+        purpose-built replacement — same job, 2026-era UX, and every action leaves an audit trail.
+      </aside>
+    </section>
+
+    <!-- Slide 2 — Why now -->
+    <section>
+      <h2>Why now</h2>
+      <p class="muted" style="margin-bottom: 1em">Three pressures converging.</p>
+      <ul>
+        <li><strong>Corona 7.9 is end-of-life.</strong> No vendor support. No Windows 11 hardening. UI unchanged since launch.</li>
+        <li><strong>Month-end reconciliation is manual.</strong> Ops exports from Flexcube, pulls SWIFT, eyeballs matches in Excel. <span class="fill">[FILL: hours per cycle]</span>.</li>
+        <li><strong>Audit has no breadcrumbs.</strong> "Who cleared this on the 14th?" → a spreadsheet filename.</li>
+      </ul>
+      <aside class="notes">
+        The problem isn't Corona itself — it's that Corona plus manual Excel stitching is how we
+        actually close the books. Three risks in one: a tool we can't patch, hours we can't reclaim,
+        decisions we can't trace.
+      </aside>
+    </section>
+
+    <!-- Slide 3 — What Kilter does -->
+    <section>
+      <h2>What Kilter does</h2>
+      <blockquote>
+        Pairs SWIFT messages with Flexcube transactions, proposes matches in tiers,
+        and lets ops confirm or reject — with every click logged.
+      </blockquote>
+      <p style="margin-top: 1em"><strong>Four user-visible parts:</strong></p>
+      <ol>
+        <li><strong>Intake</strong> — drop the SWIFT <code>.out</code> and Flexcube <code>.xlsx</code>, or let the scanner auto-ingest from <code>messages/</code>.</li>
+        <li><strong>Review queue</strong> — ranked candidates per unmatched transaction; confirm in one click.</li>
+        <li><strong>Scoped dashboard</strong> — each user picks the access areas they work in (a branch, a cluster, or all).</li>
+        <li><strong>Export + audit</strong> — xlsx report for finance, full audit log for compliance.</li>
+      </ol>
+    </section>
+
+    <!-- Slide 4 — Matching engine -->
+    <section>
+      <h2>The matching engine</h2>
+      <p class="muted">Four tiers, strongest first.</p>
+      <table>
+        <thead>
+          <tr><th style="width: 18%">Tier</th><th style="width: 40%">What matches</th><th>Example</th></tr>
+        </thead>
+        <tbody>
+          <tr class="tier-row"><td>1 &middot; Strict</td><td>Reference + amount + date</td><td>1:1, no judgement call</td></tr>
+          <tr class="tier-row"><td>2 &middot; Ref hit, amounts differ</td><td>Same ref, amount off by fees/FX</td><td>Usually a wire-fee deduction</td></tr>
+          <tr class="tier-row"><td>3 &middot; Amount + date</td><td>No ref, same amount on same day</td><td>Statement without a narrative</td></tr>
+          <tr class="tier-row"><td>4 &middot; Amount, date &plusmn;1 day</td><td>Same amount, next-day booking</td><td>Weekend / cut-off timing</td></tr>
+        </tbody>
+      </table>
+      <p style="margin-top: 1em; font-size: 0.85em">
+        Ops still <strong>decides</strong> tier 2-4. The engine <strong>proposes</strong> and ranks.
+        <span class="pill pill-soft">Nothing auto-matches without a human confirm.</span>
+      </p>
+      <aside class="notes">
+        The engine isn't doing the ops team's job — it's doing the searching so ops can do the
+        deciding. Tier 1 is the "free" matches. Tier 2-4 is where judgement lives, and that's
+        exactly the work we want humans on.
+      </aside>
+    </section>
+
+    <!-- Slide 5 — Review experience -->
+    <section>
+      <h2>The review experience</h2>
+      <ul>
+        <li>One candidate at a time &mdash; no Excel scrolling.</li>
+        <li><strong>Confirm / Reject / Skip</strong> &mdash; keyboard-friendly.</li>
+        <li><strong>Swap</strong> &mdash; if the top pick is wrong, surface the next candidate without re-running.</li>
+        <li>&ldquo;Queue cleared &rarr; Download reconciliation xlsx&rdquo; when you're done.</li>
+      </ul>
+      <p class="footnote">Live demo next &mdash; this is the screen ops will live in.</p>
+    </section>
+
+    <!-- Slide 6 — Scoping -->
+    <section>
+      <h2>Access-area scoping</h2>
+      <p class="muted">For the &ldquo;I just need my branch&rdquo; crowd.</p>
+      <ul>
+        <li>Top-bar picker, present on every page.</li>
+        <li><strong>Single area</strong> (most common) or <strong>multi-select</strong> (regional supervisors).</li>
+        <li>Scope filters Dashboard / Cash accounts / Sessions &mdash; users only see work relevant to them.</li>
+        <li>Backed by the same taxonomy Corona uses &mdash; <span class="pill pill-ok">103 areas seeded from Corona 7.9</span></li>
+      </ul>
+      <aside class="notes">
+        Ops asked: I only work on Branch 001 — don't show me 102 other areas. Done.
+        Leadership asked: I want to see the whole bank. Leave it on All areas — same screen, different scope.
+      </aside>
+    </section>
+
+    <!-- Slide 7 — Roles & audit -->
+    <section>
+      <h2>Roles &amp; audit</h2>
+      <h3>Four roles</h3>
+      <ul style="margin-bottom: 1em">
+        <li><code>admin</code> &mdash; everything, including ingest and user management.</li>
+        <li><code>ops</code> &mdash; reconcile, confirm/reject, export.</li>
+        <li><code>audit</code> / <code>internal_control</code> &mdash; read-only on activity log and exports.</li>
+      </ul>
+      <h3>Everything is logged</h3>
+      <p style="font-size: 0.9em">Login, decision, export, scope change, account registration &mdash;
+      one <code>audit_log</code> table powers both the Activity page and the CSV export auditors receive.</p>
+      <p style="margin-top: 1em; font-size: 0.85em">
+        <span class="pill">MFA</span>&nbsp;&nbsp;TOTP, Microsoft Authenticator compatible. Enrollment via one-time token.
+      </p>
+    </section>
+
+    <!-- Slide 8 — Numbers -->
+    <section>
+      <h2>What the numbers look like</h2>
+      <p class="muted">Fill these in before presenting &mdash; or swap this slide for the pilot plan.</p>
+      <table>
+        <thead>
+          <tr><th>Metric</th><th class="num">Corona + Excel today</th><th class="num">Kilter pilot</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Month-end close cycle</td><td class="num"><span class="fill">[FILL] hrs</span></td><td class="num"><span class="fill">[FILL] hrs</span></td></tr>
+          <tr><td>Items auto-proposed (tier 1)</td><td class="num">0</td><td class="num"><span class="fill">[FILL] %</span></td></tr>
+          <tr><td>"Who cleared this?" answered in</td><td class="num"><em>minutes, if logged</em></td><td class="num"><strong>&lt; 1 second</strong></td></tr>
+          <tr><td>Tool support contract</td><td class="num"><em>end-of-life</em></td><td class="num"><strong>in-house</strong></td></tr>
+        </tbody>
+      </table>
+      <p class="footnote">
+        No pilot numbers yet? Replace this with: <em>&ldquo;Pilot plan: 1 currency, 1 branch, 1 month. Measure before-and-after on the table above.&rdquo;</em>
+      </p>
+    </section>
+
+    <!-- Slide 9 — Built vs next -->
+    <section>
+      <h2>Built vs. next</h2>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2em">
+        <div>
+          <h3 style="color: var(--success)">Built &amp; working today</h3>
+          <ul style="font-size: 0.85em">
+            <li>Intake (manual + auto-scan)</li>
+            <li>Tiered matching engine</li>
+            <li>Review queue, xlsx export</li>
+            <li>MFA login, four roles</li>
+            <li>Audit log + activity export</li>
+            <li>Access-area scoping</li>
+            <li>Discovered-accounts inbox</li>
+          </ul>
+        </div>
+        <div>
+          <h3 style="color: var(--accent)">Next (in order)</h3>
+          <ol style="font-size: 0.85em">
+            <li><strong>Pilot</strong> &mdash; 1 branch, 1 month, parallel to Corona.</li>
+            <li><strong>RBAC for access areas</strong> &mdash; admin restricts user scope.</li>
+            <li><strong>Scheduled scan</strong> &mdash; replace manual click with cron.</li>
+            <li><strong>AD/LDAP integration</strong> &mdash; retire local user table.</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 10 — Ask -->
+    <section>
+      <h2>The ask</h2>
+      <ol class="ask-list">
+        <li><strong>Green-light a 1-branch / 1-month pilot.</strong> Low-risk, parallel to Corona, measures the numbers on slide 8.</li>
+        <li><strong>Name an ops champion.</strong> The person who lives in the review queue during the pilot.</li>
+        <li><strong>Commit a go/no-go review date.</strong> <span class="fill">[FILL: ~6 weeks from pilot start]</span></li>
+      </ol>
+      <blockquote style="margin-top: 2em">
+        <strong>Demo next.</strong> See <code>SCRIPT.md</code> for the walkthrough.
+      </blockquote>
+    </section>
+
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/notes/notes.js"></script>
+<script>
+  Reveal.initialize({
+    hash: true,
+    slideNumber: 'c/t',
+    controls: true,
+    progress: true,
+    transition: 'fade',
+    plugins: [ RevealNotes ],
+  });
+</script>
+</body>
+</html>

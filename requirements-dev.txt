@@ -1,0 +1,5 @@
+# Development & test dependencies — not required at runtime.
+-r requirements.txt
+
+pytest==9.0.3
+httpx==0.28.1   # FastAPI TestClient transport

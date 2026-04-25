@@ -1,0 +1,271 @@
+{% extends "manual_base.html" %}
+{% block title %}Kilter · Admin Manual{% endblock %}
+{% block bar_label %}Admin Manual{% endblock %}
+{% block footer_left %}Admin Manual{% endblock %}
+{% block cover_eyebrow %}Administrator role{% endblock %}
+{% block cover_title %}Admin Manual{% endblock %}
+{% block cover_subtitle %}User management, registries, tolerance rules, scheduler, SLA alerts — the full admin surface.{% endblock %}
+{% block audience %}Admin role{% endblock %}
+
+{% block toc %}
+<div class="toc">
+  <h2>Contents</h2>
+  <ol>
+    <li>What the Admin role can do</li>
+    <li>User management</li>
+    <li>Access areas</li>
+    <li>Cash account registry</li>
+    <li>Banks registry</li>
+    <li>Currencies registry</li>
+    <li>Exchange rates</li>
+    <li>Tolerance rules</li>
+    <li>Auto-categorization rules</li>
+    <li>Auto-grouping rules (teams)</li>
+    <li>Scheduler</li>
+    <li>SLA alert channels</li>
+    <li>Match patterns &amp; auto-rule promotion</li>
+    <li>Signing certificates</li>
+    <li>Routine admin tasks &amp; cadence</li>
+  </ol>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<h2 id="role">1. What the Admin role can do</h2>
+
+<p>The Admin role has full write access to every configuration surface in Kilter. It is also the only role allowed to <strong>sign</strong> month-end certificates — the approver leg of the maker-checker-approver flow.</p>
+
+<p>Admin is NOT the same as Ops. An admin who also runs the reconciliation queue should use a separate Ops-role account for the daily review work, keeping an audit-log clean separation between configuration changes and operational decisions.</p>
+
+<div class="callout tip">
+  <strong>Two admins, always.</strong> Provision at least two admin accounts so the "break glass" case (primary admin locks themselves out, leaves the team) has a path back. MFA reset requires an admin; only an admin can create an admin.
+</div>
+
+<h2 id="users">2. User management</h2>
+
+<p>Go to <span class="path">Admin → Users</span>.</p>
+
+<h3>Creating a user</h3>
+<ol>
+  <li>Click <strong>+ New user</strong>. Fill in username, display name, role.</li>
+  <li>The app generates a <strong>one-time enrollment URL</strong>. Copy it to the clipboard and share it with the user over a secure channel — internal chat, signed email, or hand-delivered.</li>
+  <li>The user opens the URL, scans the QR code with Microsoft Authenticator, enters the first 6-digit code. The token is consumed on first use.</li>
+</ol>
+
+<h3>Roles</h3>
+<table>
+  <thead><tr><th>Role</th><th>Can do</th><th>Typical fit</th></tr></thead>
+  <tbody>
+    <tr><td><span class="role-pill role-admin">admin</span></td><td>Everything. Including sign certificates and manage users.</td><td>Head of reconciliation, deputy head.</td></tr>
+    <tr><td><span class="role-pill role-ops">ops</span></td><td>Run the reconciliation — scan, review, confirm/reject, clear open items, prepare certificates.</td><td>Reconciliation analysts.</td></tr>
+    <tr><td><span class="role-pill role-ic">internal_control</span></td><td>Read all. <strong>Review</strong> (but not sign) certificates. Read the full activity log.</td><td>Internal Control desk.</td></tr>
+    <tr><td><span class="role-pill role-audit">audit</span></td><td>Read all. Read the full activity log. No write capability.</td><td>Internal or external audit.</td></tr>
+  </tbody>
+</table>
+
+<h3>Deactivating a user</h3>
+<p><span class="path">Users</span> → row → <strong>Deactivate</strong>. Active sessions are revoked immediately; historic audit entries keep the username for the paper trail.</p>
+
+<h3>MFA reset</h3>
+<p>If a user loses their phone, go to <span class="path">Users</span> → row → <strong>Reset MFA</strong>. A fresh enrollment token is issued. Share the new enrollment URL with them.</p>
+
+<h2 id="areas">3. Access areas</h2>
+
+<p>Access areas group cash accounts by organisational unit — NOSTRO, AFFILIATES, BANK OF GHANA, branch codes, etc. They mirror Corona's access-area taxonomy.</p>
+
+<p>Every cash account belongs to zero or one access area. The topbar <span class="path">Active area</span> picker lets each user scope all list views (sessions, open items, stats) to one or more areas. Users without a scope see everything.</p>
+
+<p>Access areas are seeded from the Corona 7.9 list on first run. Add new ones via the Cash accounts admin UI as they become relevant — don't bulk-delete, because historic sessions reference them.</p>
+
+<h2 id="cash">4. Cash account registry</h2>
+
+<p><span class="path">Cash accounts</span> is the heart of the system: each row is a registered pairing of one SWIFT account (correspondent side) with one Flexcube GL (own side) in one currency.</p>
+
+<h3>Registering an account</h3>
+<ol>
+  <li>Click <strong>+ New cash account</strong>.</li>
+  <li>Pick the Access area. (Blank = ungrouped.)</li>
+  <li>Enter a <strong>Shortname</strong> (e.g. "CITI NY VISA") and a <strong>Label</strong> (full descriptive name).</li>
+  <li>Pick the <strong>Correspondent BIC</strong> from the Banks dropdown. If missing, click <strong>+ Add bank</strong> inline.</li>
+  <li>Pick the <strong>Currency</strong> from the managed list.</li>
+  <li>Enter the <strong>SWIFT account</strong> (as it appears in the statement's <code>:25:</code> field) and the <strong>Flexcube GL</strong>.</li>
+  <li>Save.</li>
+</ol>
+
+<div class="callout warn">
+  <strong>SWIFT account + Flex GL + currency is the unique key.</strong> The same SWIFT account can back multiple Flex GLs (shared-correspondent accounts) and will raise a duplicate error only if the full triple repeats.
+</div>
+
+<h3>Editing</h3>
+<p>You can update access area, shortname, label, BIC, notes, and the active flag. The identity fields (SWIFT account, Flex GL, currency) are <strong>read-only</strong> in the edit dialog — changing them would orphan historic sessions. If you genuinely need to change one, deactivate the old account and register a new one with the corrected identity.</p>
+
+<h3>Discovered accounts</h3>
+<p>When the scanner sees a SWIFT file whose <code>:25:</code> account isn't registered, it parks it in <span class="path">Admin → Discovered accounts</span> with a count of how many times it's been seen. Review weekly:</p>
+<ul>
+  <li><strong>Register</strong> if it's a legitimate account that slipped through the onboarding.</li>
+  <li><strong>Ignore</strong> if it's noise (a test statement, a retired account). Ignored entries stop blocking scan.</li>
+</ul>
+
+<h2 id="banks">5. Banks registry</h2>
+
+<p><span class="path">Banks</span> is the master list of counterparty BICs. Cash accounts reference this registry — strict enforcement means you cannot register an account with a BIC that isn't in the list.</p>
+
+<p>Fields: BIC (8–11 alphanumeric), Name, Nickname, Origin (their = correspondent, our = your own bank's BIC), Type (bank / broker), Access area (optional), User code.</p>
+
+<p>Seeded on first run with whatever BICs already appear in cash_accounts — you can safely rename the placeholders.</p>
+
+<h2 id="currencies">6. Currencies registry</h2>
+
+<p><span class="path">Currencies</span> manages the ISO 4217 code list that feeds the currency picker on cash-account forms. Seeded with 24 codes matching Corona's picker (AED / AUD / BEF / CAD / CHF / CNY / DEM / DKK / DZD / EUR / FRF / GBP / GHS / GMD / ITL / JPY / NGN / NLG / SLL / USD / USN / XAF / XOF / ZAR).</p>
+
+<p>Deactivating a code hides it from the picker but doesn't affect accounts that already reference it.</p>
+
+<h2 id="fx">7. Exchange rates</h2>
+
+<p><span class="path">Exchange rates</span> is the FX registry that feeds the cross-currency tolerance branch of the match engine. Identity rows (GHS→GHS = 1.0, USD→USD = 1.0, etc.) are seeded automatically.</p>
+
+<h3>Adding a rate</h3>
+<ol>
+  <li>Click <strong>Add rate</strong>.</li>
+  <li>Pick From / To currencies, enter the rate (amount in from × rate = amount in to).</li>
+  <li>Set Valid from (default today) and Source (<code>BOG</code>, <code>REUTERS</code>, <code>MANUAL</code>).</li>
+  <li>Save.</li>
+</ol>
+
+<p>Adding a new rate for an existing pair automatically deactivates the previous active row — the engine always sees exactly one current rate per direction.</p>
+
+<h2 id="tolerance">8. Tolerance rules</h2>
+
+<p>Per-account overrides for match engine thresholds. <span class="path">Admin → Tolerance &amp; rules</span>.</p>
+
+<table>
+  <thead><tr><th>Parameter</th><th>Default</th><th>What it controls</th></tr></thead>
+  <tbody>
+    <tr><td><code>amount_tol_abs</code></td><td>0.01</td><td>Absolute amount tolerance (any currency). 0.01 = match if amounts differ by a cent or less.</td></tr>
+    <tr><td><code>amount_tol_pct</code></td><td>0.0</td><td>Percentage tolerance. 0.5 = 0.5%. Activated in addition to abs.</td></tr>
+    <tr><td><code>date_tol_days</code></td><td>1</td><td>Date-mismatch tolerance for tier 4. 1 = same day or ±1 day.</td></tr>
+    <tr><td><code>min_ref_len</code></td><td>6</td><td>Minimum reference length for tier 1/2 to consider the ref. Below this the engine treats the ref as absent.</td></tr>
+    <tr><td><code>fx_tol_bps</code></td><td>0</td><td>FX spread tolerance in basis points. 25 = 0.25% after FX conversion at the current rate.</td></tr>
+  </tbody>
+</table>
+
+<h3>When to override</h3>
+<ul>
+  <li>Accounts with lots of <strong>small fees</strong> where exact-amount match is too strict → bump <code>amount_tol_abs</code> to 0.05.</li>
+  <li>Cross-currency accounts where you want the engine to absorb FX rounding → set <code>fx_tol_bps</code> to 10–25.</li>
+  <li>Accounts with many <strong>weekend value-dated</strong> items → raise <code>date_tol_days</code> to 3.</li>
+</ul>
+
+<div class="callout warn">
+  <strong>Don't raise tolerances to hide problems.</strong> If an account starts producing many "just over tolerance" mismatches, investigate the upstream system — wider tolerance will hide a future real error.
+</div>
+
+<h2 id="autocat">9. Auto-categorization rules</h2>
+
+<p>Tag one-sided open items with a <strong>break category</strong> so ops know at a glance what's happening. First rule to match wins; order by priority ascending.</p>
+
+<p>Break categories (fixed list): <code>timing_diff</code>, <code>fx_mismatch</code>, <code>internal_journal</code>, <code>reversal_pending</code>, <code>bank_error</code>, <code>genuine_break</code>, <code>written_off</code>, <code>uncategorized</code>.</p>
+
+<p>Rule fields: side filter, narration-contains, type-equals, amount-min/max, category. Inspect the auto-applied category in the open-items grid; manual reclassification produces <code>category_source='manual'</code> and bumps the audit trail.</p>
+
+<h2 id="autogrp">10. Auto-grouping rules (teams)</h2>
+
+<p>Assign each open item to the <strong>functional team</strong> that owns it — TREASURY, PSC TROPS, TRADE SWITCHES, CASH MGT, GRA, TPU, CSD FEES. Drives the per-team tabs in the daily breaks report.</p>
+
+<p>Rules match on narration, ref prefix, Flex user ID, or type. Priority-ordered; first match wins. Default (lowest-priority) catch-all is PSC TROPS.</p>
+
+<p>Seeded with common treasury / trade / cash-management user-ID and ref-prefix patterns on first run. Extend or replace with your bank's own patterns in <span class="path">Match patterns</span>.</p>
+
+<h2 id="scheduler">11. Scheduler</h2>
+
+<p><span class="path">Scheduler</span> shows every scheduled job, its next run time, last-run status, and last-run output.</p>
+
+<h3>Seeded jobs</h3>
+<table>
+  <thead><tr><th>Name</th><th>Type</th><th>Cadence</th><th>Default state</th></tr></thead>
+  <tbody>
+    <tr><td>Intake scan (every 15 min)</td><td>scan</td><td>every 15 minutes</td><td>ON</td></tr>
+    <tr><td>Auto-close stale sessions</td><td>daily_close</td><td>daily 23:00 UTC</td><td>ON</td></tr>
+    <tr><td>SLA alerts (morning fan-out)</td><td>sla_check</td><td>daily 07:30 UTC</td><td>ON</td></tr>
+    <tr><td>Daily breaks report</td><td>daily_breaks_report</td><td>daily 07:00 UTC</td><td>ON</td></tr>
+    <tr><td>Flexcube pull (pre-scan)</td><td>flex_extract</td><td>daily 05:45 UTC</td><td>OFF — enable when Oracle creds are provisioned</td></tr>
+  </tbody>
+</table>
+
+<h3>Run now</h3>
+<p>Click <strong>Run now</strong> next to any job to execute it on-demand. Result is shown in an alert and added to the job's run history.</p>
+
+<h3>History</h3>
+<p><strong>History</strong> opens a drawer with the last 20 runs — started-at, duration, status, output. Useful for post-mortems ("why did the 14:00 scan take 45 seconds?").</p>
+
+<h3>Editing schedules</h3>
+<p>Click <strong>Edit</strong>. Change cadence (every N minutes, or daily HH:MM UTC), toggle enabled, or provide job-specific params as JSON (e.g. <code>{"min_age_hours": 6}</code> to shorten the auto-close window).</p>
+
+<h2 id="sla">12. SLA alert channels</h2>
+
+<p><span class="path">SLA alerts</span> manages the channels that the <code>sla_check</code> job fans out to when open items age past their threshold.</p>
+
+<h3>Channel kinds</h3>
+<ul>
+  <li><strong>Teams webhook</strong> — post a MessageCard to a Teams channel. Create the webhook via Teams → channel → Connectors → Incoming Webhook; paste the URL here.</li>
+  <li><strong>Email (SMTP)</strong> — send an HTML summary via your corporate mail relay. Fields: host, port, user, password, from address, comma-separated to addresses, STARTTLS.</li>
+  <li><strong>Log only</strong> — no external call; writes a summary to the audit log. Useful for staging and testing the flow without a live channel.</li>
+</ul>
+
+<h3>Per-channel settings</h3>
+<ul>
+  <li><strong>Threshold days</strong> — only items open longer than this trigger this channel. Default 30.</li>
+  <li><strong>Access area filter</strong> (comma-separated list). Blank = all areas. Use this to send TREASURY breaks to one channel and PSC TROPS breaks to another.</li>
+</ul>
+
+<h3>Testing</h3>
+<p>Use <strong>Dry-run</strong> first — it runs the same SQL but doesn't actually post. The result alert shows the item count. Once happy, <strong>Send</strong> actually dispatches.</p>
+
+<h2 id="patterns">13. Match patterns &amp; auto-rule promotion</h2>
+
+<p><span class="path">Match patterns</span> mines the audit log for narration tokens, ref prefixes, user IDs, and modules that correlate with <em>confirmed</em> matches.</p>
+
+<p>Rows with confirm rate ≥ 80% and at least 3 samples show a <strong>Create auto-rule</strong> button. Click to open a prefilled modal:</p>
+
+<ul>
+  <li><strong>Rule family</strong> — Auto-grouping (team assignment) or Auto-categorization (break type).</li>
+  <li><strong>Match kind</strong> — narration-contains or ref-contains, pre-selected based on where the pattern was found.</li>
+  <li><strong>Pattern value</strong> — pre-filled with the token; edit freely.</li>
+</ul>
+
+<p>Review the generated rule name + priority, pick the target team or category, and save. The rule fires from the next scan forward.</p>
+
+<div class="callout tip">
+  <strong>Review the patterns quarterly.</strong> User turnover, new products, and changed correspondent formats all shift the pattern distribution. A rule that was 95% accurate in Q1 may be 60% by Q4.
+</div>
+
+<h2 id="sign">14. Signing certificates</h2>
+
+<p>Admin is the only role authorised to sign a certificate. The full flow is:</p>
+<ol>
+  <li>Ops generates a draft certificate at <span class="path">Certificates</span>.</li>
+  <li>Ops clicks <strong>Prepare</strong> → status becomes <em>prepared</em>. (The "maker".)</li>
+  <li>Internal Control reviews and clicks <strong>Review</strong> → status becomes <em>reviewed</em>. (The "checker".)</li>
+  <li><strong>You</strong> click <strong>Sign</strong> → status becomes <em>signed</em>. The live figures are frozen into the certificate's snapshot JSON at this moment. Later ledger edits cannot rewrite history.</li>
+</ol>
+
+<p>Any transition writes an audit_log entry with your username, the UTC timestamp, and an optional note. Reviewers can produce the full certificate chain for compliance on demand via the audit manual's evidence-export flow.</p>
+
+<h2 id="cadence">15. Routine admin tasks &amp; cadence</h2>
+
+<table>
+  <thead><tr><th>Cadence</th><th>Task</th></tr></thead>
+  <tbody>
+    <tr><td>Daily</td><td>Glance at Dashboard stats. Check Scheduler for failed jobs.</td></tr>
+    <tr><td>Weekly</td><td>Review Discovered accounts. Clear the backlog. Review SLA alert dry-run.</td></tr>
+    <tr><td>Weekly</td><td>Review Match patterns for new ≥80% rules; promote.</td></tr>
+    <tr><td>Monthly</td><td>Rotate Teams webhook URL (or confirm it's still valid). Review SMTP credentials.</td></tr>
+    <tr><td>Monthly</td><td>Sign month-end certificates.</td></tr>
+    <tr><td>Quarterly</td><td>Audit user list — deactivate leavers, confirm roles.</td></tr>
+    <tr><td>Quarterly</td><td>Review tolerance rules per account — are they still right, or hiding drift?</td></tr>
+    <tr><td>Quarterly</td><td>Test backup restore in a throwaway environment.</td></tr>
+  </tbody>
+</table>
+
+{% endblock %}

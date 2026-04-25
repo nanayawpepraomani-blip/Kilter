@@ -1,0 +1,1228 @@
+{% extends "base.html" %}
+{% block title %}Reconcile · Session {{ session_id }} · Kilter{% endblock %}
+{% block crumbs %}
+  <a href="/">Dashboard</a><span class="sep">/</span>
+  <a href="/sessions-list">Sessions</a><span class="sep">/</span>
+  <span class="current" id="crumb-session">Session {{ session_id }}</span>
+{% endblock %}
+{% block topbar_actions %}
+  <a class="btn btn-default btn-sm" href="#" onclick="downloadReport(); return false;">Export xlsx</a>
+  <a class="btn btn-warn-soft btn-sm" href="#" onclick="closeSession(); return false;" title="Mark session closed and seed unmatched rows into the open-items ledger">Close session</a>
+  <a class="btn btn-ghost btn-sm" href="/sessions/{{ session_id }}/audit-page">Audit</a>
+{% endblock %}
+
+{% block head %}
+<style>
+  .reconcile-head {
+    background: var(--c-surface); border: 1px solid var(--c-border);
+    border-radius: var(--radius-lg); padding: 20px 24px; margin-bottom: 20px;
+  }
+  .reconcile-head .title-row {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    gap: 20px; flex-wrap: wrap; margin-bottom: 18px;
+  }
+  .reconcile-head h1 { margin: 0 0 4px 0; font-size: 26px; font-weight: 700; letter-spacing: -0.4px; }
+  .reconcile-head .account-line {
+    display: flex; align-items: center; gap: 10px; color: var(--c-text-muted); font-size: var(--t-body);
+  }
+  .reconcile-head .account-line .label {
+    font-size: var(--t-micro); color: var(--c-text-subtle); text-transform: uppercase;
+    letter-spacing: 0.3px; font-weight: 600;
+  }
+  .reconcile-head .account-line strong { color: var(--c-text); }
+  .reconcile-head .period {
+    font-size: var(--t-body); color: var(--c-text-muted); text-align: right;
+  }
+  .reconcile-head .period .period-value { color: var(--c-primary); font-weight: 600; font-size: 15px; }
+
+  .reconcile-panels {
+    display: grid; grid-template-columns: 1.2fr 1fr; gap: 24px;
+  }
+  .reconcile-panel {
+    padding: 16px 20px; border-radius: 10px;
+  }
+  .reconcile-panel.cleared { background: #f4f7fb; border: 1px solid #e4ecf5; }
+  .reconcile-panel.reconcile { background: #fafbfc; border: 1px solid var(--c-border); }
+  .reconcile-panel .panel-label {
+    font-size: var(--t-micro); color: var(--c-text-subtle); text-transform: uppercase;
+    letter-spacing: 0.5px; font-weight: 700; margin-bottom: 14px;
+  }
+  .reconcile-panel .row {
+    display: grid; grid-template-columns: repeat(5, 1fr);
+    align-items: baseline; gap: 14px;
+  }
+  .reconcile-panel.reconcile .row { grid-template-columns: repeat(3, 1fr); }
+  .reconcile-panel .cell { text-align: left; }
+  .reconcile-panel .cell .amt {
+    font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums;
+    letter-spacing: -0.3px; color: var(--c-text);
+  }
+  .reconcile-panel .cell .sublabel {
+    font-size: var(--t-micro); color: var(--c-text-muted); margin-top: 2px;
+  }
+  .reconcile-panel .op {
+    font-size: 28px; font-weight: 400; color: var(--c-text-subtle);
+    text-align: center; padding-top: 2px;
+  }
+  .reconcile-panel.reconcile .difference .amt.ok { color: var(--c-success); }
+  .reconcile-panel.reconcile .difference .amt.err { color: var(--c-danger); }
+  .reconcile-panel.reconcile .difference .amt::after {
+    content: ''; display: inline-block; margin-left: 6px;
+  }
+  .reconcile-panel.reconcile .difference .check {
+    display: inline-block; margin-left: 6px; color: var(--c-success); font-size: 20px; font-weight: 700;
+  }
+
+  .stats-strip {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 14px; margin-bottom: 20px;
+  }
+  .stats-strip .stat-tile {
+    background: var(--c-surface); border: 1px solid var(--c-border);
+    border-radius: 10px; padding: 14px 16px;
+  }
+  .stats-strip .stat-tile .label {
+    font-size: var(--t-micro); color: var(--c-text-subtle); text-transform: uppercase;
+    letter-spacing: 0.4px; font-weight: 600;
+  }
+  .stats-strip .stat-tile .value {
+    font-size: 22px; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums;
+    letter-spacing: -0.3px;
+  }
+  .stats-strip .stat-tile .sub { font-size: var(--t-micro); color: var(--c-text-muted); margin-top: 2px; }
+  .stats-strip .stat-tile.progress .bar {
+    height: 6px; background: #e5e7eb; border-radius: 999px; overflow: hidden; margin-top: 8px;
+  }
+  .stats-strip .stat-tile.progress .bar > div {
+    height: 100%; background: linear-gradient(90deg, var(--c-success), var(--c-accent));
+  }
+
+  /* Tabs */
+  .tabs {
+    display: flex; gap: 0; border-bottom: 1px solid var(--c-border); margin-bottom: 16px;
+  }
+  .tab {
+    padding: 10px 18px; font-size: var(--t-body); color: var(--c-text-muted);
+    cursor: pointer; border-bottom: 2px solid transparent; font-weight: 500;
+    background: none; border-top: 0; border-left: 0; border-right: 0; font-family: inherit;
+  }
+  .tab:hover { color: var(--c-text); }
+  .tab.active { color: var(--c-primary); border-bottom-color: var(--c-primary); font-weight: 600; }
+  .tab .pill {
+    display: inline-block; margin-left: 6px; font-size: var(--t-micro);
+    background: #e5e7eb; color: var(--c-text-muted);
+    padding: 1px 7px; border-radius: 999px; font-weight: 600;
+  }
+  .tab.active .pill { background: var(--c-primary); color: white; }
+
+  /* Review card */
+  .review-card { overflow: visible; }
+  .tier-banner {
+    padding: 14px 20px; display: flex; justify-content: space-between;
+    align-items: center; gap: 16px; font-size: var(--t-body);
+    border-bottom: 1px solid var(--c-border);
+  }
+  .tier-banner .tier-tag {
+    font-size: var(--t-micro); font-weight: 700; letter-spacing: 0.6px;
+    padding: 3px 10px; border-radius: 999px; text-transform: uppercase;
+  }
+  .tier-banner .reason { color: inherit; opacity: 0.9; font-size: var(--t-small); text-align: right; }
+  .tier-1 { background: var(--c-success-soft); color: #065f46; }
+  .tier-1 .tier-tag { background: var(--c-success); color: white; }
+  .tier-2 { background: #fef3c7; color: #78350f; }
+  .tier-2 .tier-tag { background: #d97706; color: white; }
+  .tier-3 { background: #fed7aa; color: #7c2d12; }
+  .tier-3 .tier-tag { background: #ea580c; color: white; }
+  .tier-4 { background: #fecaca; color: #7f1d1d; }
+  .tier-4 .tier-tag { background: #dc2626; color: white; }
+
+  .panels { display: grid; grid-template-columns: 1fr 1fr; }
+  .panel { padding: 22px 24px; }
+  .panel + .panel { border-left: 1px solid var(--c-border); }
+  .panel h3 {
+    margin: 0 0 16px 0; font-size: var(--t-micro); text-transform: uppercase;
+    letter-spacing: 0.6px; color: var(--c-text-subtle); font-weight: 700;
+    display: flex; justify-content: space-between; align-items: baseline;
+  }
+  .panel h3 .side { color: var(--c-text); font-size: var(--t-small); font-weight: 600; letter-spacing: 0; text-transform: none; }
+  .panel .amount-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px dashed var(--c-border); }
+  .panel .amount-value { font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.5px; }
+  .panel .amount-tag { font-size: var(--t-small); color: var(--c-text-muted); font-weight: 500; }
+  .panel .field-row { display: grid; grid-template-columns: 130px 1fr; gap: 10px; margin-bottom: 10px; align-items: baseline; }
+  .panel .field-label { font-size: var(--t-small); color: var(--c-text-subtle); font-weight: 500; }
+  .panel .field-value { font-size: var(--t-body); color: var(--c-text); word-break: break-word; }
+  .panel .field-value.mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: var(--t-small); }
+
+  .diff-banner {
+    padding: 10px 20px; background: #fffbeb; color: #92400e;
+    font-size: var(--t-small); border-top: 1px solid #fef3c7;
+    display: flex; justify-content: space-between;
+  }
+  .diff-banner.zero { display: none; }
+
+  .competing-strip {
+    padding: 10px 20px; background: #f8fafc; border-top: 1px solid var(--c-border);
+    font-size: var(--t-small); color: var(--c-text-muted);
+  }
+  .competing-strip strong { color: var(--c-text); }
+
+  /* Notes thread on the queue card */
+  .notes-strip {
+    padding: 12px 20px; background: #fffdf5; border-top: 1px solid #fef3c7;
+    font-size: var(--t-small); color: #713f12;
+  }
+  .notes-strip .note {
+    padding: 6px 0; border-bottom: 1px dashed #fde68a;
+  }
+  .notes-strip .note:last-child { border-bottom: 0; }
+  .notes-strip .note .meta {
+    font-size: var(--t-micro); color: #92400e; font-weight: 600;
+    margin-right: 8px;
+  }
+  .notes-strip .note .body { color: var(--c-text); white-space: pre-wrap; }
+  .notes-strip .empty { color: #a16207; font-style: italic; }
+
+  /* Force-match dialog + inline row actions */
+  dialog.recon-dlg {
+    border: 1px solid var(--c-border); border-radius: var(--radius-lg);
+    padding: 0; max-width: 560px; width: 90%;
+  }
+  dialog.recon-dlg::backdrop { background: rgba(15, 23, 42, 0.35); }
+  dialog.recon-dlg form { padding: 20px; }
+  dialog.recon-dlg h3 { margin: 0 0 12px 0; font-size: var(--t-2); font-weight: 600; }
+  dialog.recon-dlg .dlg-actions {
+    display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;
+  }
+  .register tr.picked td { background: #eff4fb; }
+  .register td.pickcell { width: 28px; }
+
+  .actions-bar {
+    padding: 16px 20px; background: #fafbfc; border-top: 1px solid var(--c-border);
+    display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
+  }
+  .actions-bar .hint { color: var(--c-text-subtle); font-size: var(--t-small); }
+  .actions-bar .group { display: flex; gap: 8px; }
+
+  .queue-done { text-align: center; padding: 60px 24px; }
+  .queue-done h2 { color: var(--c-success); margin: 0 0 12px; font-size: var(--t-1); }
+  .queue-done p { color: var(--c-text-muted); }
+
+  /* Register filter bar */
+  .register-controls {
+    display: flex; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--c-border);
+    background: #fafbfc; flex-wrap: wrap;
+  }
+  .register-controls input, .register-controls select {
+    font-size: var(--t-small);
+  }
+
+  /* Register table */
+  .register td.amount { font-variant-numeric: tabular-nums; text-align: right; }
+  .register td.credit { color: var(--c-success); }
+  .register td.debit { color: var(--c-danger); }
+  .register .side-badge {
+    padding: 2px 8px; border-radius: 3px; font-size: var(--t-micro);
+    font-weight: 600; letter-spacing: 0.3px;
+  }
+  .register .side-badge.swift { background: #eff4fb; color: var(--c-primary); }
+  .register .side-badge.flex  { background: #fef3e7; color: #b45309; }
+  .register .status-badge.confirmed { background: var(--c-success-soft); color: #065f46; }
+  .register .status-badge.pending   { background: var(--c-warn-soft); color: var(--c-warn); }
+  .register .status-badge.rejected  { background: var(--c-danger-soft); color: var(--c-danger); }
+  .register .status-badge.unmatched { background: #e5e7eb; color: var(--c-text-muted); }
+  kbd {
+    background: #e5e7eb; border: 1px solid var(--c-border-strong); border-bottom-width: 2px;
+    border-radius: 3px; padding: 1px 6px; font-size: 11px; color: var(--c-text-muted);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="reconcile-head">
+  <div class="title-row">
+    <div>
+      <h1>Reconcile</h1>
+      <div class="account-line">
+        <span class="label">Cash account</span>
+        <strong id="m-account">—</strong>
+        <span style="color:var(--c-text-subtle)">·</span>
+        <span id="m-area">—</span>
+        <span style="color:var(--c-text-subtle)">·</span>
+        <span id="m-ccy">—</span>
+      </div>
+    </div>
+    <div class="period">
+      <div style="font-size:var(--t-micro);color:var(--c-text-subtle);text-transform:uppercase;letter-spacing:0.3px;font-weight:600">Statement period</div>
+      <div class="period-value" id="m-period">—</div>
+      <div style="font-size:var(--t-micro);margin-top:4px">Statement <strong id="m-stmt">—</strong> · Session #{{ session_id }}</div>
+    </div>
+  </div>
+
+  <div class="reconcile-panels">
+    <div class="reconcile-panel cleared">
+      <div class="panel-label">Cleared balance · Our side (Flexcube)</div>
+      <div class="row">
+        <div class="cell">
+          <div class="amt" id="rp-open">—</div>
+          <div class="sublabel">Beginning balance</div>
+        </div>
+        <div class="op">−</div>
+        <div class="cell">
+          <div class="amt" id="rp-debit">—</div>
+          <div class="sublabel"><span id="rp-debit-n">0</span> cleared debits</div>
+        </div>
+        <div class="op">+</div>
+        <div class="cell">
+          <div class="amt" id="rp-credit">—</div>
+          <div class="sublabel"><span id="rp-credit-n">0</span> cleared credits</div>
+        </div>
+      </div>
+    </div>
+    <div class="reconcile-panel reconcile">
+      <div class="panel-label">Reconcile</div>
+      <div class="row">
+        <div class="cell">
+          <div class="amt" id="rp-close">—</div>
+          <div class="sublabel">Statement ending balance</div>
+        </div>
+        <div class="cell">
+          <div class="amt" id="rp-cleared">—</div>
+          <div class="sublabel">Cleared balance</div>
+        </div>
+        <div class="cell difference">
+          <div class="amt ok" id="rp-diff">—<span class="check" id="rp-check" style="display:none">✓</span></div>
+          <div class="sublabel">Difference</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="stats-strip">
+  <div class="stat-tile"><div class="label">Opening balance</div><div class="value" id="ss-open">—</div><div class="sub" id="ss-open-date">—</div></div>
+  <div class="stat-tile"><div class="label">Closing balance</div><div class="value" id="ss-close">—</div><div class="sub" id="ss-close-date">—</div></div>
+  <div class="stat-tile"><div class="label">Statement movement</div><div class="value" id="ss-move">—</div><div class="sub">Credits − Debits (SWIFT)</div></div>
+  <div class="stat-tile progress">
+    <div class="label">Reconciliation progress</div>
+    <div class="value" id="ss-progress">—</div>
+    <div class="bar"><div id="ss-bar" style="width:0%"></div></div>
+  </div>
+</div>
+
+<div class="tabs">
+  <button class="tab active" data-tab="queue">Review queue <span class="pill" id="tc-queue">0</span></button>
+  <button class="tab" data-tab="register">Register <span class="pill" id="tc-register">0</span></button>
+  <button class="tab" data-tab="split">Split view</button>
+</div>
+
+<div id="tab-queue"><div id="root"></div></div>
+
+<div id="tab-split" style="display:none">
+  <div class="card" style="padding:0">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;min-height:60vh">
+      <!-- SWIFT pane (left) -->
+      <div id="split-swift-pane" style="border-right:1px solid var(--c-border);display:flex;flex-direction:column">
+        <div class="split-pane-head" style="padding:12px 16px;border-bottom:1px solid var(--c-border);background:var(--c-surface-2);font-weight:600;font-size:var(--t-small);display:flex;justify-content:space-between;align-items:center">
+          <span>SWIFT — Their side</span>
+          <span class="muted" id="split-swift-summary" style="font-weight:500;font-size:var(--t-small)">—</span>
+        </div>
+        <div style="padding:8px 12px;border-bottom:1px solid var(--c-border);display:flex;gap:8px">
+          <input class="input" id="split-swift-q" placeholder="Filter…" style="flex:1;font-size:var(--t-small);padding:6px 10px">
+          <select class="input" id="split-swift-filter" style="font-size:var(--t-small);padding:6px 10px">
+            <option value="unmatched" selected>Unmatched</option>
+            <option value="pending">Pending</option>
+            <option value="confirmed">Confirmed</option>
+            <option value="">All</option>
+          </select>
+        </div>
+        <div id="split-swift-list" style="flex:1;overflow-y:auto;max-height:60vh"></div>
+      </div>
+
+      <!-- Flex pane (right) -->
+      <div id="split-flex-pane" style="display:flex;flex-direction:column">
+        <div class="split-pane-head" style="padding:12px 16px;border-bottom:1px solid var(--c-border);background:var(--c-surface-2);font-weight:600;font-size:var(--t-small);display:flex;justify-content:space-between;align-items:center">
+          <span>Flexcube — Our side</span>
+          <span class="muted" id="split-flex-summary" style="font-weight:500;font-size:var(--t-small)">—</span>
+        </div>
+        <div style="padding:8px 12px;border-bottom:1px solid var(--c-border);display:flex;gap:8px">
+          <input class="input" id="split-flex-q" placeholder="Filter…" style="flex:1;font-size:var(--t-small);padding:6px 10px">
+          <select class="input" id="split-flex-filter" style="font-size:var(--t-small);padding:6px 10px">
+            <option value="unmatched" selected>Unmatched</option>
+            <option value="pending">Pending</option>
+            <option value="confirmed">Confirmed</option>
+            <option value="">All</option>
+          </select>
+        </div>
+        <div id="split-flex-list" style="flex:1;overflow-y:auto;max-height:60vh"></div>
+      </div>
+    </div>
+
+    <!-- Action bar: selection summary + match button -->
+    <div style="padding:14px 20px;border-top:1px solid var(--c-border);background:var(--c-surface-2);display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+      <div id="split-sel-summary" style="flex:1;min-width:0">
+        <span class="muted">Select rows on both sides to preview a match.</span>
+      </div>
+      <div id="split-diff-pill" style="display:none"></div>
+      <button class="btn btn-ghost btn-sm" id="split-clear">Clear selection</button>
+      <button class="btn btn-primary" id="split-match-btn" disabled>Match selected</button>
+    </div>
+    <div style="padding:8px 20px;font-size:var(--t-micro);color:var(--c-text-subtle);border-top:1px solid var(--c-border);background:var(--c-surface-2)">
+      <kbd>J</kbd>/<kbd>K</kbd> move · <kbd>Tab</kbd> switch pane · <kbd>Space</kbd> toggle select · <kbd>M</kbd> match selection · <kbd>Esc</kbd> clear
+    </div>
+  </div>
+</div>
+<div id="tab-register" style="display:none">
+  <div class="card">
+    <div class="register-controls">
+      <input class="input" id="r-search" placeholder="Search ref / description" style="flex:1;min-width:220px">
+      <select class="input" id="r-status">
+        <option value="">All statuses</option>
+        <option value="confirmed">Confirmed</option>
+        <option value="pending">Pending</option>
+        <option value="rejected">Rejected</option>
+        <option value="unmatched" selected>Unmatched</option>
+      </select>
+      <select class="input" id="r-side">
+        <option value="">Both sides</option>
+        <option value="swift">SWIFT only</option>
+        <option value="flex">Flexcube only</option>
+      </select>
+      <button id="fm-open" class="btn btn-primary" title="Force-match two rows the engine didn't pair">
+        <span id="fm-label">Force-match</span><span id="fm-chip" style="margin-left:8px;font-size:var(--t-micro);opacity:0.85"></span>
+      </button>
+    </div>
+    <div class="card-body tight">
+      <table class="table register">
+        <thead>
+          <tr>
+            <th class="pickcell"></th>
+            <th>Side</th><th>Value date</th><th>Reference</th><th>Description</th>
+            <th class="amount">Debit</th><th class="amount">Credit</th><th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="register-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Add-note dialog (queue card) -->
+<dialog id="note-dialog" class="recon-dlg">
+  <form method="dialog">
+    <h3>Add note to this break</h3>
+    <p class="subtitle" style="margin-top:0;color:var(--c-text-muted);">
+      Notes are permanent and visible to anyone with access to this session. Use them to record
+      context — "awaiting bank ref XYZ, expected T+2" — not final decisions.
+    </p>
+    <div class="field">
+      <label>Note</label>
+      <textarea id="note-body" class="input" rows="4" maxlength="4000"
+                placeholder="What do other analysts need to know about this break?"></textarea>
+    </div>
+    <div class="dlg-actions">
+      <button type="button" class="btn btn-default" onclick="document.getElementById('note-dialog').close()">Cancel</button>
+      <button type="button" class="btn btn-primary" onclick="submitNote()">Save note</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Force-match dialog (register) -->
+<dialog id="fm-dialog" class="recon-dlg">
+  <form method="dialog">
+    <h3>Force-match two rows</h3>
+    <p class="subtitle" style="margin-top:0;color:var(--c-text-muted);">
+      Pair rows the engine didn't propose. Both rows must be <strong>unmatched</strong> — if
+      either one is already on a pending or confirmed assignment, reject that first.
+      The match is recorded with <code>source='manual'</code> and cannot be silently
+      re-used by the engine.
+    </p>
+    <div class="form-grid">
+      <div class="field">
+        <label>SWIFT row #</label>
+        <input id="fm-swift" type="number" class="input" required>
+        <span id="fm-swift-hint" class="muted" style="font-size:var(--t-micro)"></span>
+      </div>
+      <div class="field">
+        <label>Flex row #</label>
+        <input id="fm-flex" type="number" class="input" required>
+        <span id="fm-flex-hint" class="muted" style="font-size:var(--t-micro)"></span>
+      </div>
+      <div class="field span-full">
+        <label>Reason (will be stored on the assignment and audit log)</label>
+        <textarea id="fm-reason" class="input" rows="3" maxlength="500"
+                  placeholder="e.g. correspondent bank echoed wrong ref; hand-matched after phone confirmation"></textarea>
+      </div>
+    </div>
+    <div id="fm-preview" style="margin-top:12px;font-size:var(--t-small);color:var(--c-text-muted)"></div>
+    <div class="dlg-actions">
+      <button type="button" class="btn btn-default" onclick="closeForceMatch()">Cancel</button>
+      <button type="button" class="btn btn-primary" onclick="submitForceMatch()">Confirm match</button>
+    </div>
+  </form>
+</dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const SESSION_ID = {{ session_id }};
+let queue = [];
+let index = 0;
+let session = null;
+let registerData = [];
+const root = document.getElementById('root');
+
+function fmtBalance(amount, sign) {
+  if (amount == null || amount === '') return '—';
+  return `${sign || ''} ${fmtAmount(amount)}`.trim();
+}
+
+// Small helpers — set text/style without blowing up when the page was rendered
+// with different IDs (happens during partial migrations / old cached HTML).
+function setText(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = value;
+  else console.warn('setText: missing element', id);
+}
+function setStyle(id, prop, value) {
+  const el = document.getElementById(id);
+  if (el) el.style[prop] = value;
+  else console.warn('setStyle: missing element', id);
+}
+
+// xlsx download needs the X-Session-Token header, which the fetch-patch in
+// base.html only adds to fetch() — plain <a href> navigations arrive unauth'd
+// and bounce off 401. So: fetch the blob, then trigger a save via temp anchor.
+async function closeSession() {
+  if (!confirm('Close this session? Unmatched rows will be seeded into the open-items ledger with auto-grouping applied (TREASURY / PSC TROPS / etc.). This cannot be undone.')) return;
+  const r = await fetch(`/sessions/${SESSION_ID}/close`, { method: 'POST' });
+  if (!r.ok) {
+    alert((await r.json().catch(() => ({}))).detail || 'Close failed');
+    return;
+  }
+  const j = await r.json();
+  if (j.already_closed) {
+    alert('Session was already closed.');
+  } else {
+    alert(`Session closed. ${j.seeded} row(s) seeded into open-items ledger.`);
+    location.reload();
+  }
+}
+
+async function downloadReport() {
+  const r = await fetch(`/sessions/${SESSION_ID}/export`);
+  if (!r.ok) { alert((await r.json().catch(() => ({}))).detail || 'Export failed'); return; }
+  const blob = await r.blob();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `kilter_session_${SESSION_ID}.xlsx`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+window.downloadReport = downloadReport;
+
+async function refreshSession() {
+  const r = await fetch(`/sessions/${SESSION_ID}`);
+  if (!r.ok) return;
+  session = await r.json();
+  const s = session;
+  const ccy = s.swift_currency || s.flex_currency || '';
+  const acctLabel = s.account_label || `Unregistered (${s.swift_account || '?'} ↔ ${s.flex_ac_no || '?'})`;
+
+  setText('m-account', acctLabel);
+  setText('m-area', s.account_access_area || '—');
+  setText('m-ccy', ccy);
+  setText('m-stmt', s.swift_statement_ref || '—');
+  setText('crumb-session', `#${s.id} · ${s.account_shortname || acctLabel}`);
+
+  const od = s.opening_balance_date, cd = s.closing_balance_date;
+  setText('m-period', (od && cd) ? `${fmtDate(od)} → ${fmtDate(cd)}` : (cd ? fmtDate(cd) : '—'));
+
+  setText('ss-open',  fmtBalance(s.opening_balance_amount, s.opening_balance_sign));
+  setText('ss-close', fmtBalance(s.closing_balance_amount, s.closing_balance_sign));
+  setText('ss-open-date',  od ? fmtDate(od) : '');
+  setText('ss-close-date', cd ? fmtDate(cd) : '');
+
+  const movement = (s.totals?.swift_credits_all || 0) - (s.totals?.swift_debits_all || 0);
+  setText('ss-move', (movement >= 0 ? '+' : '−') + ' ' + fmtAmount(Math.abs(movement)));
+
+  const counts = s.counts || {};
+  const total = (counts.pending || 0) + (counts.confirmed || 0) + (counts.rejected || 0);
+  const done = (counts.confirmed || 0) + (counts.rejected || 0);
+  const pct = total > 0 ? (done / total * 100) : 0;
+  setText('ss-progress', `${done} / ${total}`);
+  setStyle('ss-bar', 'width', pct + '%');
+  setText('tc-queue', counts.pending || 0);
+
+  const cleared_credits = s.totals?.flex_credits_cleared || 0;
+  const cleared_debits  = s.totals?.flex_debits_cleared  || 0;
+  setText('rp-open',    fmtAmount(s.opening_balance_amount || 0));
+  setText('rp-debit',   fmtAmount(cleared_debits));
+  setText('rp-credit',  fmtAmount(cleared_credits));
+  setText('rp-debit-n', counts.confirmed || 0);
+  setText('rp-credit-n', counts.confirmed || 0);
+
+  const closingAmt = s.closing_balance_amount || 0;
+  const clearedRunning = (s.opening_balance_amount || 0) + cleared_credits - cleared_debits;
+  const diff = closingAmt - clearedRunning;
+  setText('rp-close',   fmtAmount(closingAmt));
+  setText('rp-cleared', fmtAmount(clearedRunning));
+  const rpDiff = document.getElementById('rp-diff');
+  if (rpDiff) {
+    rpDiff.textContent = fmtAmount(Math.abs(diff));
+    rpDiff.classList.toggle('ok', Math.abs(diff) < 0.01);
+    rpDiff.classList.toggle('err', Math.abs(diff) >= 0.01);
+  }
+  setStyle('rp-check', 'display', Math.abs(diff) < 0.01 ? 'inline' : 'none');
+}
+
+async function loadQueue() {
+  const r = await fetch(`/sessions/${SESSION_ID}/queue`);
+  queue = await r.json();
+  index = 0;
+  renderQueueCard();
+}
+
+function renderQueueCard() {
+  if (queue.length === 0 || index >= queue.length) {
+    root.innerHTML = `
+      <div class="card">
+        <div class="queue-done">
+          <h2>✓ Queue cleared</h2>
+          <p>No pending assignments left for this session.</p>
+          <a class="btn btn-primary" href="#" onclick="downloadReport(); return false;" style="margin-top:16px">Download reconciliation xlsx</a>
+        </div>
+      </div>`;
+    return;
+  }
+  const a = queue[index];
+  const tierNames = {
+    1: 'TIER 1 — Strict match', 2: 'TIER 2 — Ref hit, amounts differ',
+    3: 'TIER 3 — Amount + date', 4: 'TIER 4 — Amount, date ±1 day',
+  };
+  root.innerHTML = `
+    <div class="card review-card">
+      <div class="tier-banner tier-${a.tier}">
+        <span class="tier-tag">${tierNames[a.tier]}</span>
+        <span class="reason">${esc(a.reason)}</span>
+      </div>
+      <div class="panels">
+        <div class="panel">
+          <h3>SWIFT <span class="side">Row ${a.swift.row_number}</span></h3>
+          <div class="amount-row">
+            <div class="amount-value">${fmtAmount(a.swift.amount)}</div>
+            <div class="amount-tag">${a.swift.sign === 'C' ? 'Credit' : 'Debit'} · ${esc(a.swift.sign)}</div>
+          </div>
+          <div class="field-row"><span class="field-label">Value date</span><span class="field-value">${fmtDate(a.swift.value_date)}</span></div>
+          <div class="field-row"><span class="field-label">Our ref</span><span class="field-value mono">${esc(a.swift.our_ref) || '—'}</span></div>
+          <div class="field-row"><span class="field-label">Their ref</span><span class="field-value mono">${esc(a.swift.their_ref) || '—'}</span></div>
+          <div class="field-row"><span class="field-label">Booking text</span><span class="field-value">${esc(a.swift.booking_text_1) || '—'}${a.swift.booking_text_2 ? ' · ' + esc(a.swift.booking_text_2) : ''}</span></div>
+        </div>
+        <div class="panel">
+          <h3>Flexcube <span class="side">Row ${a.flex.row_number}</span></h3>
+          <div class="amount-row">
+            <div class="amount-value">${fmtAmount(a.flex.amount)}</div>
+            <div class="amount-tag">${esc(a.flex.type)}</div>
+          </div>
+          <div class="field-row"><span class="field-label">Value date</span><span class="field-value">${fmtDate(a.flex.value_date)}</span></div>
+          <div class="field-row"><span class="field-label">TRN ref</span><span class="field-value mono">${esc(a.flex.trn_ref) || '—'}</span></div>
+          <div class="field-row"><span class="field-label">Module · User</span><span class="field-value">${esc(a.flex.module) || '—'} · ${esc(a.flex.user_id) || '—'}</span></div>
+          <div class="field-row"><span class="field-label">Narration</span><span class="field-value">${esc(a.flex.narration) || '—'}</span></div>
+        </div>
+      </div>
+      <div class="diff-banner ${Math.abs(a.amount_diff) < 0.01 ? 'zero' : ''}">
+        <span>Amount difference</span>
+        <span><strong>${fmtAmount(a.amount_diff)}</strong> (Flexcube − SWIFT)</span>
+      </div>
+      ${a.competing.length > 0 ? `
+        <div class="competing-strip">
+          <strong>${a.competing.length} competing candidate${a.competing.length === 1 ? '' : 's'}:</strong>
+          ${a.competing.slice(0, 4).map(c =>
+            `<span style="background:var(--c-bg-sub);color:var(--c-text-muted);padding:2px 8px;border-radius:999px;font-size:var(--t-micro);font-weight:600;margin-left:6px">${c.side === 'alt_flex' ? 'Flex' : 'SWIFT'} row ${c.side === 'alt_flex' ? c.flex_row : c.swift_row} · T${c.tier}</span>`
+          ).join('')}${a.competing.length > 4 ? ` <span class="muted">+${a.competing.length - 4} more</span>` : ''}
+        </div>` : ''}
+      <div class="notes-strip" id="notes-strip">
+        <div class="empty">Loading notes…</div>
+      </div>
+      <div class="actions-bar">
+        <button class="btn btn-danger-soft" onclick="decide('reject')">Reject</button>
+        <span class="hint"><kbd>C</kbd> confirm · <kbd>R</kbd> reject · <kbd>S</kbd>/<kbd>→</kbd> skip · <kbd>←</kbd> back · <kbd>N</kbd> note · <strong>${index + 1} of ${queue.length}</strong></span>
+        <div class="group">
+          <button class="btn btn-ghost" onclick="openNoteDialog()">Add note</button>
+          <button class="btn btn-default" onclick="skip()">Skip</button>
+          <button class="btn btn-success" onclick="decide('confirm')">Confirm match</button>
+        </div>
+      </div>
+    </div>`;
+  loadNotesForCurrent();
+}
+
+// --- Break notes on the current assignment ---------------------------------
+
+async function loadNotesForCurrent() {
+  const a = queue[index];
+  const strip = document.getElementById('notes-strip');
+  if (!a || !strip) return;
+  try {
+    const r = await fetch(`/comments?target_type=assignment&target_id=${a.assignment_id}`);
+    const notes = r.ok ? await r.json() : [];
+    if (!notes.length) {
+      strip.innerHTML = '<div class="empty">No notes on this break. Press <kbd>N</kbd> or click “Add note” to leave one.</div>';
+      return;
+    }
+    strip.innerHTML = notes.map(n => `
+      <div class="note">
+        <span class="meta">${esc(n.author)} · ${fmtDateTime(n.created_at)}</span>
+        <span class="body">${esc(n.body)}</span>
+      </div>`).join('');
+  } catch (err) {
+    strip.innerHTML = '<div class="empty">Failed to load notes.</div>';
+  }
+}
+
+function openNoteDialog() {
+  const a = queue[index];
+  if (!a) return;
+  const ta = document.getElementById('note-body');
+  ta.value = '';
+  document.getElementById('note-dialog').showModal();
+  setTimeout(() => ta.focus(), 0);
+}
+
+async function submitNote() {
+  const a = queue[index];
+  if (!a) return;
+  const body = document.getElementById('note-body').value.trim();
+  if (!body) return;
+  const r = await fetch('/comments', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      target_type: 'assignment', target_id: a.assignment_id,
+      session_id: SESSION_ID, body,
+    }),
+  });
+  if (!r.ok) { alert((await r.json().catch(() => ({}))).detail || 'Failed to save note'); return; }
+  document.getElementById('note-dialog').close();
+  loadNotesForCurrent();
+}
+
+async function decide(action) {
+  const a = queue[index];
+  if (!a) return;
+  try {
+    const r = await fetch(`/sessions/${SESSION_ID}/decisions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assignment_id: a.assignment_id, action }),
+    });
+    if (!r.ok) throw new Error((await r.json()).detail || 'Decision failed');
+    queue.splice(index, 1);
+    await refreshSession();
+    renderQueueCard();
+    // If register is open, rerender it too.
+    if (document.getElementById('tab-register').style.display !== 'none') loadRegister();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+function skip() { index = Math.min(index + 1, queue.length); renderQueueCard(); }
+function prev() { index = Math.max(index - 1, 0); renderQueueCard(); }
+
+document.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+  if (document.getElementById('tab-queue').style.display === 'none') return;
+  // Don't steal keys when a modal/palette is open — base.html handles those.
+  if (document.querySelector('dialog[open]')) return;
+  if (document.getElementById('palette-backdrop')?.classList.contains('open')) return;
+  if (document.getElementById('kbd-help-backdrop')?.classList.contains('open')) return;
+  // Ignore modifier combos so Ctrl+K / Cmd+K still reach the global handler.
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+  const k = e.key;
+  // Confirm: c, space, Enter
+  if (k === 'c' || k === 'C' || k === ' ' || k === 'Enter') { decide('confirm'); e.preventDefault(); }
+  // Reject: r, x
+  else if (k === 'r' || k === 'R' || k === 'x' || k === 'X') { decide('reject'); e.preventDefault(); }
+  // Next: s, j, ArrowRight, ArrowDown
+  else if (k === 's' || k === 'S' || k === 'j' || k === 'J' || k === 'ArrowRight' || k === 'ArrowDown') { skip(); e.preventDefault(); }
+  // Prev: k, ArrowLeft, ArrowUp
+  else if (k === 'k' || k === 'K' || k === 'ArrowLeft' || k === 'ArrowUp') { prev(); e.preventDefault(); }
+  // Note
+  else if (k === 'n' || k === 'N') { openNoteDialog(); e.preventDefault(); }
+});
+
+// Extend the base.html keyboard-help overlay with review-specific rows.
+(function () {
+  const tbl = document.getElementById('kbd-help-rows');
+  if (!tbl) return;
+  const extra = [
+    ['<kbd>C</kbd> / <kbd>Space</kbd>',  'Confirm the current match'],
+    ['<kbd>R</kbd> / <kbd>X</kbd>',      'Reject the current match'],
+    ['<kbd>J</kbd> / <kbd>→</kbd>',      'Next pending match'],
+    ['<kbd>K</kbd> / <kbd>←</kbd>',      'Previous pending match'],
+    ['<kbd>N</kbd>',                     'Add a note to this match'],
+  ];
+  for (const [keys, desc] of extra) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${keys}</td><td>${desc}</td>`;
+    tbl.appendChild(tr);
+  }
+})();
+
+// --- Register tab ---
+async function loadRegister() {
+  const r = await fetch(`/sessions/${SESSION_ID}/register`);
+  if (!r.ok) return;
+  registerData = await r.json();
+  document.getElementById('tc-register').textContent = registerData.length;
+  renderRegister();
+}
+
+// Force-match selection. Split match = 1 row on one side + N rows on the
+// other. Both sides hold Set<row_number>. UI requires exactly one side to
+// have size 1 before the button activates.
+const forceMatch = { swiftRows: new Set(), flexRows: new Set() };
+
+function findRegRow(side, row) {
+  return registerData.find(e => e.side === side && e.row_number === row) || null;
+}
+
+function forceMatchMode() {
+  // Returns '1:1', '1:N', 'N:1', or null (incomplete).
+  const sn = forceMatch.swiftRows.size, fn = forceMatch.flexRows.size;
+  if (sn === 1 && fn === 1) return '1:1';
+  if (sn === 1 && fn > 1)   return '1:N';
+  if (sn > 1 && fn === 1)   return 'N:1';
+  return null;
+}
+
+function updateForceMatchChip() {
+  const chip  = document.getElementById('fm-chip');
+  const label = document.getElementById('fm-label');
+  const sn = forceMatch.swiftRows.size, fn = forceMatch.flexRows.size;
+  const mode = forceMatchMode();
+  if (sn === 0 && fn === 0) {
+    chip.textContent = '';
+    label.textContent = 'Force-match';
+  } else if (mode === '1:1') {
+    chip.textContent = '1:1 ready';
+    label.textContent = 'Force-match';
+  } else if (mode === '1:N') {
+    chip.textContent = `1:${fn} split ready`;
+    label.textContent = 'Force split-match';
+  } else if (mode === 'N:1') {
+    chip.textContent = `${sn}:1 split ready`;
+    label.textContent = 'Force split-match';
+  } else {
+    chip.textContent = `${sn} SWIFT · ${fn} Flex picked`;
+    label.textContent = 'Force-match';
+  }
+}
+
+function togglePick(side, row) {
+  const set = side === 'swift' ? forceMatch.swiftRows : forceMatch.flexRows;
+  if (set.has(row)) set.delete(row); else set.add(row);
+  updateForceMatchChip();
+  renderRegister();
+}
+
+function renderRegister() {
+  const q = (document.getElementById('r-search').value || '').toLowerCase();
+  const stFilter = document.getElementById('r-status').value;
+  const sdFilter = document.getElementById('r-side').value;
+  const rows = registerData.filter(e => {
+    if (stFilter && e.status !== stFilter) return false;
+    if (sdFilter && e.side !== sdFilter) return false;
+    if (!q) return true;
+    return (e.ref || '').toLowerCase().includes(q) ||
+           (e.description || '').toLowerCase().includes(q);
+  });
+  const tbody = document.getElementById('register-body');
+  if (rows.length === 0) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="8">No rows match the current filter.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(e => {
+    const pickedSet = e.side === 'swift' ? forceMatch.swiftRows : forceMatch.flexRows;
+    const picked = pickedSet.has(e.row_number);
+    // Only truly unmatched rows are eligible for force-match — anything
+    // already on a pending/confirmed assignment must be rejected first.
+    const eligible = e.status === 'unmatched';
+    const checkbox = eligible
+      ? `<input type="checkbox" ${picked ? 'checked' : ''} data-pick-side="${e.side}" data-pick-row="${e.row_number}" title="Pick for force-match (multi-select on one side = split match)">`
+      : '';
+    // Badge decoration when this row is part of a split group — useful for
+    // the pitch demo, lets ops see "this is a 1:3 match" at a glance.
+    const splitBadge = e.split_group_id
+      ? ` <span class="badge badge-info" style="background:var(--c-violet-soft);color:var(--c-violet);margin-left:4px" title="Split group ${esc(e.split_group_id)}">split</span>`
+      : '';
+    const tierText = e.tier
+      ? (e.tier === 5 ? ' · split' : ' · T' + e.tier)
+      : '';
+    return `
+      <tr class="${picked ? 'picked' : ''}">
+        <td class="pickcell">${checkbox}</td>
+        <td><span class="side-badge ${e.side}">${e.side === 'swift' ? 'SWIFT' : 'Flex'}</span> <span class="muted" style="font-size:var(--t-micro)">#${e.row_number}</span></td>
+        <td class="muted">${fmtDate(e.value_date)}</td>
+        <td><code style="font-size:var(--t-small)">${esc(e.ref) || ''}</code></td>
+        <td>${esc(e.description) || ''}</td>
+        <td class="amount ${e.sign === 'D' ? 'debit' : ''}">${e.sign === 'D' ? fmtAmount(e.amount) : ''}</td>
+        <td class="amount ${e.sign === 'C' ? 'credit' : ''}">${e.sign === 'C' ? fmtAmount(e.amount) : ''}</td>
+        <td><span class="badge status-badge ${e.status}">${e.status}${tierText}</span>${splitBadge}</td>
+      </tr>`;
+  }).join('');
+}
+
+document.getElementById('register-body').addEventListener('change', (ev) => {
+  const t = ev.target;
+  if (t.matches('input[type="checkbox"][data-pick-side]')) {
+    togglePick(t.dataset.pickSide, +t.dataset.pickRow);
+  }
+});
+
+// --- Force-match dialog ---------------------------------------------------
+
+function openForceMatch() {
+  const dlg = document.getElementById('fm-dialog');
+  const s = document.getElementById('fm-swift');
+  const f = document.getElementById('fm-flex');
+  // Pre-fill from the current selection. For split mode, the "many" side is
+  // shown as a comma-separated list; the dialog still accepts edits.
+  s.value = [...forceMatch.swiftRows].join(', ');
+  f.value = [...forceMatch.flexRows].join(', ');
+  document.getElementById('fm-reason').value = '';
+  renderForceMatchPreview();
+  dlg.showModal();
+  setTimeout(() => (forceMatch.swiftRows.size ? f : s).focus(), 0);
+}
+
+function closeForceMatch() {
+  document.getElementById('fm-dialog').close();
+}
+
+function parseRowList(s) {
+  return (s || '')
+    .split(/[,\s]+/).map(x => x.trim()).filter(Boolean)
+    .map(n => +n).filter(n => Number.isFinite(n) && n > 0);
+}
+
+function renderForceMatchPreview() {
+  const sRows = parseRowList(document.getElementById('fm-swift').value);
+  const fRows = parseRowList(document.getElementById('fm-flex').value);
+  const sHint = document.getElementById('fm-swift-hint');
+  const fHint = document.getElementById('fm-flex-hint');
+  const preview = document.getElementById('fm-preview');
+
+  function summarize(side, rows) {
+    if (!rows.length) return '';
+    const found = rows.map(r => findRegRow(side, r)).filter(Boolean);
+    if (!found.length) return 'No matching rows on that side';
+    const total = found.reduce((acc, r) => acc + (r.amount || 0), 0);
+    if (found.length === 1) {
+      const r = found[0];
+      return `${r.sign} ${fmtAmount(r.amount)} · ${fmtDate(r.value_date)} · ${r.status}`;
+    }
+    return `${found.length} rows, sum ${fmtAmount(total)}`;
+  }
+  sHint.textContent = summarize('swift', sRows);
+  fHint.textContent = summarize('flex',  fRows);
+
+  if (sRows.length === 0 || fRows.length === 0) {
+    preview.textContent = 'Enter row numbers on both sides to preview.';
+    return;
+  }
+  const sSum = sRows.map(r => findRegRow('swift', r)).filter(Boolean)
+                     .reduce((a, r) => a + (r.amount || 0), 0);
+  const fSum = fRows.map(r => findRegRow('flex', r)).filter(Boolean)
+                     .reduce((a, r) => a + (r.amount || 0), 0);
+  const diff = fSum - sSum;
+  const warn = [];
+  if (Math.abs(diff) > 0.01) warn.push(`sum differs by ${fmtAmount(diff)}`);
+  if (sRows.length > 1 && fRows.length > 1) {
+    warn.push('only one side may have multiple rows');
+  }
+  preview.innerHTML = warn.length
+    ? `<strong style="color:var(--c-warn)">Heads up:</strong> ${warn.map(esc).join(' · ')}`
+    : `<span style="color:var(--c-success)">${sRows.length}:${fRows.length} match, sums tie.</span>`;
+}
+
+async function submitForceMatch() {
+  const sRows = parseRowList(document.getElementById('fm-swift').value);
+  const fRows = parseRowList(document.getElementById('fm-flex').value);
+  const reason = document.getElementById('fm-reason').value.trim() || null;
+  if (!sRows.length || !fRows.length) { alert('Provide at least one row on each side.'); return; }
+  if (sRows.length > 1 && fRows.length > 1) {
+    alert('Only one side may have multiple rows (split match is 1:N or N:1).');
+    return;
+  }
+
+  let url, body;
+  if (sRows.length === 1 && fRows.length === 1) {
+    url = `/sessions/${SESSION_ID}/manual-match`;
+    body = { swift_row: sRows[0], flex_row: fRows[0], reason };
+  } else {
+    url = `/sessions/${SESSION_ID}/manual-split`;
+    body = { swift_rows: sRows, flex_rows: fRows, reason };
+  }
+  const r = await fetch(url, {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) { alert((await r.json().catch(() => ({}))).detail || 'Force-match failed'); return; }
+  forceMatch.swiftRows.clear(); forceMatch.flexRows.clear();
+  updateForceMatchChip();
+  closeForceMatch();
+  await Promise.all([refreshSession(), loadRegister()]);
+}
+
+document.getElementById('fm-open').addEventListener('click', openForceMatch);
+document.getElementById('fm-swift').addEventListener('input', renderForceMatchPreview);
+document.getElementById('fm-flex').addEventListener('input',  renderForceMatchPreview);
+
+// Tab switching
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    const which = t.dataset.tab;
+    document.getElementById('tab-queue').style.display    = which === 'queue' ? '' : 'none';
+    document.getElementById('tab-register').style.display = which === 'register' ? '' : 'none';
+    if (which === 'register' && registerData.length === 0) loadRegister();
+    if (which === 'split' && registerData.length === 0) loadRegister();
+    if (which === 'split') { renderSplitView(); setTimeout(()=>focusSplit(splitState.activePane, 0), 30); }
+    document.getElementById('tab-split').style.display = which === 'split' ? '' : 'none';
+  });
+});
+['r-search', 'r-status', 'r-side'].forEach(id =>
+  document.getElementById(id).addEventListener('input', renderRegister));
+
+// ---------------------------------------------------------------------------
+// Split view — side-by-side SWIFT / Flex with click-to-select and keyboard
+// navigation. Reuses registerData so filters stay in sync with the Register
+// tab; selection routes through /manual-match or /manual-split depending on
+// cardinality (same endpoints that power the force-match dialog).
+// ---------------------------------------------------------------------------
+const splitState = {
+  activePane: 'swift',                  // which pane has keyboard focus
+  swiftFocus: 0, flexFocus: 0,          // focused row index per pane
+  swiftSelected: new Set(),
+  flexSelected: new Set(),
+  swiftVisible: [], flexVisible: [],    // filtered slices of registerData
+};
+
+function splitFmtSign(e) {
+  return e.sign === 'D' ? 'dr' : (e.sign === 'C' ? 'cr' : '');
+}
+
+function splitBadgeForStatus(s) {
+  if (s === 'confirmed') return '<span class="badge badge-success" style="font-size:10px;padding:1px 6px">matched</span>';
+  if (s === 'pending')   return '<span class="badge badge-warn" style="font-size:10px;padding:1px 6px">pending</span>';
+  if (s === 'rejected')  return '<span class="badge badge-danger" style="font-size:10px;padding:1px 6px">rejected</span>';
+  return '<span class="badge badge-neutral" style="font-size:10px;padding:1px 6px">open</span>';
+}
+
+function renderSplitPane(side) {
+  const q       = (document.getElementById(`split-${side}-q`).value || '').toLowerCase();
+  const fstatus = document.getElementById(`split-${side}-filter`).value;
+  const rows = registerData.filter(e => {
+    if (e.side !== side) return false;
+    if (fstatus && e.status !== fstatus) return false;
+    if (q && !((e.ref || '').toLowerCase().includes(q) ||
+               (e.description || '').toLowerCase().includes(q))) return false;
+    return true;
+  });
+  splitState[side + 'Visible'] = rows;
+  const sel = side === 'swift' ? splitState.swiftSelected : splitState.flexSelected;
+  const focusIdx = side === 'swift' ? splitState.swiftFocus : splitState.flexFocus;
+  const activePane = splitState.activePane;
+  const host = document.getElementById(`split-${side}-list`);
+  if (rows.length === 0) {
+    host.innerHTML = '<div style="padding:30px;text-align:center;color:var(--c-text-subtle);font-size:var(--t-small)">No rows match this filter.</div>';
+    splitUpdateSummary();
+    return;
+  }
+  host.innerHTML = rows.map((e, i) => {
+    const isSel = sel.has(e.row_number);
+    const isFoc = (activePane === side) && i === focusIdx;
+    return `
+      <div class="split-row ${isSel ? 'selected' : ''} ${isFoc ? 'focused' : ''}"
+           data-side="${side}" data-row="${e.row_number}" data-idx="${i}">
+        <span class="sel-dot"></span>
+        <span class="date">${fmtDate(e.value_date)}</span>
+        <span class="ref" title="${esc(e.description || '')}">${esc(e.ref || 'no ref')}<span class="narr">· ${esc((e.description || '').slice(0, 80))}</span></span>
+        <span class="amt ${splitFmtSign(e)}">${fmtAmount(e.amount)}</span>
+        <span class="stat">${splitBadgeForStatus(e.status)}</span>
+      </div>`;
+  }).join('');
+  splitUpdateSummary();
+}
+
+function renderSplitView() {
+  renderSplitPane('swift');
+  renderSplitPane('flex');
+}
+
+function splitUpdateSummary() {
+  const sw = [...splitState.swiftSelected]
+    .map(r => registerData.find(e => e.side === 'swift' && e.row_number === r))
+    .filter(Boolean);
+  const fx = [...splitState.flexSelected]
+    .map(r => registerData.find(e => e.side === 'flex' && e.row_number === r))
+    .filter(Boolean);
+  const swSum = sw.reduce((a, r) => a + (r.amount || 0), 0);
+  const fxSum = fx.reduce((a, r) => a + (r.amount || 0), 0);
+  document.getElementById('split-swift-summary').textContent =
+    `${splitState.swiftVisible.length} rows${sw.length ? ` · ${sw.length} picked (Σ ${fmtAmount(swSum)})` : ''}`;
+  document.getElementById('split-flex-summary').textContent =
+    `${splitState.flexVisible.length} rows${fx.length ? ` · ${fx.length} picked (Σ ${fmtAmount(fxSum)})` : ''}`;
+
+  const summary = document.getElementById('split-sel-summary');
+  const diffPill = document.getElementById('split-diff-pill');
+  const btn = document.getElementById('split-match-btn');
+  if (sw.length === 0 && fx.length === 0) {
+    summary.innerHTML = '<span class="muted">Select rows on both sides to preview a match.</span>';
+    diffPill.style.display = 'none';
+    btn.disabled = true;
+    return;
+  }
+  if (sw.length === 0 || fx.length === 0) {
+    summary.innerHTML = `<span class="muted">Pick rows on the ${sw.length === 0 ? 'SWIFT' : 'Flex'} side to complete the match.</span>`;
+    diffPill.style.display = 'none';
+    btn.disabled = true;
+    return;
+  }
+  const diff = fxSum - swSum;
+  const mode = sw.length === 1 && fx.length === 1 ? '1:1'
+             : sw.length === 1 ? `1:${fx.length}`
+             : fx.length === 1 ? `${sw.length}:1`
+             : 'invalid';
+  summary.innerHTML = `<strong>${mode}</strong> match · SWIFT Σ ${fmtAmount(swSum)} · Flex Σ ${fmtAmount(fxSum)}`;
+  diffPill.style.display = '';
+  if (Math.abs(diff) < 0.01) {
+    diffPill.innerHTML = '<span class="diff-pill tie">Amounts tie ✓</span>';
+  } else {
+    diffPill.innerHTML = `<span class="diff-pill mismatch">Δ ${fmtAmount(diff)}</span>`;
+  }
+  btn.disabled = (mode === 'invalid');
+}
+
+function focusSplit(side, idx) {
+  splitState.activePane = side;
+  const rows = splitState[side + 'Visible'];
+  if (!rows.length) return;
+  const clamped = Math.max(0, Math.min(rows.length - 1, idx));
+  if (side === 'swift') splitState.swiftFocus = clamped;
+  else                  splitState.flexFocus  = clamped;
+  renderSplitPane(side);
+  const focusedEl = document.querySelector(`#split-${side}-list .split-row[data-idx="${clamped}"]`);
+  if (focusedEl) focusedEl.scrollIntoView({ block: 'nearest' });
+  renderSplitPane(side === 'swift' ? 'flex' : 'swift');   // refresh other pane's focus cue
+}
+
+function toggleSplitSelection(side, rowNumber) {
+  const set = side === 'swift' ? splitState.swiftSelected : splitState.flexSelected;
+  if (set.has(rowNumber)) set.delete(rowNumber); else set.add(rowNumber);
+  renderSplitPane(side);
+}
+
+document.addEventListener('click', (ev) => {
+  const row = ev.target.closest('.split-row');
+  if (!row) return;
+  const side = row.dataset.side;
+  const rowNumber = +row.dataset.row;
+  const idx = +row.dataset.idx;
+  focusSplit(side, idx);
+  toggleSplitSelection(side, rowNumber);
+});
+
+['split-swift-q', 'split-swift-filter', 'split-flex-q', 'split-flex-filter'].forEach(id =>
+  document.getElementById(id).addEventListener('input', () => renderSplitView()));
+
+document.getElementById('split-clear').addEventListener('click', () => {
+  splitState.swiftSelected.clear();
+  splitState.flexSelected.clear();
+  renderSplitView();
+});
+
+document.getElementById('split-match-btn').addEventListener('click', async () => {
+  const sw = [...splitState.swiftSelected];
+  const fx = [...splitState.flexSelected];
+  if (!sw.length || !fx.length) return;
+  const reason = prompt('Optional note for audit trail:') || null;
+  let url, body;
+  if (sw.length === 1 && fx.length === 1) {
+    url = `/sessions/${SESSION_ID}/manual-match`;
+    body = { swift_row: sw[0], flex_row: fx[0], reason };
+  } else {
+    url = `/sessions/${SESSION_ID}/manual-split`;
+    body = { swift_rows: sw, flex_rows: fx, reason };
+  }
+  const r = await fetch(url, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) { alert((await r.json().catch(()=>({}))).detail || 'Match failed'); return; }
+  splitState.swiftSelected.clear();
+  splitState.flexSelected.clear();
+  await Promise.all([refreshSession(), loadRegister()]);
+  renderSplitView();
+});
+
+// Keyboard routing for split view. Active only when the split tab is shown
+// and the user isn't typing into a search input.
+document.addEventListener('keydown', (e) => {
+  if (document.getElementById('tab-split').style.display === 'none') return;
+  const typing = e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT';
+  if (typing) return;
+  if (document.querySelector('dialog[open]')) return;
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+  const side = splitState.activePane;
+  const rows = splitState[side + 'Visible'];
+  const focusIdx = side === 'swift' ? splitState.swiftFocus : splitState.flexFocus;
+  const k = e.key;
+  if (k === 'j' || k === 'J' || k === 'ArrowDown') {
+    focusSplit(side, focusIdx + 1); e.preventDefault();
+  } else if (k === 'k' || k === 'K' || k === 'ArrowUp') {
+    focusSplit(side, focusIdx - 1); e.preventDefault();
+  } else if (k === 'Tab' || k === 'ArrowRight' || k === 'ArrowLeft') {
+    const other = side === 'swift' ? 'flex' : 'swift';
+    focusSplit(other, side === 'swift' ? splitState.flexFocus : splitState.swiftFocus);
+    e.preventDefault();
+  } else if (k === ' ' || k === 'Enter') {
+    const row = rows[focusIdx];
+    if (row) toggleSplitSelection(side, row.row_number);
+    e.preventDefault();
+  } else if (k === 'm' || k === 'M') {
+    document.getElementById('split-match-btn').click();
+    e.preventDefault();
+  } else if (k === 'Escape') {
+    splitState.swiftSelected.clear();
+    splitState.flexSelected.clear();
+    renderSplitView();
+    e.preventDefault();
+  }
+});
+
+// Extend the page-level keyboard-help overlay.
+(function () {
+  const tbl = document.getElementById('kbd-help-rows');
+  if (!tbl) return;
+  const extra = [
+    ['<kbd>J</kbd>/<kbd>K</kbd> (split view)',  'Move focused row up/down'],
+    ['<kbd>Tab</kbd> (split view)',              'Switch between SWIFT and Flex panes'],
+    ['<kbd>Space</kbd> (split view)',            'Toggle row selection'],
+    ['<kbd>M</kbd> (split view)',                'Match current selection'],
+  ];
+  for (const [keys, desc] of extra) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${keys}</td><td>${desc}</td>`;
+    tbl.appendChild(tr);
+  }
+})();
+
+document.body.dataset.nav = 'sessions';
+refreshSession();
+loadQueue();
+</script>
+{% endblock %}

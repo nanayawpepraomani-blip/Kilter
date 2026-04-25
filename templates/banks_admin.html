@@ -1,0 +1,240 @@
+{% extends "base.html" %}
+{% block title %}Banks — Kilter{% endblock %}
+{% block crumbs %}<span class="current">Banks</span>{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Banks</h1>
+    <div class="subtitle">Registered counterparty BICs. Cash accounts must reference a bank listed here — deactivating a BIC hides it from the picker without affecting historic accounts.</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <h2>Bank registry</h2>
+    <div style="display:flex;gap:10px;align-items:center">
+      <input type="search" id="search" placeholder="Filter by BIC, name or nickname…" class="input" style="width:280px;font-size:var(--t-small);padding:6px 10px">
+      <label style="font-size:var(--t-small);color:var(--c-text-muted)">
+        <input type="checkbox" id="show-inactive"> Show inactive
+      </label>
+      <button class="btn btn-primary btn-sm admin-only" id="add-btn" style="display:none">Add bank</button>
+    </div>
+  </div>
+  <div class="card-body tight">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>BIC</th>
+          <th>Name</th>
+          <th>Nickname</th>
+          <th>Origin</th>
+          <th>Type</th>
+          <th>Access area</th>
+          <th>User code</th>
+          <th>Active</th>
+          <th class="admin-only" style="display:none"></th>
+        </tr>
+      </thead>
+      <tbody id="body"><tr class="empty-row"><td colspan="9">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Add/edit modal -->
+<div id="modal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.55);z-index:100;align-items:flex-start;justify-content:center;padding:50px 20px;overflow-y:auto">
+  <div class="card" style="max-width:560px;width:100%;margin:0">
+    <div class="card-head">
+      <h2 id="modal-title">Add bank</h2>
+      <button class="btn btn-ghost btn-sm" onclick="closeModal()">Close</button>
+    </div>
+    <div class="card-body">
+      <form id="form" class="form-grid">
+        <input type="hidden" name="mode" value="add">
+        <input type="hidden" name="original_bic" value="">
+        <div class="field"><label>BIC (8–11 chars) *</label>
+          <input class="input" name="bic" required maxlength="11" style="text-transform:uppercase" placeholder="e.g. CITIGB2L"></div>
+        <div class="field"><label>Name *</label>
+          <input class="input" name="name" required placeholder="e.g. Citibank London"></div>
+        <div class="field"><label>Nickname</label>
+          <input class="input" name="nickname" placeholder="e.g. CITI LDN"></div>
+        <div class="field"><label>Origin</label>
+          <select class="input" name="origin">
+            <option value="their">Their (correspondent)</option>
+            <option value="our">Our (own bank)</option>
+          </select></div>
+        <div class="field"><label>Type</label>
+          <select class="input" name="type">
+            <option value="bank">Bank</option>
+            <option value="broker">Broker</option>
+          </select></div>
+        <div class="field"><label>Access area</label>
+          <select class="input" name="access_area" id="access-area-select">
+            <option value="">(none)</option>
+          </select></div>
+        <div class="field"><label>User code</label>
+          <input class="input" name="user_code" placeholder="optional"></div>
+        <div class="field"><label>Active</label>
+          <select class="input" name="active"><option value="1">Yes</option><option value="0">No (hidden from picker)</option></select></div>
+        <div style="grid-column:1/-1;display:flex;gap:10px;align-items:center">
+          <button type="submit" class="btn btn-primary" id="submit-btn">Save</button>
+          <button type="button" class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+          <span class="status" id="status"></span>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.body.dataset.nav = 'banks';
+
+let canEdit = false;
+let allRows = [];
+
+document.addEventListener('me:loaded', (ev) => {
+  canEdit = ev.detail.role === 'admin';
+  document.querySelectorAll('.admin-only').forEach(el => {
+    el.style.display = canEdit ? '' : 'none';
+  });
+});
+
+async function loadAccessAreas() {
+  try {
+    const r = await fetch('/access-areas');
+    if (!r.ok) return;
+    const areas = await r.json();
+    const sel = document.getElementById('access-area-select');
+    sel.innerHTML = '<option value="">(none)</option>' +
+      areas.map(a => `<option value="${esc(a.name)}">${esc(a.name)}</option>`).join('');
+  } catch (e) { /* non-fatal */ }
+}
+
+function renderRows() {
+  const q = document.getElementById('search').value.trim().toLowerCase();
+  const rows = q
+    ? allRows.filter(r =>
+        (r.bic || '').toLowerCase().includes(q) ||
+        (r.name || '').toLowerCase().includes(q) ||
+        (r.nickname || '').toLowerCase().includes(q))
+    : allRows;
+  const body = document.getElementById('body');
+  if (rows.length === 0) {
+    body.innerHTML = `<tr class="empty-row"><td colspan="9">No banks.</td></tr>`;
+    return;
+  }
+  body.innerHTML = rows.map(b => `
+    <tr>
+      <td><strong><code>${esc(b.bic)}</code></strong></td>
+      <td>${esc(b.name)}</td>
+      <td class="muted">${esc(b.nickname || '')}</td>
+      <td>${b.origin === 'our'
+            ? '<span class="badge badge-info">Our</span>'
+            : '<span class="badge badge-neutral">Their</span>'}</td>
+      <td>${b.type === 'broker'
+            ? '<span class="badge badge-warn">Broker</span>'
+            : '<span class="muted">Bank</span>'}</td>
+      <td class="muted">${esc(b.access_area || '')}</td>
+      <td class="muted"><code>${esc(b.user_code || '')}</code></td>
+      <td>${b.active ? '<span class="badge badge-success">Active</span>' : '<span class="badge badge-neutral">Inactive</span>'}</td>
+      <td class="admin-only" style="${canEdit ? '' : 'display:none'}">
+        <button class="btn btn-ghost btn-sm" onclick='openEdit(${JSON.stringify(b)})'>Edit</button>
+        ${b.active ? `<button class="btn btn-ghost btn-sm" onclick="deact('${esc(b.bic)}')">Deactivate</button>` : ''}
+      </td>
+    </tr>`).join('');
+}
+
+async function load() {
+  const inc = document.getElementById('show-inactive').checked;
+  const r = await fetch(`/banks?include_inactive=${inc ? 'true' : 'false'}`);
+  if (!r.ok) { document.getElementById('body').innerHTML = `<tr><td colspan="9">Load failed.</td></tr>`; return; }
+  allRows = await r.json();
+  renderRows();
+}
+
+function openAdd() {
+  const f = document.getElementById('form');
+  f.reset();
+  f.mode.value = 'add';
+  f.original_bic.value = '';
+  f.bic.readOnly = false;
+  document.getElementById('modal-title').textContent = 'Add bank';
+  document.getElementById('status').textContent = '';
+  document.getElementById('modal').style.display = 'flex';
+}
+
+function openEdit(b) {
+  const f = document.getElementById('form');
+  f.mode.value = 'edit';
+  f.original_bic.value = b.bic;
+  f.bic.value = b.bic;
+  f.bic.readOnly = true;
+  f.name.value = b.name || '';
+  f.nickname.value = b.nickname || '';
+  f.origin.value = b.origin || 'their';
+  f.type.value = b.type || 'bank';
+  f.access_area.value = b.access_area || '';
+  f.user_code.value = b.user_code || '';
+  f.active.value = b.active ? '1' : '0';
+  document.getElementById('modal-title').textContent = `Edit ${b.bic}`;
+  document.getElementById('status').textContent = '';
+  document.getElementById('modal').style.display = 'flex';
+}
+
+function closeModal() { document.getElementById('modal').style.display = 'none'; }
+
+async function deact(bic) {
+  if (!confirm(`Deactivate bank ${bic}? It will be hidden from the picker. Existing accounts keep their BIC reference.`)) return;
+  const r = await fetch(`/banks/${encodeURIComponent(bic)}`, { method: 'DELETE' });
+  if (!r.ok) { alert((await r.json().catch(()=>({}))).detail || 'Deactivate failed'); return; }
+  load();
+}
+
+document.getElementById('form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = e.target;
+  const status = document.getElementById('status');
+  const body = {
+    name: f.name.value.trim(),
+    nickname: f.nickname.value.trim() || null,
+    origin: f.origin.value,
+    type: f.type.value,
+    access_area: f.access_area.value || null,
+    user_code: f.user_code.value.trim() || null,
+  };
+  let url, method;
+  if (f.mode.value === 'add') {
+    body.bic = f.bic.value.toUpperCase().trim();
+    url = '/banks'; method = 'POST';
+  } else {
+    url = `/banks/${encodeURIComponent(f.original_bic.value)}`; method = 'PATCH';
+    body.active = Number(f.active.value);
+  }
+  status.className = 'status';
+  status.textContent = 'Saving…';
+  try {
+    const r = await fetch(url, {
+      method, headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error((await r.json().catch(()=>({}))).detail || 'Save failed');
+    status.className = 'status success';
+    status.textContent = 'Saved.';
+    closeModal();
+    load();
+  } catch (err) {
+    status.className = 'status error';
+    status.textContent = err.message;
+  }
+});
+
+document.getElementById('show-inactive').addEventListener('change', load);
+document.getElementById('search').addEventListener('input', renderRows);
+document.getElementById('add-btn').addEventListener('click', openAdd);
+
+loadAccessAreas();
+load();
+</script>
+{% endblock %}

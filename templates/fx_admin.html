@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% block title %}Exchange rates — Kilter{% endblock %}
+{% block crumbs %}<span class="current">Exchange rates</span>{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Exchange rates</h1>
+    <div class="subtitle">Active-dated FX rates. Feeds the cross-currency tolerance rule in the match engine (amount in from-CCY × rate = amount in to-CCY). Identity rows (GHS→GHS = 1.0) are seeded automatically.</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <h2>Rate table</h2>
+    <div style="display:flex;gap:10px;align-items:center">
+      <input type="search" id="search" placeholder="Filter by currency…" class="input" style="width:220px;font-size:var(--t-small);padding:6px 10px">
+      <label style="font-size:var(--t-small);color:var(--c-text-muted)">
+        <input type="checkbox" id="show-inactive"> Show historic
+      </label>
+      <button class="btn btn-primary btn-sm admin-only" id="add-btn" style="display:none">Add rate</button>
+    </div>
+  </div>
+  <div class="card-body tight">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>From</th><th>To</th>
+          <th class="num">Rate</th>
+          <th>Valid from</th>
+          <th>Source</th>
+          <th>Active</th>
+          <th class="admin-only" style="display:none"></th>
+        </tr>
+      </thead>
+      <tbody id="body"><tr class="empty-row"><td colspan="7">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<div id="modal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.55);z-index:100;align-items:flex-start;justify-content:center;padding:50px 20px;overflow-y:auto">
+  <div class="card" style="max-width:500px;width:100%;margin:0">
+    <div class="card-head">
+      <h2>Add FX rate</h2>
+      <button class="btn btn-ghost btn-sm" onclick="closeModal()">Close</button>
+    </div>
+    <div class="card-body">
+      <form id="form" class="form-grid">
+        <div class="field"><label>From currency *</label>
+          <select class="input" name="from_ccy" id="from-ccy" required></select></div>
+        <div class="field"><label>To currency *</label>
+          <select class="input" name="to_ccy" id="to-ccy" required></select></div>
+        <div class="field"><label>Rate (from → to) *</label>
+          <input class="input" type="number" step="0.00000001" name="rate" required placeholder="e.g. 0.0906"></div>
+        <div class="field"><label>Valid from</label>
+          <input class="input" type="date" name="valid_from"></div>
+        <div class="field" style="grid-column:1/-1"><label>Source</label>
+          <input class="input" name="source" placeholder="e.g. BOG, REUTERS, MANUAL"></div>
+        <div style="grid-column:1/-1;display:flex;gap:10px;align-items:center">
+          <button type="submit" class="btn btn-primary">Save</button>
+          <button type="button" class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+          <span class="status" id="status"></span>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.body.dataset.nav = 'fx';
+
+let canEdit = false;
+let allRows = [];
+let currencies = [];
+
+document.addEventListener('me:loaded', (ev) => {
+  canEdit = ev.detail.role === 'admin';
+  document.querySelectorAll('.admin-only').forEach(el => { el.style.display = canEdit ? '' : 'none'; });
+});
+
+async function loadCurrencies() {
+  const r = await fetch('/currencies');
+  currencies = r.ok ? await r.json() : [];
+  const opts = '<option value="">(select)</option>' +
+    currencies.map(c => `<option value="${esc(c.iso_code)}">${esc(c.iso_code)} — ${esc(c.name)}</option>`).join('');
+  document.getElementById('from-ccy').innerHTML = opts;
+  document.getElementById('to-ccy').innerHTML = opts;
+}
+
+function renderRows() {
+  const q = document.getElementById('search').value.trim().toUpperCase();
+  const rows = q ? allRows.filter(r => r.from_ccy.includes(q) || r.to_ccy.includes(q)) : allRows;
+  const body = document.getElementById('body');
+  if (rows.length === 0) {
+    body.innerHTML = `<tr class="empty-row"><td colspan="7">No rates.</td></tr>`;
+    return;
+  }
+  body.innerHTML = rows.map(r => `
+    <tr>
+      <td><strong>${esc(r.from_ccy)}</strong></td>
+      <td><strong>${esc(r.to_ccy)}</strong></td>
+      <td class="num"><code>${Number(r.rate).toFixed(6)}</code></td>
+      <td class="muted">${esc(r.valid_from)}</td>
+      <td class="muted">${esc(r.source || '')}</td>
+      <td>${r.active ? '<span class="badge badge-success">Active</span>' : '<span class="badge badge-neutral">Historic</span>'}</td>
+      <td class="admin-only" style="${canEdit ? '' : 'display:none'}">
+        ${r.active && r.source !== 'identity' ? `<button class="btn btn-ghost btn-sm" onclick="deact(${r.id})">Deactivate</button>` : ''}
+      </td>
+    </tr>`).join('');
+}
+
+async function load() {
+  const inc = document.getElementById('show-inactive').checked;
+  const r = await fetch(`/fx-rates?include_inactive=${inc ? 'true' : 'false'}`);
+  if (!r.ok) { document.getElementById('body').innerHTML = `<tr><td colspan="7">Load failed.</td></tr>`; return; }
+  allRows = await r.json();
+  renderRows();
+}
+
+async function deact(id) {
+  if (!confirm('Deactivate this rate? It will be hidden from the picker and the engine will stop using it.')) return;
+  const r = await fetch(`/fx-rates/${id}`, {
+    method: 'PATCH', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ active: 0 }),
+  });
+  if (!r.ok) { alert((await r.json().catch(()=>({}))).detail || 'Failed'); return; }
+  load();
+}
+
+function openAdd() {
+  const f = document.getElementById('form');
+  f.reset();
+  document.getElementById('status').textContent = '';
+  f.valid_from.value = new Date().toISOString().slice(0, 10);
+  document.getElementById('modal').style.display = 'flex';
+}
+function closeModal() { document.getElementById('modal').style.display = 'none'; }
+
+document.getElementById('form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = e.target;
+  const payload = {
+    from_ccy: f.from_ccy.value,
+    to_ccy:   f.to_ccy.value,
+    rate:     Number(f.rate.value),
+    valid_from: f.valid_from.value || null,
+    source:   f.source.value.trim() || null,
+  };
+  const status = document.getElementById('status');
+  status.className = 'status'; status.textContent = 'Saving…';
+  try {
+    const r = await fetch('/fx-rates', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(payload),
+    });
+    if (!r.ok) throw new Error((await r.json().catch(()=>({}))).detail || 'Failed');
+    status.className = 'status success'; status.textContent = 'Saved.';
+    closeModal(); load();
+  } catch (err) {
+    status.className = 'status error'; status.textContent = err.message;
+  }
+});
+
+document.getElementById('show-inactive').addEventListener('change', load);
+document.getElementById('search').addEventListener('input', renderRows);
+document.getElementById('add-btn').addEventListener('click', openAdd);
+
+loadCurrencies();
+load();
+</script>
+{% endblock %}

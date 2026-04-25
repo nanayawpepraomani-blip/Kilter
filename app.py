@@ -1,0 +1,4451 @@
+"""
+app.py
+======
+
+FastAPI service for Kilter. Uploads a SWIFT + Flexcube pair, runs the
+proposer engine, persists everything to SQLite, and exposes endpoints the
+review UI will call.
+
+Endpoints:
+    POST   /sessions                  Upload pair, run engine, return session_id
+    GET    /sessions                  List recent sessions
+    GET    /sessions/{id}             Session metadata + counts
+    GET    /sessions/{id}/queue       Pending assignments with competing candidates
+    POST   /sessions/{id}/decisions   Confirm or reject a pending assignment
+    GET    /sessions/{id}/export      Download xlsx reconciliation report
+    GET    /sessions/{id}/audit       Audit trail for this session
+
+Auth: stubbed. The X-User header is treated as the current user. Replace
+current_user() with an AD/LDAP middleware once IT provisions a service
+account — the rest of the code is unchanged.
+
+Run:
+    uvicorn app:app --reload
+"""
+
+import json
+from datetime import datetime
+from pathlib import Path
+
+import csv
+import io
+
+from fastapi import FastAPI, Depends, File, Header, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel
+
+from reconcile import write_report
+from db import get_conn, init_db
+from ingest import ingest_pair, IngestError, DuplicateFileError
+from scanner import scan, ensure_dirs
+from auth import (
+    generate_enrollment_token, generate_totp_secret, qr_data_url, provisioning_uri,
+    verify_totp, issue_session, resolve_session, revoke_session, revoke_all_sessions_for,
+    SESSION_LIFETIME, ISSUER,
+)
+
+
+EXPORT_DIR = Path(__file__).resolve().parent / 'exports'
+EXPORT_DIR.mkdir(exist_ok=True)
+UPLOAD_DIR = Path(__file__).resolve().parent / 'uploads'
+UPLOAD_DIR.mkdir(exist_ok=True)
+TEMPLATES_DIR = Path(__file__).resolve().parent / 'templates'
+
+app = FastAPI(
+    title="Kilter",
+    # Auto-generated docs disclose every endpoint + payload schema. Kilter is
+    # a self-hosted internal app — there is no anonymous-user audience for
+    # /docs, and an unauthenticated catalog of the API helps attackers more
+    # than it helps integrators. Internal teams can re-enable behind admin
+    # auth if needed; default off.
+    docs_url=None, redoc_url=None, openapi_url=None,
+)
+templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+
+
+# ---------------------------------------------------------------------------
+# Rate limiter — keyed by client IP. Applied per-route via @limiter.limit().
+# Currently used on /login to slow online TOTP-guessing.
+# ---------------------------------------------------------------------------
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+# ---------------------------------------------------------------------------
+# Security headers middleware. Conservative defaults that work with the
+# current Jinja2 + vanilla-JS frontend (no inline style/script except where
+# explicitly added; no external script sources). HSTS preload-eligible value
+# only kicks in when actually served over HTTPS — the header is harmless
+# over plain HTTP because browsers ignore it on non-secure origins.
+# ---------------------------------------------------------------------------
+@app.middleware("http")
+async def _security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains; preload"
+    response.headers["X-Content-Type-Options"]    = "nosniff"
+    response.headers["X-Frame-Options"]           = "DENY"
+    response.headers["Referrer-Policy"]           = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"]        = "camera=(), microphone=(), geolocation=()"
+    # The QR-code data URL is the only inline image; templates use a few
+    # inline <style>/<script> blocks (acceptable for a self-hosted bank app
+    # served from a single origin). Tighten further if all inline blocks are
+    # extracted to external files later.
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "img-src 'self' data:; "
+        "style-src 'self' 'unsafe-inline'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "connect-src 'self'; "
+        "font-src 'self' data:; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
+    )
+    return response
+
+
+@app.on_event("startup")
+def _on_startup() -> None:
+    init_db()
+    ensure_dirs()
+    # Start the in-process scheduler daemon. The thread is daemonized so
+    # uvicorn reload / Ctrl-C cleanly terminates it along with the worker.
+    try:
+        from scheduler import start as _start_scheduler
+        _start_scheduler()
+    except Exception as exc:
+        print(f"[scheduler] failed to start: {exc}")
+
+
+@app.on_event("shutdown")
+def _on_shutdown() -> None:
+    try:
+        from scheduler import stop as _stop_scheduler
+        _stop_scheduler()
+    except Exception:
+        pass
+
+
+ROLES = ('admin', 'ops', 'audit', 'internal_control')
+
+
+def current_user(x_session_token: str = Header(default="")) -> dict:
+    """Auth dependency: validates X-Session-Token against user_sessions,
+    returns the user dict. Replaces the old X-User stub. Invalid, expired,
+    or revoked tokens yield 401 — the frontend redirects to /login."""
+    token = (x_session_token or "").strip()
+    if not token:
+        raise HTTPException(401, "Missing session token. Please sign in.")
+    conn = get_conn()
+    try:
+        username = resolve_session(conn, token)
+        if username is None:
+            raise HTTPException(401, "Session expired or invalid. Please sign in again.")
+        row = conn.execute(
+            "SELECT username, display_name, role, active FROM users WHERE username=?",
+            (username,),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(401, "User no longer exists.")
+        if not row['active']:
+            raise HTTPException(403, "Your account is deactivated.")
+        try:
+            conn.execute("UPDATE users SET last_seen_at=? WHERE username=?",
+                         (datetime.utcnow().isoformat(), username))
+            conn.commit()
+        except Exception:
+            pass
+        return dict(row)
+    finally:
+        conn.close()
+
+
+def active_scope(x_session_token: str = Header(default="")) -> list[str] | None:
+    """The user's active access-area scope for list views. None = no filter
+    (show everything). [] = "none selected" — we treat the same as None so the
+    app never renders a deliberately-empty list from a bad toggle. A concrete
+    list means: only show accounts whose access_area is in this set.
+
+    Unauthenticated requests resolve to None — list endpoints are currently
+    unguarded (pre-existing), so this dep just silently no-ops for them."""
+    token = (x_session_token or "").strip()
+    if not token:
+        return None
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            "SELECT active_access_areas FROM user_sessions WHERE token=? "
+            "AND revoked_at IS NULL",
+            (token,),
+        ).fetchone()
+        if row is None or not row['active_access_areas']:
+            return None
+        try:
+            areas = json.loads(row['active_access_areas'])
+        except (TypeError, ValueError):
+            return None
+        if not isinstance(areas, list) or not areas:
+            return None
+        return [str(x) for x in areas]
+    finally:
+        conn.close()
+
+
+def _scope_clause(scope: list[str] | None, alias: str = 'a') -> tuple[str, list]:
+    """Build a SQL snippet and params for an IN-filter against accounts.access_area.
+    When scope is None, returns an always-true clause so callers can concatenate
+    it unconditionally."""
+    if not scope:
+        return ("1=1", [])
+    placeholders = ",".join("?" * len(scope))
+    return (f"{alias}.access_area IN ({placeholders})", list(scope))
+
+
+def require_role(*roles: str):
+    """Dependency factory: use with Depends(require_role('admin')) etc."""
+    def checker(user: dict = Depends(current_user)) -> dict:
+        if user['role'] not in roles:
+            raise HTTPException(403,
+                f"This action requires role: {' or '.join(roles)}. "
+                f"You are '{user['role']}'.")
+        return user
+    return checker
+
+
+@app.get("/")
+def home(request: Request):
+    return templates.TemplateResponse(request, "home.html")
+
+
+@app.get("/login")
+def login_page(request: Request):
+    return templates.TemplateResponse(request, "login.html")
+
+
+@app.get("/enroll")
+def enroll_page(request: Request):
+    return templates.TemplateResponse(request, "enroll.html")
+
+
+# ---------------------------------------------------------------------------
+# Auth endpoints (no session required — they're how you GET a session)
+# ---------------------------------------------------------------------------
+
+class LoginPayload(BaseModel):
+    username: str
+    totp_code: str
+
+
+class EnrollStartPayload(BaseModel):
+    username: str
+    enrollment_token: str
+
+
+class EnrollCompletePayload(BaseModel):
+    username: str
+    enrollment_token: str
+    totp_code: str
+
+
+@app.post("/login")
+@limiter.limit("10/minute")
+def login(payload: LoginPayload, request: Request):
+    """Username + TOTP login. Rate-limited per source IP to slow online
+    TOTP-guessing — 10 attempts/minute is generous enough that legitimate
+    typo retries don't lock anyone out, but kills brute-forcing dead."""
+    username = (payload.username or "").strip()
+    code = (payload.totp_code or "").strip()
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            "SELECT username, active, totp_secret FROM users WHERE username=?",
+            (username,),
+        ).fetchone()
+        # Generic message for all login failures so we don't leak which field was wrong.
+        if (row is None or not row['active'] or not row['totp_secret']
+                or not verify_totp(row['totp_secret'], code)):
+            raise HTTPException(401, "Invalid username or authenticator code.")
+
+        ua = request.headers.get('user-agent', '')[:250]
+        session = issue_session(conn, username, user_agent=ua)
+        now = datetime.utcnow().isoformat()
+        conn.execute(
+            "UPDATE users SET last_seen_at=? WHERE username=?",
+            (now, username),
+        )
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (NULL, 'login', ?, ?, ?)",
+            (username, now, json.dumps({"user_agent": ua})),
+        )
+        conn.commit()
+        return session
+    finally:
+        conn.close()
+
+
+@app.post("/logout")
+def logout(x_session_token: str = Header(default="")):
+    conn = get_conn()
+    try:
+        # Resolve to know whose audit row to write before we revoke.
+        username = resolve_session(conn, x_session_token or "")
+        if username:
+            revoke_session(conn, x_session_token)
+            conn.execute(
+                "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+                "VALUES (NULL, 'logout', ?, ?, NULL)",
+                (username, datetime.utcnow().isoformat()),
+            )
+            conn.commit()
+        return {"ok": True}
+    finally:
+        conn.close()
+
+
+@app.post("/enroll/start")
+def enroll_start(payload: EnrollStartPayload):
+    """Show the QR. Does NOT save the secret yet — that happens on /enroll/complete
+    once the user proves they scanned it by entering a code."""
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            "SELECT username, enrollment_token, totp_enrolled_at FROM users "
+            "WHERE username=? AND active=1",
+            (payload.username,),
+        ).fetchone()
+        if row is None or not row['enrollment_token'] or row['enrollment_token'] != payload.enrollment_token:
+            raise HTTPException(400, "Invalid enrollment link. Ask an admin for a fresh one.")
+        if row['totp_enrolled_at']:
+            raise HTTPException(400, "This user has already enrolled.")
+
+        # Fresh secret per enrollment attempt — if the user abandons midway and
+        # re-starts, the previous secret is harmless (never saved to DB).
+        secret = generate_totp_secret()
+        return {
+            "username": payload.username,
+            "secret": secret,             # client holds this until /complete
+            "uri": provisioning_uri(secret, payload.username),
+            "qr": qr_data_url(secret, payload.username),
+            "issuer": ISSUER,
+        }
+    finally:
+        conn.close()
+
+
+class EnrollCompletePayloadWithSecret(BaseModel):
+    username: str
+    enrollment_token: str
+    secret: str
+    totp_code: str
+
+
+@app.post("/enroll/complete")
+def enroll_complete(payload: EnrollCompletePayloadWithSecret):
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            "SELECT username, enrollment_token, totp_enrolled_at FROM users "
+            "WHERE username=? AND active=1",
+            (payload.username,),
+        ).fetchone()
+        if row is None or not row['enrollment_token'] or row['enrollment_token'] != payload.enrollment_token:
+            raise HTTPException(400, "Invalid enrollment link.")
+        if row['totp_enrolled_at']:
+            raise HTTPException(400, "This user has already enrolled.")
+        if not verify_totp(payload.secret, payload.totp_code):
+            raise HTTPException(400, "Code didn't match. Make sure your phone's time is in sync and try the next rotation.")
+
+        now = datetime.utcnow().isoformat()
+        conn.execute(
+            "UPDATE users SET totp_secret=?, totp_enrolled_at=?, enrollment_token=NULL "
+            "WHERE username=?",
+            (payload.secret, now, payload.username),
+        )
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (NULL, 'totp_enrolled', ?, ?, NULL)",
+            (payload.username, now),
+        )
+        conn.commit()
+        return {"ok": True, "username": payload.username}
+    finally:
+        conn.close()
+
+
+@app.get("/sessions/{session_id}/review")
+def review(request: Request, session_id: int):
+    conn = get_conn()
+    try:
+        s = conn.execute("SELECT id FROM sessions WHERE id=?", (session_id,)).fetchone()
+        if s is None:
+            raise HTTPException(404, "Session not found")
+    finally:
+        conn.close()
+    return templates.TemplateResponse(request, "review.html",
+                                      {"session_id": session_id})
+
+
+@app.get("/cash-accounts")
+def cash_accounts_page(request: Request):
+    return templates.TemplateResponse(request, "cash_accounts.html")
+
+
+@app.get("/sessions-list")
+def sessions_list_page(request: Request):
+    return templates.TemplateResponse(request, "sessions_list.html")
+
+
+@app.get("/admin/users")
+def admin_users_page(request: Request):
+    return templates.TemplateResponse(request, "admin_users.html")
+
+
+@app.get("/admin/activity")
+def admin_activity_page(request: Request):
+    return templates.TemplateResponse(request, "admin_activity.html")
+
+
+@app.get("/activity/facets")
+def activity_facets(
+    user: dict = Depends(require_role('admin', 'audit', 'internal_control')),
+):
+    """Distinct actors + actions + per-action counts — drives the filter
+    dropdowns and summary strip on the activity page. Cheap because
+    audit_log is small (thousands of rows, not millions)."""
+    conn = get_conn()
+    try:
+        actors = [r[0] for r in conn.execute(
+            "SELECT DISTINCT actor FROM audit_log ORDER BY actor"
+        ).fetchall()]
+        actions = [dict(r) for r in conn.execute(
+            "SELECT action, COUNT(*) as n FROM audit_log "
+            "GROUP BY action ORDER BY n DESC"
+        ).fetchall()]
+        total = conn.execute("SELECT COUNT(*) FROM audit_log").fetchone()[0]
+        return {'actors': actors, 'actions': actions, 'total': total}
+    finally:
+        conn.close()
+
+
+@app.get("/open-items/{open_item_id}/history")
+def open_item_history(
+    open_item_id: int,
+    user: dict = Depends(current_user),
+):
+    """Timeline for one break: when it was opened, what assignment cleared
+    it (if any), every comment posted, every manual reclassification.
+    The compliance story in one JSON call."""
+    conn = get_conn()
+    try:
+        oi = conn.execute(
+            "SELECT oi.*, a.label AS account_label "
+            "FROM open_items oi LEFT JOIN accounts a ON a.id=oi.account_id "
+            "WHERE oi.id=?", (open_item_id,),
+        ).fetchone()
+        if oi is None:
+            raise HTTPException(404, "open item not found")
+
+        events = []
+        events.append({
+            'ts': oi['opened_at'], 'kind': 'opened',
+            'actor': 'system',
+            'description': (f"Opened from {oi['source_side']} session "
+                            f"#{oi['src_session_id']} row {oi['src_row_number']}")
+        })
+
+        # Comments
+        comments = conn.execute(
+            "SELECT created_at, author, body FROM break_comments "
+            "WHERE target_type='open_item' AND target_id=? ORDER BY id",
+            (open_item_id,),
+        ).fetchall()
+        for c in comments:
+            events.append({
+                'ts': c['created_at'], 'kind': 'comment',
+                'actor': c['author'], 'description': c['body'],
+            })
+
+        # Audit log entries mentioning this open_item
+        audit = conn.execute(
+            "SELECT timestamp, action, actor, details FROM audit_log "
+            "WHERE action LIKE 'open_item%' ORDER BY id"
+        ).fetchall()
+        for a in audit:
+            if not a['details']:
+                continue
+            try:
+                d = json.loads(a['details'])
+            except Exception:
+                continue
+            if d.get('open_item_id') == open_item_id:
+                desc = a['action'].replace('_', ' ')
+                if 'reason' in d: desc += f" — {d['reason']}"
+                if 'note'   in d and d['note']: desc += f" — {d['note']}"
+                events.append({
+                    'ts': a['timestamp'], 'kind': a['action'],
+                    'actor': a['actor'], 'description': desc,
+                })
+
+        # Closure / clearing
+        if oi['cleared_at']:
+            events.append({
+                'ts': oi['cleared_at'], 'kind': 'cleared',
+                'actor': oi['cleared_by'] or 'system',
+                'description': (f"Cleared via {oi['cleared_via']}"
+                                + (f" (assignment {oi['cleared_assignment_id']})"
+                                   if oi['cleared_assignment_id'] else ''))
+            })
+
+        events.sort(key=lambda e: e['ts'])
+        return {'open_item': dict(oi), 'events': events}
+    finally:
+        conn.close()
+
+
+@app.get("/admin/discovered")
+def admin_discovered_page(request: Request):
+    return templates.TemplateResponse(request, "discovered_accounts.html")
+
+
+# ---------------------------------------------------------------------------
+# /me — lets the UI know who's signed in and what they can do
+# ---------------------------------------------------------------------------
+
+@app.get("/me")
+def whoami(user: dict = Depends(current_user)):
+    return user
+
+
+# ---------------------------------------------------------------------------
+# /me/access-scope — the topbar "Active area" picker reads/writes this.
+# Scope is stored on user_sessions (not users) so a single person can have
+# a different scope per browser/device.
+# ---------------------------------------------------------------------------
+
+class AccessScopePayload(BaseModel):
+    areas: list[str] | None = None   # null or [] -> clear filter (all areas)
+
+
+@app.get("/me/access-scope")
+def get_my_access_scope(
+    user: dict = Depends(current_user),
+    x_session_token: str = Header(default=""),
+):
+    """Returns the current selection + the list of available active areas so
+    the picker can render in a single round-trip."""
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            "SELECT active_access_areas FROM user_sessions WHERE token=?",
+            ((x_session_token or "").strip(),),
+        ).fetchone()
+        areas: list[str] | None = None
+        if row and row['active_access_areas']:
+            try:
+                parsed = json.loads(row['active_access_areas'])
+                if isinstance(parsed, list) and parsed:
+                    areas = [str(x) for x in parsed]
+            except (TypeError, ValueError):
+                areas = None
+        available = [dict(r) for r in conn.execute(
+            "SELECT name, parent FROM access_areas WHERE active=1 ORDER BY name"
+        ).fetchall()]
+        return {"areas": areas, "available": available}
+    finally:
+        conn.close()
+
+
+@app.put("/me/access-scope")
+def set_my_access_scope(
+    payload: AccessScopePayload,
+    user: dict = Depends(current_user),
+    x_session_token: str = Header(default=""),
+):
+    """Persist the user's chosen scope to their session row. Empty list and
+    null both mean 'no filter' — we normalize to NULL so the scope dep's
+    'is this filter active?' check is a single null-test."""
+    token = (x_session_token or "").strip()
+    areas = payload.areas or None
+    if areas is not None:
+        # Validate names against the active registry — typos in a PUT body
+        # shouldn't silently hide every account.
+        conn = get_conn()
+        try:
+            valid = {r[0] for r in conn.execute(
+                "SELECT name FROM access_areas WHERE active=1"
+            ).fetchall()}
+        finally:
+            conn.close()
+        unknown = [a for a in areas if a not in valid]
+        if unknown:
+            raise HTTPException(400, f"Unknown access area(s): {', '.join(unknown)}")
+    conn = get_conn()
+    try:
+        conn.execute(
+            "UPDATE user_sessions SET active_access_areas=? WHERE token=?",
+            (json.dumps(areas) if areas else None, token),
+        )
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (NULL, 'access_scope_change', ?, ?, ?)",
+            (user['username'], datetime.utcnow().isoformat(),
+             json.dumps({"areas": areas})),
+        )
+        conn.commit()
+        return {"areas": areas}
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# /users — admin-only management
+# ---------------------------------------------------------------------------
+
+class UserPayload(BaseModel):
+    username: str
+    display_name: str | None = None
+    role: str   # admin | ops | audit | internal_control
+
+
+class UserPatch(BaseModel):
+    role: str | None = None
+    display_name: str | None = None
+    active: bool | None = None
+
+
+@app.get("/users/export")
+def export_users(user: dict = Depends(require_role('admin'))):
+    """CSV export of the users table — for compliance reports, onboarding audits."""
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT username, display_name, role, active, created_at, created_by, "
+            "last_seen_at, totp_enrolled_at FROM users ORDER BY role, username"
+        ).fetchall()
+    finally:
+        conn.close()
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(['username', 'display_name', 'role', 'active', 'created_at',
+                'created_by', 'last_seen_at', 'totp_enrolled_at'])
+    for r in rows:
+        w.writerow([r['username'], r['display_name'] or '', r['role'],
+                    'yes' if r['active'] else 'no', r['created_at'],
+                    r['created_by'] or '', r['last_seen_at'] or '',
+                    r['totp_enrolled_at'] or ''])
+    _audit_export(user['username'], 'users_export', {"rows": len(rows)})
+    fname = f"kilter_users_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type='text/csv',
+        headers={'Content-Disposition': f'attachment; filename="{fname}"'},
+    )
+
+
+@app.get("/activity/export")
+def export_activity(
+    actor: str | None = None,
+    action: str | None = None,
+    session_id: int | None = None,
+    user: dict = Depends(require_role('admin', 'audit', 'internal_control')),
+):
+    """CSV export of the audit_log — same filters as GET /activity. No row
+    cap on export — give auditors the full picture."""
+    where, params = [], []
+    if actor:      where.append("actor = ?");      params.append(actor)
+    if action:     where.append("action = ?");     params.append(action)
+    if session_id: where.append("session_id = ?"); params.append(session_id)
+    clause = ("WHERE " + " AND ".join(where)) if where else ""
+
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            f"SELECT id, session_id, action, actor, timestamp, details "
+            f"FROM audit_log {clause} ORDER BY id",
+            params,
+        ).fetchall()
+    finally:
+        conn.close()
+
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(['id', 'timestamp', 'actor', 'action', 'session_id', 'details'])
+    for r in rows:
+        w.writerow([r['id'], r['timestamp'], r['actor'], r['action'],
+                    r['session_id'] or '', r['details'] or ''])
+    _audit_export(user['username'], 'activity_export', {
+        "rows": len(rows),
+        "filters": {"actor": actor, "action": action, "session_id": session_id},
+    })
+    fname = f"kilter_activity_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type='text/csv',
+        headers={'Content-Disposition': f'attachment; filename="{fname}"'},
+    )
+
+
+def _audit_export(actor: str, action: str, details: dict) -> None:
+    """Log export actions so auditors can see who pulled what."""
+    conn = get_conn()
+    try:
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (NULL, ?, ?, ?, ?)",
+            (action, actor, datetime.utcnow().isoformat(), json.dumps(details)),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+@app.get("/users")
+def list_users(user: dict = Depends(require_role('admin'))):
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT username, display_name, role, active, created_at, created_by, last_seen_at "
+            "FROM users ORDER BY role, username"
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+@app.post("/users")
+def create_user(payload: UserPayload, user: dict = Depends(require_role('admin'))):
+    if payload.role not in ROLES:
+        raise HTTPException(400, f"role must be one of {ROLES}")
+    username = (payload.username or '').strip()
+    if not username:
+        raise HTTPException(400, "username is required")
+    token = generate_enrollment_token()
+    now = datetime.utcnow().isoformat()
+    conn = get_conn()
+    try:
+        try:
+            conn.execute(
+                "INSERT INTO users (username, display_name, role, active, created_at, "
+                "created_by, enrollment_token) VALUES (?, ?, ?, 1, ?, ?, ?)",
+                (username, payload.display_name, payload.role, now, user['username'], token),
+            )
+        except Exception as exc:
+            if 'UNIQUE' in str(exc) or 'PRIMARY KEY' in str(exc):
+                raise HTTPException(409, f"User '{username}' already exists.")
+            raise
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (NULL, 'user_created', ?, ?, ?)",
+            (user['username'], now, json.dumps({"username": username, "role": payload.role})),
+        )
+        conn.commit()
+        return {
+            "username": username,
+            "role": payload.role,
+            "enrollment_token": token,
+            "enrollment_url": f"/enroll?user={username}&token={token}",
+        }
+    finally:
+        conn.close()
+
+
+@app.patch("/users/{target}")
+def update_user(target: str, payload: UserPatch, user: dict = Depends(require_role('admin'))):
+    if payload.role is not None and payload.role not in ROLES:
+        raise HTTPException(400, f"role must be one of {ROLES}")
+    if target == user['username'] and payload.active is False:
+        raise HTTPException(400, "You can't deactivate yourself.")
+    if target == user['username'] and payload.role is not None and payload.role != 'admin':
+        raise HTTPException(400, "You can't demote yourself from admin.")
+
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT * FROM users WHERE username=?", (target,)).fetchone()
+        if row is None:
+            raise HTTPException(404, f"User '{target}' not found")
+
+        fields, params = [], []
+        if payload.role is not None:
+            fields.append("role=?"); params.append(payload.role)
+        if payload.display_name is not None:
+            fields.append("display_name=?"); params.append(payload.display_name)
+        if payload.active is not None:
+            fields.append("active=?"); params.append(1 if payload.active else 0)
+        if not fields:
+            raise HTTPException(400, "Nothing to update")
+        params.append(target)
+        conn.execute(f"UPDATE users SET {', '.join(fields)} WHERE username=?", params)
+
+        # Deactivation or role change → kill the user's live sessions so
+        # the new restriction takes effect immediately, not in 8h.
+        if payload.active is False or payload.role is not None:
+            revoke_all_sessions_for(conn, target)
+
+        now = datetime.utcnow().isoformat()
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (NULL, 'user_updated', ?, ?, ?)",
+            (user['username'], now, json.dumps({
+                "target": target, "role": payload.role,
+                "display_name": payload.display_name, "active": payload.active,
+            })),
+        )
+        conn.commit()
+        updated = conn.execute(
+            "SELECT username, display_name, role, active FROM users WHERE username=?",
+            (target,),
+        ).fetchone()
+        return dict(updated)
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# /activity — system-wide audit log viewer (admin/audit/internal_control)
+# ---------------------------------------------------------------------------
+
+@app.get("/activity")
+def activity(
+    actor: str | None = None,
+    action: str | None = None,
+    session_id: int | None = None,
+    from_date: str | None = None,      # ISO date, inclusive (UTC)
+    to_date: str | None = None,        # ISO date, inclusive (UTC)
+    q: str | None = None,              # free-text search over details JSON
+    limit: int = 200,
+    user: dict = Depends(require_role('admin', 'audit', 'internal_control')),
+):
+    limit = max(1, min(limit, 1000))
+    where, params = [], []
+    if actor:      where.append("actor = ?");      params.append(actor)
+    if action:     where.append("action = ?");     params.append(action)
+    if session_id: where.append("session_id = ?"); params.append(session_id)
+    if from_date:  where.append("timestamp >= ?"); params.append(from_date + 'T00:00:00')
+    if to_date:    where.append("timestamp <= ?"); params.append(to_date + 'T23:59:59')
+    if q:
+        where.append("(details LIKE ? OR action LIKE ?)")
+        params.extend([f"%{q}%", f"%{q}%"])
+    clause = ("WHERE " + " AND ".join(where)) if where else ""
+
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            f"SELECT id, session_id, action, actor, timestamp, details "
+            f"FROM audit_log {clause} ORDER BY id DESC LIMIT ?",
+            (*params, limit),
+        ).fetchall()
+        return [
+            {**dict(r), 'details': json.loads(r['details']) if r['details'] else None}
+            for r in rows
+        ]
+    finally:
+        conn.close()
+
+
+@app.get("/stats")
+def stats(scope: list[str] | None = Depends(active_scope)):
+    """Aggregates used by the dashboard. When a scope is active, counts are
+    restricted to sessions whose account falls in the chosen access areas."""
+    conn = get_conn()
+    try:
+        where, scope_params = _scope_clause(scope, alias='a')
+        # Sessions-in-scope subquery: drives every count below so the
+        # assignment/session filters stay consistent.
+        account_filter = "AND a.id IS NOT NULL" if scope else ""
+        sess_subq = (
+            f"SELECT s.id FROM sessions s LEFT JOIN accounts a ON a.id = s.account_id "
+            f"WHERE {where} {account_filter}"
+        )
+        def one(q, params=()):
+            return conn.execute(q, params).fetchone()[0]
+        return {
+            "pending":   one(
+                f"SELECT COUNT(*) FROM assignments WHERE status='pending' "
+                f"AND session_id IN ({sess_subq})", scope_params),
+            "confirmed": one(
+                f"SELECT COUNT(*) FROM assignments WHERE status='confirmed' "
+                f"AND session_id IN ({sess_subq})", scope_params),
+            "rejected":  one(
+                f"SELECT COUNT(*) FROM assignments WHERE status='rejected' "
+                f"AND session_id IN ({sess_subq})", scope_params),
+            "open_sessions": one(
+                f"SELECT COUNT(DISTINCT session_id) FROM assignments "
+                f"WHERE status='pending' AND session_id IN ({sess_subq})",
+                scope_params),
+            "total_sessions": one(
+                f"SELECT COUNT(*) FROM ({sess_subq})", scope_params),
+        }
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Dashboard analytics — small aggregates feeding the landing-page charts.
+# Each endpoint respects the active-access-area scope so the visuals match
+# the counters on /stats. Cheap SQL — no pagination needed at current volumes.
+# ---------------------------------------------------------------------------
+
+@app.get("/dashboard/trend")
+def dashboard_trend(days: int = 14,
+                    scope: list[str] | None = Depends(active_scope)):
+    """Daily totals of assignment state-changes over the last N days, used to
+    draw the match-rate sparkline. Returns one row per calendar day from
+    (today - days + 1) to today, zero-filled when nothing happened."""
+    from datetime import date, timedelta
+    days = max(1, min(90, int(days)))
+    today = date.today()
+    start = today - timedelta(days=days - 1)
+
+    conn = get_conn()
+    try:
+        where, scope_params = _scope_clause(scope, alias='a')
+        account_filter = "AND a.id IS NOT NULL" if scope else ""
+        sess_subq = (
+            f"SELECT s.id FROM sessions s LEFT JOIN accounts a ON a.id = s.account_id "
+            f"WHERE {where} {account_filter}"
+        )
+        rows = conn.execute(
+            f"SELECT SUBSTR(decided_at, 1, 10) AS d, status, COUNT(*) AS n "
+            f"FROM assignments WHERE decided_at >= ? "
+            f"AND session_id IN ({sess_subq}) "
+            f"GROUP BY d, status",
+            (start.isoformat() + 'T00:00:00', *scope_params),
+        ).fetchall()
+        by_day = {}
+        for r in rows:
+            d = r['d']
+            entry = by_day.setdefault(d, {'confirmed': 0, 'rejected': 0, 'pending': 0})
+            entry[r['status']] = r['n']
+        out = []
+        for i in range(days):
+            d = (start + timedelta(days=i)).isoformat()
+            e = by_day.get(d, {'confirmed': 0, 'rejected': 0, 'pending': 0})
+            out.append({
+                'date': d,
+                'confirmed': e['confirmed'],
+                'rejected': e['rejected'],
+                'pending': e['pending'],
+                'total': e['confirmed'] + e['rejected'] + e['pending'],
+            })
+        return out
+    finally:
+        conn.close()
+
+
+@app.get("/dashboard/ageing")
+def dashboard_ageing(scope: list[str] | None = Depends(active_scope)):
+    """Histogram of currently-open items by age bucket. Drives the ageing bar
+    chart on the dashboard and the at-risk (> 30d) callout."""
+    from datetime import datetime, timedelta
+    now = datetime.utcnow()
+    buckets = [
+        ('0-1d',  0,  1),
+        ('2-3d',  2,  3),
+        ('4-7d',  4,  7),
+        ('8-30d', 8,  30),
+        ('30d+',  31, 9999),
+    ]
+    conn = get_conn()
+    try:
+        where, scope_params = _scope_clause(scope, alias='a')
+        rows = conn.execute(
+            f"SELECT oi.opened_at, oi.amount FROM open_items oi "
+            f"LEFT JOIN accounts a ON a.id = oi.account_id "
+            f"WHERE oi.status='open' AND {where}",
+            scope_params,
+        ).fetchall()
+
+        out = [{'label': b[0], 'count': 0, 'amount': 0.0} for b in buckets]
+        total_count = 0; total_amount = 0.0; at_risk = 0
+        for r in rows:
+            try:
+                opened = datetime.fromisoformat(r['opened_at'])
+            except Exception:
+                continue
+            age = (now - opened).days
+            for i, (_, lo, hi) in enumerate(buckets):
+                if lo <= age <= hi:
+                    out[i]['count'] += 1
+                    out[i]['amount'] += abs(r['amount'] or 0)
+                    break
+            total_count += 1
+            total_amount += abs(r['amount'] or 0)
+            if age > 30:
+                at_risk += 1
+        return {
+            'buckets': out,
+            'total_count': total_count,
+            'total_amount': total_amount,
+            'at_risk_count': at_risk,
+        }
+    finally:
+        conn.close()
+
+
+@app.get("/dashboard/by-group")
+def dashboard_by_group(scope: list[str] | None = Depends(active_scope)):
+    """Open-item count + absolute amount per functional_group — powers the
+    per-team breakdown card. Respects access-area scope."""
+    conn = get_conn()
+    try:
+        where, scope_params = _scope_clause(scope, alias='a')
+        rows = conn.execute(
+            f"SELECT COALESCE(oi.functional_group, '(unassigned)') AS grp, "
+            f"COUNT(*) AS n, SUM(ABS(oi.amount)) AS amt "
+            f"FROM open_items oi LEFT JOIN accounts a ON a.id = oi.account_id "
+            f"WHERE oi.status='open' AND {where} GROUP BY grp ORDER BY n DESC",
+            scope_params,
+        ).fetchall()
+        return [{'group': r['grp'], 'count': r['n'], 'amount': float(r['amt'] or 0)}
+                for r in rows]
+    finally:
+        conn.close()
+
+
+@app.on_event("startup")
+def _on_startup() -> None:
+    init_db()
+    ensure_dirs()
+
+
+# ---------------------------------------------------------------------------
+# POST /sessions
+# ---------------------------------------------------------------------------
+
+@app.post("/sessions")
+async def create_session(
+    swift: UploadFile = File(...),
+    flex: UploadFile = File(...),
+    user: dict = Depends(require_role('admin')),
+):
+    if not (swift.filename or '').lower().endswith(('.xlsx', '.out')):
+        raise HTTPException(400, "SWIFT file must be .out or .xlsx")
+    if not (flex.filename or '').lower().endswith('.xlsx'):
+        raise HTTPException(400, "Flexcube file must be .xlsx")
+
+    swift_path = await _save_upload(swift, 'swift')
+    flex_path = await _save_upload(flex, 'flex')
+
+    try:
+        result = ingest_pair(swift_path, flex_path, user['username'],
+                             swift_filename=swift.filename, flex_filename=flex.filename)
+    except DuplicateFileError as exc:
+        raise HTTPException(409, str(exc))
+    except IngestError as exc:
+        raise HTTPException(400, str(exc))
+
+    return {
+        "session_id": result.session_id,
+        "swift_rows": result.swift_rows,
+        "flex_rows": result.flex_rows,
+        "candidates_proposed": result.candidates_proposed,
+        "pending_assignments": result.pending_assignments,
+        "unmatched_swift": result.unmatched_swift,
+        "unmatched_flex": result.unmatched_flex,
+        "open_items_seeded": result.open_items_seeded,
+        "open_items_cleared": result.open_items_cleared,
+        "account": {
+            "label": result.account_label,
+            "registered": result.account_registered,
+            "swift_account": result.swift_account,
+            "flex_ac_no": result.flex_ac_no,
+            "currency": result.currency,
+        },
+    }
+
+
+@app.post("/scan")
+def run_scan(user: dict = Depends(require_role('admin'))):
+    """Trigger a sweep of messages/swift and messages/flexcube.
+
+    Files that pair up to a registered account get ingested into new
+    sessions. Everything else is moved to the appropriate messages/unloaded/
+    subfolder with a reason. Idempotent — re-running does nothing new because
+    the ingest layer refuses files whose SHA-256 it has already seen."""
+    report = scan(user=user['username'])
+    return {
+        "sessions_created": report.sessions_created,
+        "counts": report.counts,
+        "outcomes": [
+            {"file": o.file, "kind": o.kind, "status": o.status,
+             "reason": o.reason, "session_id": o.session_id, "moved_to": o.moved_to}
+            for o in report.outcomes
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# GET /sessions, GET /sessions/{id}
+# ---------------------------------------------------------------------------
+
+@app.get("/sessions")
+def list_sessions(scope: list[str] | None = Depends(active_scope)):
+    conn = get_conn()
+    try:
+        where, params = _scope_clause(scope, alias='a')
+        # When a scope is active, sessions with no linked account (account_id
+        # is null) don't belong to any area and are hidden — the user asked to
+        # see BRANCH X, so legacy/unclaimed sessions shouldn't leak in.
+        account_filter = "AND a.id IS NOT NULL" if scope else ""
+        rows = conn.execute(
+            f"SELECT s.*, a.shortname AS account_shortname, a.access_area AS account_access_area "
+            f"FROM sessions s LEFT JOIN accounts a ON a.id = s.account_id "
+            f"WHERE {where} {account_filter} "
+            f"ORDER BY s.id DESC LIMIT 100",
+            params,
+        ).fetchall()
+        sessions = [dict(r) for r in rows]
+        # Per-session counts in one query so we don't N+1 the list view.
+        counts_rows = conn.execute(
+            "SELECT session_id, status, COUNT(*) AS n FROM assignments GROUP BY session_id, status"
+        ).fetchall()
+        by_session: dict[int, dict] = {}
+        for r in counts_rows:
+            by_session.setdefault(r['session_id'], {})[r['status']] = r['n']
+        for s in sessions:
+            c = by_session.get(s['id'], {})
+            s['counts'] = {
+                'pending':   c.get('pending', 0),
+                'confirmed': c.get('confirmed', 0),
+                'rejected':  c.get('rejected', 0),
+            }
+        return sessions
+    finally:
+        conn.close()
+
+
+@app.get("/sessions/{session_id}")
+def get_session(session_id: int):
+    conn = get_conn()
+    try:
+        s = conn.execute(
+            "SELECT s.*, a.shortname AS account_shortname, a.access_area AS account_access_area, "
+            "       a.bic AS account_bic "
+            "FROM sessions s LEFT JOIN accounts a ON a.id = s.account_id WHERE s.id=?",
+            (session_id,),
+        ).fetchone()
+        if s is None:
+            raise HTTPException(404, "Session not found")
+
+        def one(q, params):
+            row = conn.execute(q, params).fetchone()
+            return row[0] if row and row[0] is not None else 0
+
+        counts = {
+            "pending":    one("SELECT COUNT(*) FROM assignments WHERE session_id=? AND status='pending'", (session_id,)),
+            "confirmed":  one("SELECT COUNT(*) FROM assignments WHERE session_id=? AND status='confirmed'", (session_id,)),
+            "rejected":   one("SELECT COUNT(*) FROM assignments WHERE session_id=? AND status='rejected'", (session_id,)),
+            "swift_total": one("SELECT COUNT(*) FROM swift_txns WHERE session_id=?", (session_id,)),
+            "flex_total":  one("SELECT COUNT(*) FROM flex_txns WHERE session_id=?", (session_id,)),
+        }
+
+        # Totals drive the reconcile panel — SWIFT credits/debits and Flex credits/debits
+        # split into "all" and "confirmed" (cleared) buckets.
+        totals = {
+            "swift_credits_all": one(
+                "SELECT COALESCE(SUM(amount),0) FROM swift_txns WHERE session_id=? AND sign='C'",
+                (session_id,)),
+            "swift_debits_all": one(
+                "SELECT COALESCE(SUM(amount),0) FROM swift_txns WHERE session_id=? AND sign='D'",
+                (session_id,)),
+            "flex_credits_all": one(
+                "SELECT COALESCE(SUM(amount),0) FROM flex_txns WHERE session_id=? AND type='CR'",
+                (session_id,)),
+            "flex_debits_all": one(
+                "SELECT COALESCE(SUM(amount),0) FROM flex_txns WHERE session_id=? AND type='DR'",
+                (session_id,)),
+            # Cleared = matched-and-confirmed only; pending/rejected don't count.
+            "swift_credits_cleared": one(
+                "SELECT COALESCE(SUM(st.amount),0) FROM swift_txns st "
+                "JOIN assignments a ON a.session_id=st.session_id AND a.swift_row=st.row_number "
+                "WHERE st.session_id=? AND st.sign='C' AND a.status='confirmed'",
+                (session_id,)),
+            "swift_debits_cleared": one(
+                "SELECT COALESCE(SUM(st.amount),0) FROM swift_txns st "
+                "JOIN assignments a ON a.session_id=st.session_id AND a.swift_row=st.row_number "
+                "WHERE st.session_id=? AND st.sign='D' AND a.status='confirmed'",
+                (session_id,)),
+            "flex_credits_cleared": one(
+                "SELECT COALESCE(SUM(ft.amount),0) FROM flex_txns ft "
+                "JOIN assignments a ON a.session_id=ft.session_id AND a.flex_row=ft.row_number "
+                "WHERE ft.session_id=? AND ft.type='CR' AND a.status='confirmed'",
+                (session_id,)),
+            "flex_debits_cleared": one(
+                "SELECT COALESCE(SUM(ft.amount),0) FROM flex_txns ft "
+                "JOIN assignments a ON a.session_id=ft.session_id AND a.flex_row=ft.row_number "
+                "WHERE ft.session_id=? AND ft.type='DR' AND a.status='confirmed'",
+                (session_id,)),
+        }
+        return {**dict(s), "counts": counts, "totals": totals}
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Register view — all txns on both sides with match status, for the Register
+# tab on the review page.
+# ---------------------------------------------------------------------------
+
+@app.get("/sessions/{session_id}/register")
+def session_register(session_id: int, user: dict = Depends(current_user)):
+    """Return a flat list of every SWIFT + Flex txn with status, match partner,
+    and tier (if any). Fast enough for the UI to filter/sort client-side."""
+    conn = get_conn()
+    try:
+        # Assignment lookup by side, keyed by row_number. A row can appear
+        # on multiple assignments if it's in a split-match group; pick the
+        # strongest non-rejected one for the primary badge but surface the
+        # split_group_id so the UI can highlight siblings.
+        assigns = conn.execute(
+            "SELECT swift_row, flex_row, tier, status, decided_by, decided_at, "
+            "source, split_group_id "
+            "FROM assignments WHERE session_id=? ORDER BY "
+            "CASE status WHEN 'confirmed' THEN 0 WHEN 'pending' THEN 1 "
+            "WHEN 'rejected' THEN 2 ELSE 3 END, tier",
+            (session_id,),
+        ).fetchall()
+        swift_assign, flex_assign = {}, {}
+        for a in assigns:
+            if a['swift_row'] and a['swift_row'] not in swift_assign:
+                swift_assign[a['swift_row']] = dict(a)
+            if a['flex_row'] and a['flex_row'] not in flex_assign:
+                flex_assign[a['flex_row']] = dict(a)
+
+        swift_rows = conn.execute(
+            "SELECT * FROM swift_txns WHERE session_id=? ORDER BY row_number",
+            (session_id,),
+        ).fetchall()
+        flex_rows = conn.execute(
+            "SELECT * FROM flex_txns WHERE session_id=? ORDER BY row_number",
+            (session_id,),
+        ).fetchall()
+
+        entries = []
+        for r in swift_rows:
+            a = swift_assign.get(r['row_number'])
+            entries.append({
+                'side': 'swift',
+                'row_number': r['row_number'],
+                'value_date': r['value_date'],
+                'amount': r['amount'],
+                'sign': r['sign'],
+                'ref': r['our_ref'],
+                'description': (r['booking_text_1'] or '') + (
+                    ' · ' + r['booking_text_2'] if r['booking_text_2'] else ''),
+                'status': (a['status'] if a else 'unmatched'),
+                'tier':  (a['tier'] if a else None),
+                'partner_row': (a['flex_row'] if a else None),
+                'source': (a['source'] if a else None),
+                'split_group_id': (a['split_group_id'] if a else None),
+            })
+        for r in flex_rows:
+            a = flex_assign.get(r['row_number'])
+            entries.append({
+                'side': 'flex',
+                'row_number': r['row_number'],
+                'value_date': r['value_date'],
+                'amount': r['amount'],
+                'sign': 'C' if r['type'] == 'CR' else 'D',
+                'ref': r['trn_ref'],
+                'description': r['narration'] or '',
+                'status': (a['status'] if a else 'unmatched'),
+                'tier':  (a['tier'] if a else None),
+                'partner_row': (a['swift_row'] if a else None),
+                'source': (a['source'] if a else None),
+                'split_group_id': (a['split_group_id'] if a else None),
+            })
+        return entries
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# GET /sessions/{id}/queue
+# ---------------------------------------------------------------------------
+
+@app.get("/sessions/{session_id}/queue")
+def get_queue(session_id: int):
+    conn = get_conn()
+    try:
+        assignments = conn.execute(
+            "SELECT * FROM assignments WHERE session_id=? AND status='pending' "
+            "ORDER BY tier, id",
+            (session_id,),
+        ).fetchall()
+
+        out = []
+        for a in assignments:
+            swift = conn.execute(
+                "SELECT * FROM swift_txns WHERE session_id=? AND row_number=?",
+                (session_id, a['swift_row']),
+            ).fetchone()
+            flex = conn.execute(
+                "SELECT * FROM flex_txns WHERE session_id=? AND row_number=?",
+                (session_id, a['flex_row']),
+            ).fetchone()
+            competing = conn.execute(
+                "SELECT c.*, "
+                "  CASE WHEN c.swift_row=? THEN 'alt_flex' ELSE 'alt_swift' END AS side "
+                "FROM candidates c "
+                "WHERE c.session_id=? AND (c.swift_row=? OR c.flex_row=?) "
+                "  AND NOT (c.swift_row=? AND c.flex_row=?) "
+                "ORDER BY c.tier, ABS(c.amount_diff)",
+                (a['swift_row'], session_id, a['swift_row'], a['flex_row'],
+                 a['swift_row'], a['flex_row']),
+            ).fetchall()
+
+            out.append({
+                "assignment_id": a['id'],
+                "tier": a['tier'],
+                "reason": a['reason'],
+                "amount_diff": a['amount_diff'],
+                "swift": dict(swift) if swift else None,
+                "flex": dict(flex) if flex else None,
+                "competing": [dict(c) for c in competing],
+            })
+        return out
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# POST /sessions/{id}/decisions
+# ---------------------------------------------------------------------------
+
+class DecisionPayload(BaseModel):
+    assignment_id: int
+    action: str  # 'confirm' | 'reject'
+
+
+@app.post("/sessions/{session_id}/decisions")
+def post_decision(
+    session_id: int,
+    payload: DecisionPayload,
+    user: dict = Depends(require_role('ops', 'admin')),
+):
+    if payload.action not in ('confirm', 'reject'):
+        raise HTTPException(400, "action must be 'confirm' or 'reject'")
+
+    username = user['username']
+    conn = get_conn()
+    try:
+        a = conn.execute(
+            "SELECT * FROM assignments WHERE id=? AND session_id=?",
+            (payload.assignment_id, session_id),
+        ).fetchone()
+        if a is None:
+            raise HTTPException(404, "Assignment not found")
+        if a['status'] != 'pending':
+            raise HTTPException(400, f"Assignment already {a['status']}")
+
+        now = datetime.utcnow().isoformat()
+        new_status = 'confirmed' if payload.action == 'confirm' else 'rejected'
+        conn.execute(
+            "UPDATE assignments SET status=?, decided_by=?, decided_at=? WHERE id=?",
+            (new_status, username, now, payload.assignment_id),
+        )
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (session_id, f"decision_{payload.action}", username, now,
+             json.dumps({
+                 "assignment_id": payload.assignment_id,
+                 "swift_row": a['swift_row'],
+                 "flex_row": a['flex_row'],
+                 "tier": a['tier'],
+             })),
+        )
+        conn.commit()
+        return {"assignment_id": payload.assignment_id, "status": new_status}
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# POST /sessions/{id}/close
+# ---------------------------------------------------------------------------
+
+@app.post("/sessions/{session_id}/close")
+def close_session_endpoint(session_id: int,
+                           user: dict = Depends(require_role('ops', 'admin'))):
+    """Mark a session closed and seed unmatched rows into open_items with
+    auto-grouping applied. Safe to call on an already-closed session (no-op).
+    Triggered by the 'Close session' button on the session review page and
+    by the nightly cron (daily_close.py)."""
+    from open_items import close_session
+    conn = get_conn()
+    try:
+        try:
+            result = close_session(conn, session_id, user['username'])
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+        conn.commit()
+        return result
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# GET /sessions/{id}/export
+# ---------------------------------------------------------------------------
+
+@app.get("/sessions/{session_id}/export")
+def export_session(session_id: int, user: dict = Depends(current_user)):
+    """Write an xlsx based on the CURRENT CONFIRMED state. Only assignments
+    with status='confirmed' count as matched; pending/rejected stay unmatched."""
+    conn = get_conn()
+    try:
+        sess = conn.execute("SELECT * FROM sessions WHERE id=?", (session_id,)).fetchone()
+        if sess is None:
+            raise HTTPException(404, "Session not found")
+
+        swift_rows = conn.execute(
+            "SELECT * FROM swift_txns WHERE session_id=? ORDER BY row_number",
+            (session_id,),
+        ).fetchall()
+        flex_rows = conn.execute(
+            "SELECT * FROM flex_txns WHERE session_id=? ORDER BY row_number",
+            (session_id,),
+        ).fetchall()
+        confirmed = conn.execute(
+            "SELECT * FROM assignments WHERE session_id=? AND status='confirmed'",
+            (session_id,),
+        ).fetchall()
+
+        swift_txns = [_swift_row_to_dict(r) for r in swift_rows]
+        flex_txns = [_flex_row_to_dict(r) for r in flex_rows]
+        swift_by_row = {s['_row_number']: s for s in swift_txns}
+        flex_by_row = {f['_row_number']: f for f in flex_txns}
+
+        matches = []
+        for a in confirmed:
+            s = swift_by_row.get(a['swift_row'])
+            f = flex_by_row.get(a['flex_row'])
+            if s is None or f is None:
+                continue  # shouldn't happen; skip defensively
+            s['_used'] = True
+            f['_used'] = True
+            matches.append({'swift': s, 'flex': f, 'tier': a['tier'], 'reason': a['reason']})
+
+        out_name = f"session_{session_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        out_path = EXPORT_DIR / out_name
+        write_report(
+            matches, swift_txns, flex_txns,
+            Path(sess['swift_filename']), Path(sess['flex_filename']), out_path,
+        )
+
+        now = datetime.utcnow().isoformat()
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (?, 'export', ?, ?, ?)",
+            (session_id, user['username'], now, json.dumps({"confirmed_count": len(matches)})),
+        )
+        conn.commit()
+
+        return FileResponse(
+            out_path, filename=out_name,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# GET /sessions/{id}/audit
+# ---------------------------------------------------------------------------
+
+@app.get("/sessions/{session_id}/audit")
+def get_audit(session_id: int):
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT id, action, actor, timestamp, details FROM audit_log "
+            "WHERE session_id=? ORDER BY id",
+            (session_id,),
+        ).fetchall()
+        return [{**dict(r), 'details': json.loads(r['details']) if r['details'] else None}
+                for r in rows]
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Accounts registry
+# ---------------------------------------------------------------------------
+
+class AccountPayload(BaseModel):
+    label: str
+    shortname: str | None = None
+    access_area: str | None = None
+    bic: str | None = None
+    swift_account: str
+    flex_ac_no: str
+    currency: str
+    notes: str | None = None
+
+
+@app.get("/accounts")
+def list_accounts(scope: list[str] | None = Depends(active_scope)):
+    conn = get_conn()
+    try:
+        where, params = _scope_clause(scope, alias='accounts')
+        rows = conn.execute(
+            f"SELECT * FROM accounts WHERE active=1 AND {where} "
+            f"ORDER BY COALESCE(access_area, 'zzz'), COALESCE(shortname, label)",
+            params,
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+@app.get("/access-areas")
+def list_access_areas():
+    """Used to populate the Access area dropdown. Ops and admin both see this
+    so account creation/edit screens can bind to the same registry."""
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT id, name, parent, active FROM access_areas "
+            "WHERE active=1 ORDER BY name"
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Currencies registry — managed ISO-code list feeds the currency dropdown on
+# the cash-account forms. Matches the Corona 7.9 picker so ops reuse the same
+# canonical set of codes.
+# ---------------------------------------------------------------------------
+
+class CurrencyPayload(BaseModel):
+    iso_code: str
+    name: str
+    decimals: int = 2
+    euro_currency: int = 0
+
+
+class CurrencyPatchPayload(BaseModel):
+    name: str | None = None
+    decimals: int | None = None
+    euro_currency: int | None = None
+    active: int | None = None
+
+
+@app.get("/currencies")
+def list_currencies(include_inactive: bool = False,
+                    user: dict = Depends(current_user)):
+    """All currencies, active-only by default. Fed into the account-form
+    dropdown and the admin management page."""
+    conn = get_conn()
+    try:
+        where = "" if include_inactive else "WHERE active=1"
+        rows = conn.execute(
+            f"SELECT iso_code, name, decimals, euro_currency, active, "
+            f"created_at, created_by FROM currencies {where} "
+            f"ORDER BY iso_code"
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+@app.post("/currencies")
+def create_currency(payload: CurrencyPayload,
+                    user: dict = Depends(require_role('admin'))):
+    code = payload.iso_code.strip().upper()
+    name = payload.name.strip()
+    if len(code) != 3 or not code.isalpha():
+        raise HTTPException(400, "iso_code must be exactly 3 letters.")
+    if not name:
+        raise HTTPException(400, "name is required.")
+    conn = get_conn()
+    try:
+        now = datetime.utcnow().isoformat()
+        try:
+            conn.execute(
+                "INSERT INTO currencies (iso_code, name, decimals, euro_currency, "
+                "active, created_at, created_by) VALUES (?,?,?,?,1,?,?)",
+                (code, name, payload.decimals, payload.euro_currency,
+                 now, user['username']),
+            )
+        except Exception as exc:
+            if 'UNIQUE' in str(exc) or 'PRIMARY KEY' in str(exc):
+                raise HTTPException(409, f"Currency {code} already exists.")
+            raise
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (NULL, 'currency_created', ?, ?, ?)",
+            (user['username'], now, json.dumps({"iso_code": code, "name": name})),
+        )
+        conn.commit()
+        return {"iso_code": code, "name": name}
+    finally:
+        conn.close()
+
+
+@app.patch("/currencies/{iso_code}")
+def update_currency(iso_code: str, payload: CurrencyPatchPayload,
+                    user: dict = Depends(require_role('admin'))):
+    code = iso_code.strip().upper()
+    conn = get_conn()
+    try:
+        existing = conn.execute(
+            "SELECT * FROM currencies WHERE iso_code=?", (code,)
+        ).fetchone()
+        if existing is None:
+            raise HTTPException(404, f"Currency {code} not found.")
+        fields, values = [], []
+        for k in ('name', 'decimals', 'euro_currency', 'active'):
+            v = getattr(payload, k)
+            if v is not None:
+                fields.append(f"{k}=?")
+                values.append(v)
+        if not fields:
+            raise HTTPException(400, "No fields to update.")
+        values.append(code)
+        conn.execute(
+            f"UPDATE currencies SET {', '.join(fields)} WHERE iso_code=?", values,
+        )
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (NULL, 'currency_updated', ?, ?, ?)",
+            (user['username'], datetime.utcnow().isoformat(),
+             json.dumps({"iso_code": code,
+                         "changes": {k: getattr(payload, k)
+                                     for k in ('name', 'decimals', 'euro_currency', 'active')
+                                     if getattr(payload, k) is not None}})),
+        )
+        conn.commit()
+        row = conn.execute("SELECT * FROM currencies WHERE iso_code=?", (code,)).fetchone()
+        return dict(row)
+    finally:
+        conn.close()
+
+
+@app.delete("/currencies/{iso_code}")
+def delete_currency(iso_code: str,
+                    user: dict = Depends(require_role('admin'))):
+    """Soft-delete: sets active=0 so existing accounts keep referencing it but
+    it drops out of the picker. Hard delete refused if any account uses it."""
+    code = iso_code.strip().upper()
+    conn = get_conn()
+    try:
+        existing = conn.execute(
+            "SELECT * FROM currencies WHERE iso_code=?", (code,)
+        ).fetchone()
+        if existing is None:
+            raise HTTPException(404, f"Currency {code} not found.")
+        conn.execute("UPDATE currencies SET active=0 WHERE iso_code=?", (code,))
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (NULL, 'currency_deactivated', ?, ?, ?)",
+            (user['username'], datetime.utcnow().isoformat(),
+             json.dumps({"iso_code": code})),
+        )
+        conn.commit()
+        return {"iso_code": code, "active": 0}
+    finally:
+        conn.close()
+
+
+@app.get("/currencies-admin")
+def currencies_admin_page(request: Request):
+    return templates.TemplateResponse(request, "currencies_admin.html")
+
+
+# ---------------------------------------------------------------------------
+# Banks registry — managed counterparty list that feeds the BIC dropdown on
+# the cash-account form. Strict: accounts can only reference a registered
+# bank. Matches the Corona 7.9 Banks screen.
+# ---------------------------------------------------------------------------
+
+class BankPayload(BaseModel):
+    bic: str
+    name: str
+    nickname: str | None = None
+    origin: str = 'their'           # 'their' | 'our'
+    type: str = 'bank'              # 'bank' | 'broker'
+    access_area: str | None = None
+    user_code: str | None = None
+
+
+class BankPatchPayload(BaseModel):
+    name: str | None = None
+    nickname: str | None = None
+    origin: str | None = None
+    type: str | None = None
+    access_area: str | None = None
+    user_code: str | None = None
+    active: int | None = None
+
+
+@app.get("/banks")
+def list_banks(include_inactive: bool = False,
+               user: dict = Depends(current_user)):
+    """Registered counterparty banks. Active-only by default. Fed into the
+    BIC dropdown on the cash-account form and the admin management page."""
+    conn = get_conn()
+    try:
+        where = "" if include_inactive else "WHERE active=1"
+        rows = conn.execute(
+            f"SELECT bic, name, nickname, origin, type, access_area, user_code, "
+            f"active, created_at, created_by FROM banks {where} "
+            f"ORDER BY bic"
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+@app.post("/banks")
+def create_bank(payload: BankPayload,
+                user: dict = Depends(require_role('admin'))):
+    bic = payload.bic.strip().upper()
+    name = payload.name.strip()
+    if not (8 <= len(bic) <= 11) or not bic.isalnum():
+        raise HTTPException(400, "bic must be 8–11 alphanumeric characters.")
+    if not name:
+        raise HTTPException(400, "name is required.")
+    origin = (payload.origin or 'their').strip().lower()
+    if origin not in ('their', 'our'):
+        raise HTTPException(400, "origin must be 'their' or 'our'.")
+    btype = (payload.type or 'bank').strip().lower()
+    if btype not in ('bank', 'broker'):
+        raise HTTPException(400, "type must be 'bank' or 'broker'.")
+    conn = get_conn()
+    try:
+        now = datetime.utcnow().isoformat()
+        try:
+            conn.execute(
+                "INSERT INTO banks (bic, name, nickname, origin, type, access_area, "
+                "user_code, active, created_at, created_by) "
+                "VALUES (?,?,?,?,?,?,?,1,?,?)",
+                (bic, name, payload.nickname, origin, btype,
+                 payload.access_area, payload.user_code,
+                 now, user['username']),
+            )
+        except Exception as exc:
+            if 'UNIQUE' in str(exc) or 'PRIMARY KEY' in str(exc):
+                raise HTTPException(409, f"Bank {bic} already registered.")
+            raise
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (NULL, 'bank_created', ?, ?, ?)",
+            (user['username'], now, json.dumps({"bic": bic, "name": name})),
+        )
+        conn.commit()
+        return {"bic": bic, "name": name}
+    finally:
+        conn.close()
+
+
+@app.patch("/banks/{bic}")
+def update_bank(bic: str, payload: BankPatchPayload,
+                user: dict = Depends(require_role('admin'))):
+    code = bic.strip().upper()
+    conn = get_conn()
+    try:
+        existing = conn.execute(
+            "SELECT * FROM banks WHERE bic=?", (code,)
+        ).fetchone()
+        if existing is None:
+            raise HTTPException(404, f"Bank {code} not found.")
+        if payload.origin is not None and payload.origin not in ('their', 'our'):
+            raise HTTPException(400, "origin must be 'their' or 'our'.")
+        if payload.type is not None and payload.type not in ('bank', 'broker'):
+            raise HTTPException(400, "type must be 'bank' or 'broker'.")
+        fields, values = [], []
+        for k in ('name', 'nickname', 'origin', 'type', 'access_area',
+                  'user_code', 'active'):
+            v = getattr(payload, k)
+            if v is not None:
+                fields.append(f"{k}=?")
+                values.append(v)
+        if not fields:
+            raise HTTPException(400, "No fields to update.")
+        values.append(code)
+        conn.execute(
+            f"UPDATE banks SET {', '.join(fields)} WHERE bic=?", values,
+        )
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (NULL, 'bank_updated', ?, ?, ?)",
+            (user['username'], datetime.utcnow().isoformat(),
+             json.dumps({"bic": code,
+                         "changes": {k: getattr(payload, k)
+                                     for k in ('name', 'nickname', 'origin', 'type',
+                                               'access_area', 'user_code', 'active')
+                                     if getattr(payload, k) is not None}})),
+        )
+        conn.commit()
+        row = conn.execute("SELECT * FROM banks WHERE bic=?", (code,)).fetchone()
+        return dict(row)
+    finally:
+        conn.close()
+
+
+@app.delete("/banks/{bic}")
+def delete_bank(bic: str,
+                user: dict = Depends(require_role('admin'))):
+    """Soft-delete: sets active=0 so existing accounts keep their BIC but the
+    bank drops out of the picker. Refused if any active account still uses it —
+    strict registry means a BIC can't be retired while in use."""
+    code = bic.strip().upper()
+    conn = get_conn()
+    try:
+        existing = conn.execute(
+            "SELECT * FROM banks WHERE bic=?", (code,)
+        ).fetchone()
+        if existing is None:
+            raise HTTPException(404, f"Bank {code} not found.")
+        in_use = conn.execute(
+            "SELECT COUNT(*) FROM accounts WHERE bic=? AND active=1", (code,)
+        ).fetchone()[0]
+        if in_use:
+            raise HTTPException(
+                409,
+                f"Bank {code} is referenced by {in_use} active cash account(s). "
+                "Reassign or deactivate those accounts first."
+            )
+        conn.execute("UPDATE banks SET active=0 WHERE bic=?", (code,))
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (NULL, 'bank_deactivated', ?, ?, ?)",
+            (user['username'], datetime.utcnow().isoformat(),
+             json.dumps({"bic": code})),
+        )
+        conn.commit()
+        return {"bic": code, "active": 0}
+    finally:
+        conn.close()
+
+
+@app.get("/banks-admin")
+def banks_admin_page(request: Request):
+    return templates.TemplateResponse(request, "banks_admin.html")
+
+
+# ---------------------------------------------------------------------------
+# FX rate registry — feeds the cross-currency branch of the match engine.
+# Amount-in-from-currency * rate = amount-in-to-currency. Identity rows
+# (GHS->GHS=1.0) are seeded automatically; ops manages the rest.
+# ---------------------------------------------------------------------------
+
+class FxRatePayload(BaseModel):
+    from_ccy: str
+    to_ccy: str
+    rate: float
+    valid_from: str | None = None    # ISO date; defaults to today
+    source: str | None = None
+
+
+class FxRatePatchPayload(BaseModel):
+    rate: float | None = None
+    source: str | None = None
+    active: int | None = None
+
+
+@app.get("/fx-rates")
+def list_fx_rates(include_inactive: bool = False,
+                  user: dict = Depends(current_user)):
+    """All FX rate rows (latest per pair by default). When include_inactive
+    is true, historic / deactivated rows are returned too for audit."""
+    conn = get_conn()
+    try:
+        where = "" if include_inactive else "WHERE active=1"
+        rows = conn.execute(
+            f"SELECT id, from_ccy, to_ccy, rate, valid_from, source, active, "
+            f"created_at, created_by FROM fx_rates {where} "
+            f"ORDER BY from_ccy, to_ccy, valid_from DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+@app.post("/fx-rates")
+def create_fx_rate(payload: FxRatePayload,
+                   user: dict = Depends(require_role('admin'))):
+    from datetime import date as _date
+    frm = payload.from_ccy.strip().upper()
+    to  = payload.to_ccy.strip().upper()
+    if len(frm) != 3 or len(to) != 3 or not frm.isalpha() or not to.isalpha():
+        raise HTTPException(400, "from_ccy and to_ccy must be 3-letter codes")
+    if payload.rate <= 0:
+        raise HTTPException(400, "rate must be > 0")
+    valid_from = payload.valid_from or _date.today().isoformat()
+    conn = get_conn()
+    try:
+        # Deactivate any previous active row for the same pair so the engine
+        # always sees a single current rate per direction.
+        conn.execute(
+            "UPDATE fx_rates SET active=0 WHERE from_ccy=? AND to_ccy=? AND active=1",
+            (frm, to),
+        )
+        now = datetime.utcnow().isoformat()
+        try:
+            cur = conn.execute(
+                "INSERT INTO fx_rates (from_ccy, to_ccy, rate, valid_from, source, "
+                "active, created_at, created_by) VALUES (?,?,?,?,?,1,?,?)",
+                (frm, to, payload.rate, valid_from, payload.source, now, user['username']),
+            )
+        except Exception as exc:
+            if 'UNIQUE' in str(exc):
+                raise HTTPException(409, "That rate already exists on that date.")
+            raise
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (NULL, 'fx_rate_created', ?, ?, ?)",
+            (user['username'], now, json.dumps({
+                "from": frm, "to": to, "rate": payload.rate, "valid_from": valid_from})),
+        )
+        conn.commit()
+        return {"id": cur.lastrowid, "from_ccy": frm, "to_ccy": to, "rate": payload.rate}
+    finally:
+        conn.close()
+
+
+@app.patch("/fx-rates/{rate_id}")
+def update_fx_rate(rate_id: int, payload: FxRatePatchPayload,
+                   user: dict = Depends(require_role('admin'))):
+    conn = get_conn()
+    try:
+        existing = conn.execute(
+            "SELECT * FROM fx_rates WHERE id=?", (rate_id,)
+        ).fetchone()
+        if existing is None:
+            raise HTTPException(404, "rate not found")
+        fields, values = [], []
+        for k in ('rate', 'source', 'active'):
+            v = getattr(payload, k)
+            if v is not None:
+                fields.append(f"{k}=?"); values.append(v)
+        if not fields:
+            raise HTTPException(400, "no fields to update")
+        values.append(rate_id)
+        conn.execute(f"UPDATE fx_rates SET {', '.join(fields)} WHERE id=?", values)
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (NULL, 'fx_rate_updated', ?, ?, ?)",
+            (user['username'], datetime.utcnow().isoformat(),
+             json.dumps({"rate_id": rate_id,
+                         "changes": {k: getattr(payload, k)
+                                     for k in ('rate','source','active')
+                                     if getattr(payload, k) is not None}})),
+        )
+        conn.commit()
+        row = conn.execute("SELECT * FROM fx_rates WHERE id=?", (rate_id,)).fetchone()
+        return dict(row)
+    finally:
+        conn.close()
+
+
+@app.get("/fx-admin")
+def fx_admin_page(request: Request):
+    return templates.TemplateResponse(request, "fx_admin.html")
+
+
+# ---------------------------------------------------------------------------
+# Reconciliation certificates — month-end sign-off artefact per account.
+# Draft → prepared → reviewed → signed flow with four-eyes enforcement via
+# role checks (ops prepares, internal_control reviews, admin signs). On
+# sign-off the live figures are frozen into snapshot_json so the PDF/xlsx
+# always shows the numbers at signing time, not the current ledger state.
+# ---------------------------------------------------------------------------
+
+class CertActionPayload(BaseModel):
+    note: str | None = None
+
+
+@app.get("/accounts/{account_id}/certificates")
+def list_certificates(account_id: int,
+                      user: dict = Depends(current_user)):
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM reconciliation_certificates WHERE account_id=? "
+            "ORDER BY period_end DESC, id DESC",
+            (account_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+@app.post("/accounts/{account_id}/certificates")
+def create_certificate(account_id: int, period_start: str, period_end: str,
+                       user: dict = Depends(require_role('admin', 'ops'))):
+    """Generate a draft certificate for the account+period. Idempotent per
+    (account, period_start, period_end) — re-issuing returns the existing
+    draft so analysts can iterate without spawning duplicates."""
+    conn = get_conn()
+    try:
+        existing = conn.execute(
+            "SELECT * FROM reconciliation_certificates WHERE account_id=? "
+            "AND period_start=? AND period_end=? AND status != 'superseded' "
+            "ORDER BY id DESC LIMIT 1",
+            (account_id, period_start, period_end),
+        ).fetchone()
+        if existing:
+            return dict(existing)
+        now = datetime.utcnow().isoformat()
+        cur = conn.execute(
+            "INSERT INTO reconciliation_certificates "
+            "(account_id, period_start, period_end, generated_at, generated_by, status) "
+            "VALUES (?,?,?,?,?, 'draft')",
+            (account_id, period_start, period_end, now, user['username']),
+        )
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (NULL, 'certificate_created', ?, ?, ?)",
+            (user['username'], now, json.dumps({
+                'certificate_id': cur.lastrowid, 'account_id': account_id,
+                'period': f"{period_start}..{period_end}"})),
+        )
+        conn.commit()
+        row = conn.execute("SELECT * FROM reconciliation_certificates WHERE id=?",
+                           (cur.lastrowid,)).fetchone()
+        return dict(row)
+    finally:
+        conn.close()
+
+
+def _transition_cert(conn, cert_id: int, expected_statuses: tuple,
+                     new_status: str, field_user: str, field_at: str,
+                     user: str, note: str | None) -> dict:
+    row = conn.execute(
+        "SELECT * FROM reconciliation_certificates WHERE id=?", (cert_id,),
+    ).fetchone()
+    if row is None:
+        raise HTTPException(404, "certificate not found")
+    if row['status'] not in expected_statuses:
+        raise HTTPException(
+            409,
+            f"certificate is {row['status']}; cannot transition to {new_status}")
+    if row['status'] == 'signed':
+        raise HTTPException(409, "certificate is already signed and immutable")
+    now = datetime.utcnow().isoformat()
+    conn.execute(
+        f"UPDATE reconciliation_certificates SET status=?, "
+        f"{field_user}=?, {field_at}=? WHERE id=?",
+        (new_status, user, now, cert_id),
+    )
+    conn.execute(
+        "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+        "VALUES (NULL, 'certificate_' || ?, ?, ?, ?)",
+        (new_status, user, now, json.dumps({
+            'certificate_id': cert_id, 'from': row['status'],
+            'to': new_status, 'note': note})),
+    )
+    conn.commit()
+    return dict(conn.execute(
+        "SELECT * FROM reconciliation_certificates WHERE id=?", (cert_id,)).fetchone())
+
+
+@app.post("/certificates/{cert_id}/prepare")
+def prepare_certificate(cert_id: int, payload: CertActionPayload,
+                        user: dict = Depends(require_role('admin', 'ops'))):
+    """Maker step — analyst attests the figures are ready for review."""
+    conn = get_conn()
+    try:
+        return _transition_cert(conn, cert_id, ('draft',), 'prepared',
+                                 'prepared_by', 'prepared_at',
+                                 user['username'], payload.note)
+    finally:
+        conn.close()
+
+
+@app.post("/certificates/{cert_id}/review")
+def review_certificate(cert_id: int, payload: CertActionPayload,
+                       user: dict = Depends(require_role('admin', 'internal_control'))):
+    """Checker step — independent reviewer attests figures are correct."""
+    conn = get_conn()
+    try:
+        return _transition_cert(conn, cert_id, ('prepared',), 'reviewed',
+                                 'reviewed_by', 'reviewed_at',
+                                 user['username'], payload.note)
+    finally:
+        conn.close()
+
+
+@app.post("/certificates/{cert_id}/sign")
+def sign_certificate(cert_id: int, payload: CertActionPayload,
+                     user: dict = Depends(require_role('admin'))):
+    """Approver step — freezes the figures into snapshot_json and makes the
+    certificate immutable. At this point the xlsx becomes reproducible
+    from snapshot_json alone, so later ledger changes don't rewrite it."""
+    from certificates import compute_figures
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            "SELECT * FROM reconciliation_certificates WHERE id=?", (cert_id,),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(404, "certificate not found")
+        if row['status'] != 'reviewed':
+            raise HTTPException(
+                409,
+                f"certificate is {row['status']}; must be reviewed before signing")
+        figures = compute_figures(conn, row['account_id'],
+                                   row['period_start'], row['period_end'])
+        now = datetime.utcnow().isoformat()
+        conn.execute(
+            "UPDATE reconciliation_certificates SET status='signed', "
+            "signed_by=?, signed_at=?, snapshot_json=? WHERE id=?",
+            (user['username'], now, json.dumps(figures, default=str), cert_id),
+        )
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (NULL, 'certificate_signed', ?, ?, ?)",
+            (user['username'], now, json.dumps({
+                'certificate_id': cert_id, 'note': payload.note,
+                'frozen_figures': True})),
+        )
+        conn.commit()
+        return dict(conn.execute(
+            "SELECT * FROM reconciliation_certificates WHERE id=?", (cert_id,)
+        ).fetchone())
+    finally:
+        conn.close()
+
+
+@app.get("/certificates/{cert_id}/print")
+def print_certificate(cert_id: int, request: Request,
+                      user: dict = Depends(current_user)):
+    """Render a print-ready HTML view of the certificate. Browser's native
+    Save-as-PDF dialog produces the final PDF — zero external PDF dependency
+    (no reportlab, no weasyprint, no wkhtmltopdf install). When IT provisions
+    reportlab this same endpoint can stream binary PDF; the template is
+    designed to be one-to-one convertible."""
+    from certificates import compute_figures
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            "SELECT * FROM reconciliation_certificates WHERE id=?", (cert_id,),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(404, "certificate not found")
+        if row['status'] == 'signed' and row['snapshot_json']:
+            figures = json.loads(row['snapshot_json'])
+        else:
+            figures = compute_figures(conn, row['account_id'],
+                                       row['period_start'], row['period_end'])
+        return templates.TemplateResponse(request, "certificate_print.html", {
+            'cert': dict(row),
+            'figures': figures,
+        })
+    finally:
+        conn.close()
+
+
+@app.get("/certificates/{cert_id}/download")
+def download_certificate(cert_id: int,
+                         user: dict = Depends(current_user)):
+    """Reproducible xlsx. For signed certs the frozen snapshot drives the
+    figures; for unsigned certs the live ledger does — so unsigned xlsx
+    can shift if more sessions land, but a signed cert is forever."""
+    from certificates import compute_figures, build_xlsx
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            "SELECT * FROM reconciliation_certificates WHERE id=?", (cert_id,),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(404, "certificate not found")
+        if row['status'] == 'signed' and row['snapshot_json']:
+            figures = json.loads(row['snapshot_json'])
+        else:
+            figures = compute_figures(conn, row['account_id'],
+                                       row['period_start'], row['period_end'])
+        data = build_xlsx(figures, dict(row))
+        acct_label = (figures.get('account') or {}).get('label', 'account')
+        safe = ''.join(c for c in acct_label if c.isalnum() or c in ' -_').strip()
+        filename = f"certificate_{safe}_{row['period_start']}_{row['period_end']}.xlsx"
+        return StreamingResponse(
+            io.BytesIO(data),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    finally:
+        conn.close()
+
+
+@app.get("/certificates-admin")
+def certificates_admin_page(request: Request):
+    return templates.TemplateResponse(request, "certificates_admin.html")
+
+
+# ---------------------------------------------------------------------------
+# SLA alerting — notification_channels CRUD + on-demand check endpoint.
+# Channel kinds: teams (webhook), email (stub — no SMTP infra decision yet),
+# log (writes to audit_log). Each channel has its own threshold_days and
+# optional access-area filter so different teams can subscribe to different
+# urgency levels.
+# ---------------------------------------------------------------------------
+
+class ChannelPayload(BaseModel):
+    name: str
+    kind: str                       # 'teams' | 'email' | 'log'
+    config_json: str                # JSON string with channel-specific config
+    threshold_days: int = 30
+    access_area_filter: str | None = None   # JSON list or null
+    active: int = 1
+
+
+class ChannelPatchPayload(BaseModel):
+    name: str | None = None
+    config_json: str | None = None
+    threshold_days: int | None = None
+    access_area_filter: str | None = None
+    active: int | None = None
+
+
+@app.get("/notification-channels")
+def list_channels(user: dict = Depends(require_role('admin'))):
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM notification_channels ORDER BY active DESC, name"
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+@app.post("/notification-channels")
+def create_channel(payload: ChannelPayload,
+                   user: dict = Depends(require_role('admin'))):
+    if payload.kind not in ('teams', 'email', 'log'):
+        raise HTTPException(400, "kind must be 'teams', 'email' or 'log'")
+    # Validate config_json is actually JSON so we surface typos early.
+    try:
+        json.loads(payload.config_json)
+    except Exception:
+        raise HTTPException(400, "config_json must be valid JSON")
+    now = datetime.utcnow().isoformat()
+    conn = get_conn()
+    try:
+        cur = conn.execute(
+            "INSERT INTO notification_channels (name, kind, config_json, "
+            "threshold_days, access_area_filter, active, created_at, created_by) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (payload.name, payload.kind, payload.config_json,
+             payload.threshold_days, payload.access_area_filter,
+             payload.active, now, user['username']),
+        )
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (NULL, 'channel_created', ?, ?, ?)",
+            (user['username'], now, json.dumps({
+                'channel_id': cur.lastrowid, 'name': payload.name,
+                'kind': payload.kind})),
+        )
+        conn.commit()
+        return {"id": cur.lastrowid, "name": payload.name}
+    finally:
+        conn.close()
+
+
+@app.patch("/notification-channels/{channel_id}")
+def update_channel(channel_id: int, payload: ChannelPatchPayload,
+                   user: dict = Depends(require_role('admin'))):
+    conn = get_conn()
+    try:
+        existing = conn.execute(
+            "SELECT id FROM notification_channels WHERE id=?", (channel_id,)
+        ).fetchone()
+        if existing is None:
+            raise HTTPException(404, "channel not found")
+        fields, values = [], []
+        for k in ('name', 'config_json', 'threshold_days',
+                  'access_area_filter', 'active'):
+            v = getattr(payload, k)
+            if v is not None:
+                if k == 'config_json':
+                    try: json.loads(v)
+                    except Exception:
+                        raise HTTPException(400, "config_json must be valid JSON")
+                fields.append(f"{k}=?"); values.append(v)
+        if not fields:
+            raise HTTPException(400, "no fields to update")
+        values.append(channel_id)
+        conn.execute(
+            f"UPDATE notification_channels SET {', '.join(fields)} WHERE id=?",
+            values,
+        )
+        conn.commit()
+        return dict(conn.execute(
+            "SELECT * FROM notification_channels WHERE id=?", (channel_id,)
+        ).fetchone())
+    finally:
+        conn.close()
+
+
+@app.post("/sla/check")
+def sla_check(channel_id: int | None = None, dry_run: bool = False,
+              user: dict = Depends(require_role('admin'))):
+    """Evaluate active channels (or one specific channel) against the
+    current open_items ledger and dispatch. dry_run=true runs the query
+    and returns counts without posting anywhere."""
+    from sla import run_check
+    conn = get_conn()
+    try:
+        return run_check(conn, channel_id=channel_id, dry_run=dry_run)
+    finally:
+        conn.close()
+
+
+@app.get("/sla-admin")
+def sla_admin_page(request: Request):
+    return templates.TemplateResponse(request, "sla_admin.html")
+
+
+# ---------------------------------------------------------------------------
+# Match-pattern analytics — mines historic user decisions to surface
+# narration keywords and ref prefixes that correlate with confirmations.
+# Read-only: the page shows the patterns so ops can create auto-rules
+# manually. No auto-promotion — keeps the human in the loop for now.
+# ---------------------------------------------------------------------------
+
+@app.get("/analytics/match-patterns")
+def match_patterns(min_occurrences: int = 3,
+                   user: dict = Depends(current_user)):
+    """For each narration token that appears in ≥min_occurrences confirmed
+    assignments, compute the confirm/reject split. Tokens with ≥80% confirm
+    rate are good auto-rule candidates. Ref prefixes are surfaced separately.
+
+    Intentionally cheap — runs against all-time assignments, no session
+    limit. With <10k assignments this is milliseconds; if the table grows
+    to >100k we'll paginate by time window."""
+    import re
+    from collections import Counter, defaultdict
+
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT a.status, a.tier, s.our_ref AS swift_ref, f.narration, "
+            "f.external_ref, f.trn_ref, f.user_id, f.module "
+            "FROM assignments a "
+            "LEFT JOIN swift_txns s ON s.session_id=a.session_id AND s.row_number=a.swift_row "
+            "LEFT JOIN flex_txns  f ON f.session_id=a.session_id AND f.row_number=a.flex_row "
+            "WHERE a.status IN ('confirmed', 'rejected')"
+        ).fetchall()
+
+        token_confirm: Counter = Counter()
+        token_reject: Counter = Counter()
+        ref_prefix_confirm: Counter = Counter()
+        ref_prefix_reject: Counter = Counter()
+        user_confirm: Counter = Counter()
+        user_reject: Counter = Counter()
+        module_confirm: Counter = Counter()
+        module_reject: Counter = Counter()
+
+        token_re = re.compile(r'[A-Z][A-Z0-9]{3,}')  # ≥4-char uppercase tokens
+        stopwords = {'THE', 'AND', 'FOR', 'FROM', 'WITH', 'INTO', 'ONTO',
+                     'BANK', 'REF', 'OUR', 'THEIR', 'OUREF', 'DATE'}
+        for r in rows:
+            status = r['status']
+            narration = (r['narration'] or '').upper()
+            tokens = set(token_re.findall(narration)) - stopwords
+            for tok in tokens:
+                (token_confirm if status == 'confirmed' else token_reject)[tok] += 1
+
+            trn = (r['trn_ref'] or '').upper()
+            if len(trn) >= 4:
+                prefix = trn[:4]
+                (ref_prefix_confirm if status == 'confirmed' else ref_prefix_reject)[prefix] += 1
+
+            if r['user_id']:
+                (user_confirm if status == 'confirmed' else user_reject)[r['user_id']] += 1
+            if r['module']:
+                (module_confirm if status == 'confirmed' else module_reject)[r['module']] += 1
+
+        def build(confirm: Counter, reject: Counter) -> list[dict]:
+            out = []
+            for k in set(confirm) | set(reject):
+                c = confirm[k]; rej = reject[k]
+                total = c + rej
+                if total < min_occurrences:
+                    continue
+                out.append({
+                    'key': k, 'confirmed': c, 'rejected': rej,
+                    'total': total,
+                    'confirm_rate': round(100 * c / total, 1) if total else 0,
+                })
+            out.sort(key=lambda x: (-x['confirm_rate'], -x['total']))
+            return out
+
+        return {
+            'total_decided': len(rows),
+            'narration_tokens': build(token_confirm, token_reject)[:50],
+            'ref_prefixes':     build(ref_prefix_confirm, ref_prefix_reject)[:30],
+            'user_ids':         build(user_confirm, user_reject)[:30],
+            'modules':          build(module_confirm, module_reject)[:30],
+        }
+    finally:
+        conn.close()
+
+
+@app.get("/match-patterns")
+def match_patterns_page(request: Request):
+    return templates.TemplateResponse(request, "match_patterns.html")
+
+
+# ---------------------------------------------------------------------------
+# Scheduled jobs — the "runs itself" backbone. CRUD + manual-run here; the
+# execution loop lives in scheduler.py. is_running() on /stats lets the UI
+# show the daemon's liveness.
+# ---------------------------------------------------------------------------
+
+class JobPayload(BaseModel):
+    name: str
+    job_type: str                           # scan|daily_close|sla_check|daily_breaks_report|flex_extract
+    schedule_kind: str                      # 'interval' | 'daily_at'
+    interval_minutes: int | None = None
+    daily_at_utc: str | None = None
+    params_json: str | None = None
+    enabled: int = 1
+
+
+class JobPatchPayload(BaseModel):
+    name: str | None = None
+    schedule_kind: str | None = None
+    interval_minutes: int | None = None
+    daily_at_utc: str | None = None
+    params_json: str | None = None
+    enabled: int | None = None
+
+
+@app.get("/scheduled-jobs")
+def list_scheduled_jobs(user: dict = Depends(require_role('admin'))):
+    from scheduler import is_running, compute_next_run
+    conn = get_conn()
+    try:
+        rows = [dict(r) for r in conn.execute(
+            "SELECT * FROM scheduled_jobs ORDER BY name").fetchall()]
+        for j in rows:
+            nxt = compute_next_run(j)
+            j['next_run_at_computed'] = nxt.isoformat() if nxt else None
+        return {'scheduler_running': is_running(), 'jobs': rows}
+    finally:
+        conn.close()
+
+
+@app.get("/scheduled-jobs/{job_id}/runs")
+def get_job_runs(job_id: int, limit: int = 20,
+                 user: dict = Depends(require_role('admin'))):
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT id, started_at, ended_at, status, output, duration_ms "
+            "FROM job_runs WHERE job_id=? ORDER BY id DESC LIMIT ?",
+            (job_id, max(1, min(100, limit))),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+@app.post("/scheduled-jobs")
+def create_scheduled_job(payload: JobPayload,
+                         user: dict = Depends(require_role('admin'))):
+    from scheduler import JOBS
+    if payload.job_type not in JOBS:
+        raise HTTPException(400, f"unknown job_type; valid: {list(JOBS.keys())}")
+    if payload.schedule_kind not in ('interval', 'daily_at'):
+        raise HTTPException(400, "schedule_kind must be 'interval' or 'daily_at'")
+    if payload.schedule_kind == 'interval' and not payload.interval_minutes:
+        raise HTTPException(400, "interval schedule needs interval_minutes > 0")
+    if payload.schedule_kind == 'daily_at' and not payload.daily_at_utc:
+        raise HTTPException(400, "daily_at schedule needs daily_at_utc ('HH:MM')")
+    now = datetime.utcnow().isoformat()
+    conn = get_conn()
+    try:
+        try:
+            cur = conn.execute(
+                "INSERT INTO scheduled_jobs (name, job_type, schedule_kind, "
+                "interval_minutes, daily_at_utc, params_json, enabled, "
+                "created_at, created_by) VALUES (?,?,?,?,?,?,?,?,?)",
+                (payload.name, payload.job_type, payload.schedule_kind,
+                 payload.interval_minutes, payload.daily_at_utc,
+                 payload.params_json, payload.enabled, now, user['username']),
+            )
+        except Exception as exc:
+            if 'UNIQUE' in str(exc):
+                raise HTTPException(409, f"Job named '{payload.name}' already exists.")
+            raise
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (NULL, 'scheduled_job_created', ?, ?, ?)",
+            (user['username'], now, json.dumps({
+                'job_id': cur.lastrowid, 'name': payload.name,
+                'type': payload.job_type})),
+        )
+        conn.commit()
+        return {'id': cur.lastrowid, 'name': payload.name}
+    finally:
+        conn.close()
+
+
+@app.patch("/scheduled-jobs/{job_id}")
+def update_scheduled_job(job_id: int, payload: JobPatchPayload,
+                         user: dict = Depends(require_role('admin'))):
+    conn = get_conn()
+    try:
+        existing = conn.execute(
+            "SELECT id FROM scheduled_jobs WHERE id=?", (job_id,)
+        ).fetchone()
+        if existing is None:
+            raise HTTPException(404, "job not found")
+        fields, values = [], []
+        for k in ('name', 'schedule_kind', 'interval_minutes', 'daily_at_utc',
+                  'params_json', 'enabled'):
+            v = getattr(payload, k)
+            if v is not None:
+                fields.append(f"{k}=?"); values.append(v)
+        if not fields:
+            raise HTTPException(400, "no fields to update")
+        values.append(job_id)
+        conn.execute(
+            f"UPDATE scheduled_jobs SET {', '.join(fields)} WHERE id=?", values)
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (NULL, 'scheduled_job_updated', ?, ?, ?)",
+            (user['username'], datetime.utcnow().isoformat(),
+             json.dumps({'job_id': job_id,
+                         'changes': {k: getattr(payload, k)
+                                     for k in ('name','schedule_kind','interval_minutes',
+                                               'daily_at_utc','params_json','enabled')
+                                     if getattr(payload, k) is not None}})),
+        )
+        conn.commit()
+        return dict(conn.execute(
+            "SELECT * FROM scheduled_jobs WHERE id=?", (job_id,)).fetchone())
+    finally:
+        conn.close()
+
+
+@app.post("/scheduled-jobs/{job_id}/run")
+def run_scheduled_job_now(job_id: int,
+                          user: dict = Depends(require_role('admin'))):
+    """One-shot manual invocation — runs on the request thread so the UI
+    shows the result immediately. Same code path as the daemon uses."""
+    from scheduler import run_now
+    conn = get_conn()
+    try:
+        return run_now(conn, job_id, actor=user['username'])
+    except ValueError as exc:
+        raise HTTPException(404, str(exc))
+    finally:
+        conn.close()
+
+
+@app.get("/scheduler-admin")
+def scheduler_admin_page(request: Request):
+    return templates.TemplateResponse(request, "scheduler_admin.html")
+
+
+# ---------------------------------------------------------------------------
+# Manuals — in-app documentation. Each manual is a print-ready HTML page;
+# users save as PDF via the browser print dialog. Zero external PDF
+# dependency; manuals stay version-synced with the running app because they
+# live in the templates tree and deploy with every release.
+# ---------------------------------------------------------------------------
+
+_MANUALS = [
+    ('overview', 'Product Overview & Quick Start',
+     'What Kilter is, who uses it, and a 10-minute tour.',
+     'All staff', 'overview'),
+    ('setup',    'Setup & IT Manual',
+     'Install, configure, back up, upgrade, and operate the service.',
+     'IT / Infrastructure',  'setup'),
+    ('admin',    'Admin Manual',
+     'User management, registries, scheduler, tolerance rules, SLA alerts.',
+     'Admin role',           'admin'),
+    ('user',     'Ops User Manual',
+     'Daily reconciliation workflow — scan, review, open items, certificates.',
+     'Ops role',             'ops'),
+    ('control',  'Internal Control Manual',
+     'Maker / checker / approver workflow, certificate review, segregation of duties.',
+     'Internal Control role','control'),
+    ('audit',    'Audit Manual',
+     'Activity log, break history, certificate chain of evidence, evidence export.',
+     'Audit role',           'audit'),
+    ('matching', 'Matching Engine Manual',
+     'How the engine works — tiers, reference normalization, splits, FX, carry-forward, tuning.',
+     'Admin / Analyst',      'matching'),
+    ('training', 'Training Curriculum',
+     '4-week onboarding curriculum for new ops hires — structured exercises, comprehension checks, supervisor sign-off.',
+     'New hires + supervisors', 'ops'),
+]
+
+
+def _manual_context():
+    from datetime import datetime
+    return {
+        'app_version': '1.0',
+        'generated_at': datetime.utcnow().strftime('%Y-%m-%d'),
+        'manuals': _MANUALS,
+    }
+
+
+@app.get("/manuals")
+def manuals_index(request: Request):
+    return templates.TemplateResponse(request, "manuals_index.html",
+                                       _manual_context())
+
+
+@app.get("/manuals/{slug}")
+def manual_page(request: Request, slug: str):
+    # Whitelist the slugs to prevent template traversal.
+    valid = {m[0]: m for m in _MANUALS}
+    if slug not in valid:
+        raise HTTPException(404, f"manual '{slug}' not found")
+    return templates.TemplateResponse(request, f"manual_{slug}.html",
+                                       _manual_context())
+
+
+class AccountPatchPayload(BaseModel):
+    label: str | None = None
+    shortname: str | None = None
+    access_area: str | None = None
+    bic: str | None = None
+    notes: str | None = None
+    active: int | None = None
+
+
+@app.patch("/accounts/{account_id}")
+def update_account(account_id: int, payload: AccountPatchPayload,
+                   user: dict = Depends(require_role('admin', 'ops'))):
+    """Admin and ops can reclassify an account (label, shortname, access area,
+    BIC, notes, active). Identity fields (swift_account, flex_ac_no, currency)
+    are immutable here — changing them would orphan historic sessions, so do
+    it via a migration script if truly needed."""
+    conn = get_conn()
+    try:
+        existing = conn.execute("SELECT * FROM accounts WHERE id=?", (account_id,)).fetchone()
+        if existing is None:
+            raise HTTPException(404, "Account not found")
+        if payload.bic is not None:
+            _require_registered_bic(conn, payload.bic)
+
+        fields, values = [], []
+        for k in ('label', 'shortname', 'access_area', 'bic', 'notes', 'active'):
+            v = getattr(payload, k)
+            if v is not None:
+                fields.append(f"{k}=?")
+                values.append(v)
+        if not fields:
+            raise HTTPException(400, "No fields to update")
+
+        values.append(account_id)
+        conn.execute(f"UPDATE accounts SET {', '.join(fields)} WHERE id=?", values)
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (NULL, 'account_updated', ?, ?, ?)",
+            (user['username'], datetime.utcnow().isoformat(),
+             json.dumps({"account_id": account_id,
+                         "changes": {k: getattr(payload, k)
+                                     for k in ('label','shortname','access_area','bic','notes','active')
+                                     if getattr(payload, k) is not None}})),
+        )
+        conn.commit()
+        row = conn.execute("SELECT * FROM accounts WHERE id=?", (account_id,)).fetchone()
+        return dict(row)
+    finally:
+        conn.close()
+
+
+def _require_registered_bic(conn, bic: str | None) -> None:
+    """Strict BIC enforcement: if a cash account references a BIC, that BIC
+    must exist in the banks registry as an active row. Blank/null BICs are
+    allowed — not every GL has a correspondent (e.g. internal sub-ledgers)."""
+    if not bic:
+        return
+    code = bic.strip().upper()
+    row = conn.execute(
+        "SELECT active FROM banks WHERE bic=?", (code,)
+    ).fetchone()
+    if row is None:
+        raise HTTPException(
+            400,
+            f"BIC {code} is not registered. Add it under Admin → Banks first, "
+            "or leave the BIC field blank."
+        )
+    if not row[0]:
+        raise HTTPException(
+            400,
+            f"BIC {code} is deactivated in the banks registry. Reactivate it "
+            "under Admin → Banks before assigning it to an account."
+        )
+
+
+@app.post("/accounts")
+def create_account(payload: AccountPayload, user: dict = Depends(require_role('admin'))):
+    username = user['username']
+    conn = get_conn()
+    try:
+        _require_registered_bic(conn, payload.bic)
+        now = datetime.utcnow().isoformat()
+        try:
+            cur = conn.execute(
+                "INSERT INTO accounts (label, shortname, access_area, bic, swift_account, "
+                "flex_ac_no, currency, notes, created_at, created_by) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (payload.label, payload.shortname, payload.access_area, payload.bic,
+                 payload.swift_account, payload.flex_ac_no, payload.currency,
+                 payload.notes, now, username),
+            )
+        except Exception as exc:
+            if 'UNIQUE' in str(exc):
+                raise HTTPException(409, "That SWIFT account + Flexcube GL + currency "
+                                         "combination is already registered.")
+            raise
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (NULL, 'account_created', ?, ?, ?)",
+            (username, now, json.dumps({"account_id": cur.lastrowid, "label": payload.label})),
+        )
+        conn.commit()
+        return {"id": cur.lastrowid, "label": payload.label}
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Discovered accounts — unregistered identifiers the scanner has seen
+# ---------------------------------------------------------------------------
+
+class RegisterDiscoveryPayload(BaseModel):
+    swift_account: str
+    flex_ac_no: str
+    currency: str
+    label: str
+    shortname: str | None = None
+    access_area: str | None = None
+    bic: str | None = None
+    notes: str | None = None
+
+
+@app.get("/discovered-accounts")
+def list_discovered(user: dict = Depends(require_role('admin'))):
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM discovered_accounts ORDER BY status, kind, last_seen_at DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+@app.post("/discovered-accounts/register")
+def register_discovery(payload: RegisterDiscoveryPayload,
+                       user: dict = Depends(require_role('admin'))):
+    """Register a new account from one or two pending discoveries, then
+    requeue any unregistered files that now match. The admin supplies both
+    sides even if only one was discovered — the other side may still be
+    pending, or they may know it in advance."""
+    from scanner import (MESSAGES_DIR, SWIFT_IN, FLEX_IN, UNLOADED_UNREGISTERED,
+                         _list_files, SWIFT_SUFFIXES, FLEX_SUFFIXES)
+    from swift_loader import extract_swift_meta_raw
+    from account_meta import extract_swift_meta, extract_flex_meta
+    from reconcile import load_flexcube
+    import shutil
+
+    ccy = payload.currency.strip().upper()
+    swift_acc = payload.swift_account.strip()
+    flex_acc = payload.flex_ac_no.strip()
+    if not (swift_acc and flex_acc and ccy and payload.label.strip()):
+        raise HTTPException(400, "swift_account, flex_ac_no, currency, and label are required.")
+
+    username = user['username']
+    now = datetime.utcnow().isoformat()
+    conn = get_conn()
+    try:
+        try:
+            cur = conn.execute(
+                "INSERT INTO accounts (label, shortname, access_area, bic, swift_account, "
+                "flex_ac_no, currency, notes, created_at, created_by) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (payload.label.strip(), payload.shortname, payload.access_area, payload.bic,
+                 swift_acc, flex_acc, ccy, payload.notes, now, username),
+            )
+        except Exception as exc:
+            if 'UNIQUE' in str(exc):
+                raise HTTPException(409, "That SWIFT account + Flexcube GL + currency "
+                                         "combination is already registered.")
+            raise
+        account_id = cur.lastrowid
+
+        conn.execute(
+            "UPDATE discovered_accounts SET status='registered', registered_account_id=?, "
+            "resolved_at=?, resolved_by=? "
+            "WHERE status='pending' AND ("
+            "  (kind='swift' AND identifier=? AND currency=?) OR "
+            "  (kind='flexcube' AND identifier=? AND currency=?))",
+            (account_id, now, username, swift_acc, ccy, flex_acc, ccy),
+        )
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (NULL, 'account_created', ?, ?, ?)",
+            (username, now, json.dumps({
+                "account_id": account_id, "label": payload.label,
+                "via": "discovered_accounts",
+            })),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    # Requeue files from unloaded/unregistered/ whose metadata now matches.
+    requeued = {'swift': 0, 'flexcube': 0}
+    if UNLOADED_UNREGISTERED.exists():
+        for p in list(UNLOADED_UNREGISTERED.iterdir()):
+            if not p.is_file() or p.name.startswith('~$') or p.name.startswith('.'):
+                continue
+            suffix = p.suffix.lower()
+            try:
+                if suffix == '.out':
+                    meta = extract_swift_meta_raw(p)
+                    if meta.get('account') == swift_acc and meta.get('currency') == ccy:
+                        shutil.move(str(p), str(SWIFT_IN / p.name))
+                        requeued['swift'] += 1
+                        continue
+                elif suffix in SWIFT_SUFFIXES:
+                    try:
+                        meta = extract_swift_meta(p)
+                        if meta.get('account') == swift_acc and meta.get('currency') == ccy:
+                            shutil.move(str(p), str(SWIFT_IN / p.name))
+                            requeued['swift'] += 1
+                            continue
+                    except Exception:
+                        pass
+                if suffix in FLEX_SUFFIXES:
+                    try:
+                        fmeta = extract_flex_meta(load_flexcube(p))
+                        if fmeta.get('ac_no') == flex_acc and fmeta.get('currency') == ccy:
+                            shutil.move(str(p), str(FLEX_IN / p.name))
+                            requeued['flexcube'] += 1
+                    except Exception:
+                        pass
+            except Exception:
+                continue
+
+    return {
+        "account_id": account_id,
+        "label": payload.label,
+        "requeued": requeued,
+    }
+
+
+@app.post("/discovered-accounts/{disc_id}/ignore")
+def ignore_discovery(disc_id: int, user: dict = Depends(require_role('admin'))):
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            "SELECT id, status FROM discovered_accounts WHERE id=?", (disc_id,),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(404, "Not found")
+        if row['status'] != 'pending':
+            raise HTTPException(409, f"Discovery already {row['status']}")
+        now = datetime.utcnow().isoformat()
+        conn.execute(
+            "UPDATE discovered_accounts SET status='ignored', resolved_at=?, resolved_by=? "
+            "WHERE id=?",
+            (now, user['username'], disc_id),
+        )
+        conn.commit()
+        return {"ok": True}
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+# ===========================================================================
+# Reconciliation-ledger endpoints (2026-04-22).
+#
+# These power the rolling open-items view, manual matching, break notes,
+# per-account tolerance rules, and the per-account reconciliation status
+# dashboard. Ordering here mirrors the user journey:
+#   1. List and clear open items
+#   2. Force-match two rows that the engine didn't pair
+#   3. Leave a comment on an assignment or open item
+#   4. Read/update tolerance rules and auto-categorization rules
+#   5. Read the per-account reconciliation status with aging
+# ===========================================================================
+
+# --- /open-items ------------------------------------------------------------
+
+@app.get("/open-items")
+def list_open_items(
+    account_id: int | None = None,
+    status: str = 'open',
+    category: str | None = None,
+    min_age_days: int | None = None,
+    limit: int = 500,
+    user: dict = Depends(current_user),
+    scope: list[str] | None = Depends(active_scope),
+):
+    """Rolling ledger query. Returns age_days per row so the UI can bucket
+    without another round-trip. Access-area scope applies via the account
+    join — a user viewing only BRANCH 001 HOFF won't see NOSTRO items."""
+    limit = max(1, min(limit, 2000))
+    conn = get_conn()
+    try:
+        where = ["oi.status = ?"]
+        params: list = [status]
+        if account_id is not None:
+            where.append("oi.account_id = ?"); params.append(account_id)
+        if category:
+            where.append("oi.category = ?"); params.append(category)
+        scope_sql, scope_params = _scope_clause(scope, alias='a')
+        where.append(scope_sql); params.extend(scope_params)
+        if scope:
+            # force account join to be present for scope filtering
+            where.append("a.id IS NOT NULL")
+
+        rows = conn.execute(
+            f"SELECT oi.*, a.shortname AS account_shortname, a.label AS account_label, "
+            f"       a.access_area AS account_access_area, a.currency AS account_currency "
+            f"FROM open_items oi LEFT JOIN accounts a ON a.id = oi.account_id "
+            f"WHERE {' AND '.join(where)} "
+            f"ORDER BY oi.opened_at LIMIT ?",
+            (*params, limit),
+        ).fetchall()
+
+        now = datetime.utcnow()
+        out = []
+        for r in rows:
+            age_days = _age_in_days(r['opened_at'], now)
+            if min_age_days is not None and age_days < min_age_days:
+                continue
+            item = dict(r)
+            item['age_days'] = age_days
+            item['age_bucket'] = _age_bucket(age_days)
+            out.append(item)
+        return out
+    finally:
+        conn.close()
+
+
+@app.get("/accounts/{account_id}/open-items/aging")
+def open_items_aging(account_id: int, user: dict = Depends(current_user)):
+    """Aging-bucket counts and totals for one account. Feeds the per-account
+    status dashboard — a single query instead of client-side group-by."""
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT source_side, category, amount, opened_at FROM open_items "
+            "WHERE account_id=? AND status='open'",
+            (account_id,),
+        ).fetchall()
+        now = datetime.utcnow()
+        buckets = {'0-7': 0, '8-30': 0, '31-90': 0, '90+': 0}
+        values  = {'0-7': 0.0, '8-30': 0.0, '31-90': 0.0, '90+': 0.0}
+        by_category: dict[str, dict] = {}
+        by_side = {'swift': 0, 'flex': 0}
+        for r in rows:
+            b = _age_bucket(_age_in_days(r['opened_at'], now))
+            buckets[b] += 1
+            values[b] += r['amount'] or 0
+            by_side[r['source_side']] = by_side.get(r['source_side'], 0) + 1
+            c = r['category'] or 'uncategorized'
+            by_category.setdefault(c, {'count': 0, 'value': 0.0})
+            by_category[c]['count'] += 1
+            by_category[c]['value'] += r['amount'] or 0
+        return {
+            'total_open': len(rows),
+            'buckets': buckets,
+            'bucket_values': values,
+            'by_side': by_side,
+            'by_category': by_category,
+        }
+    finally:
+        conn.close()
+
+
+class OpenItemManualClearPayload(BaseModel):
+    session_id: int
+    counterpart_row: int
+    counterpart_side: str      # 'swift' | 'flex' — row's side in that session
+    note: str | None = None
+
+
+@app.post("/open-items/{open_item_id}/clear")
+def clear_open_item(open_item_id: int,
+                    payload: OpenItemManualClearPayload,
+                    user: dict = Depends(require_role('ops', 'admin'))):
+    """Hand-pair an open_item to a row in an open session. The row on the
+    other side must exist and not already be claimed by a pending or
+    confirmed assignment — we don't silently stomp prior decisions."""
+    if payload.counterpart_side not in ('swift', 'flex'):
+        raise HTTPException(400, "counterpart_side must be 'swift' or 'flex'")
+    from open_items import clear_open_item_manually
+
+    conn = get_conn()
+    try:
+        txn_table = 'swift_txns' if payload.counterpart_side == 'swift' else 'flex_txns'
+        row_col = 'swift_row' if payload.counterpart_side == 'swift' else 'flex_row'
+        exists = conn.execute(
+            f"SELECT 1 FROM {txn_table} WHERE session_id=? AND row_number=?",
+            (payload.session_id, payload.counterpart_row),
+        ).fetchone()
+        if exists is None:
+            raise HTTPException(404, f"No {payload.counterpart_side} row "
+                                     f"{payload.counterpart_row} in session {payload.session_id}")
+        claimed = conn.execute(
+            f"SELECT status FROM assignments WHERE session_id=? AND {row_col}=? "
+            f"AND status != 'rejected'",
+            (payload.session_id, payload.counterpart_row),
+        ).fetchone()
+        if claimed:
+            raise HTTPException(409,
+                f"That row is already on a {claimed['status']} assignment. "
+                "Reject the existing assignment first if you want to re-pair.")
+        try:
+            assignment_id = clear_open_item_manually(
+                conn, open_item_id, payload.session_id,
+                payload.counterpart_row, payload.counterpart_side,
+                user['username'], payload.note,
+            )
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+        conn.commit()
+        return {"assignment_id": assignment_id, "open_item_id": open_item_id,
+                "status": "cleared"}
+    finally:
+        conn.close()
+
+
+class OpenItemWriteOffPayload(BaseModel):
+    reason: str
+
+
+@app.post("/open-items/{open_item_id}/write-off")
+def write_off_open_item_endpoint(open_item_id: int,
+                                  payload: OpenItemWriteOffPayload,
+                                  user: dict = Depends(require_role('admin', 'internal_control'))):
+    """Terminal state. Only admin or internal_control can write off — it's
+    an accounting decision, not routine ops."""
+    from open_items import write_off_open_item
+    if not (payload.reason or '').strip():
+        raise HTTPException(400, "reason is required for a write-off")
+    conn = get_conn()
+    try:
+        try:
+            write_off_open_item(conn, open_item_id, user['username'], payload.reason.strip())
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+        conn.commit()
+        return {"open_item_id": open_item_id, "status": "written_off"}
+    finally:
+        conn.close()
+
+
+class OpenItemCategoryPayload(BaseModel):
+    category: str
+
+
+@app.patch("/open-items/{open_item_id}/category")
+def set_open_item_category(open_item_id: int,
+                           payload: OpenItemCategoryPayload,
+                           user: dict = Depends(require_role('ops', 'admin'))):
+    """Manual override of the auto-category. Audit-logged so we can tell a
+    rule-assigned category from a human-assigned one later."""
+    from db import BREAK_CATEGORIES
+    if payload.category not in BREAK_CATEGORIES:
+        raise HTTPException(400, f"category must be one of {BREAK_CATEGORIES}")
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT id, category FROM open_items WHERE id=?",
+                           (open_item_id,)).fetchone()
+        if row is None:
+            raise HTTPException(404, "open_item not found")
+        now = datetime.utcnow().isoformat()
+        conn.execute(
+            "UPDATE open_items SET category=?, category_source='manual', "
+            "category_rule_id=NULL WHERE id=?",
+            (payload.category, open_item_id),
+        )
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (NULL, 'open_item_recategorized', ?, ?, ?)",
+            (user['username'], now, json.dumps({
+                'open_item_id': open_item_id,
+                'from': row['category'], 'to': payload.category,
+            })),
+        )
+        conn.commit()
+        return {"open_item_id": open_item_id, "category": payload.category}
+    finally:
+        conn.close()
+
+
+# --- /sessions/{id}/manual-match -------------------------------------------
+
+class ManualMatchPayload(BaseModel):
+    swift_row: int
+    flex_row: int
+    reason: str | None = None
+
+
+@app.post("/sessions/{session_id}/manual-match")
+def manual_match(session_id: int, payload: ManualMatchPayload,
+                 user: dict = Depends(require_role('ops', 'admin'))):
+    """Force-pair two rows the engine rejected. Creates a confirmed
+    assignment with source='manual'. Refuses if either row is already on
+    a non-rejected assignment — the analyst must reject the existing one
+    first so the audit trail shows the re-pairing."""
+    conn = get_conn()
+    try:
+        s = conn.execute(
+            "SELECT row_number, sign, amount FROM swift_txns WHERE session_id=? AND row_number=?",
+            (session_id, payload.swift_row),
+        ).fetchone()
+        if s is None:
+            raise HTTPException(404, f"SWIFT row {payload.swift_row} not in session {session_id}")
+        f = conn.execute(
+            "SELECT row_number, type, amount FROM flex_txns WHERE session_id=? AND row_number=?",
+            (session_id, payload.flex_row),
+        ).fetchone()
+        if f is None:
+            raise HTTPException(404, f"Flex row {payload.flex_row} not in session {session_id}")
+
+        blocker_s = conn.execute(
+            "SELECT id, status FROM assignments WHERE session_id=? AND swift_row=? "
+            "AND status != 'rejected'",
+            (session_id, payload.swift_row),
+        ).fetchone()
+        blocker_f = conn.execute(
+            "SELECT id, status FROM assignments WHERE session_id=? AND flex_row=? "
+            "AND status != 'rejected'",
+            (session_id, payload.flex_row),
+        ).fetchone()
+        if blocker_s:
+            raise HTTPException(409,
+                f"SWIFT row {payload.swift_row} already on a {blocker_s['status']} "
+                f"assignment (id {blocker_s['id']}). Reject it first.")
+        if blocker_f:
+            raise HTTPException(409,
+                f"Flex row {payload.flex_row} already on a {blocker_f['status']} "
+                f"assignment (id {blocker_f['id']}). Reject it first.")
+
+        now = datetime.utcnow().isoformat()
+        amount_diff = (f['amount'] or 0) - (s['amount'] or 0)
+        reason = f"manual force-match by {user['username']}"
+        if payload.reason:
+            reason += f" — {payload.reason}"
+        cur = conn.execute(
+            "INSERT INTO assignments (session_id, swift_row, flex_row, tier, reason, "
+            "amount_diff, status, decided_by, decided_at, source, manual_reason) "
+            "VALUES (?,?,?,?,?,?, 'confirmed', ?, ?, 'manual', ?)",
+            (session_id, payload.swift_row, payload.flex_row, 0, reason, amount_diff,
+             user['username'], now, payload.reason),
+        )
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (?, 'manual_match', ?, ?, ?)",
+            (session_id, user['username'], now, json.dumps({
+                'assignment_id': cur.lastrowid,
+                'swift_row': payload.swift_row, 'flex_row': payload.flex_row,
+                'amount_diff': amount_diff, 'reason': payload.reason,
+            })),
+        )
+        conn.commit()
+        return {"assignment_id": cur.lastrowid, "status": "confirmed", "source": "manual"}
+    finally:
+        conn.close()
+
+
+# --- /sessions/{id}/manual-split -------------------------------------------
+# Analyst-driven split match: user picks one row on one side and N rows on
+# the opposite side. All rows get one assignment row each, sharing a
+# split_group_id, confirmed with source='manual_split'. Refuses if any
+# input row is already on a non-rejected assignment.
+
+class ManualSplitPayload(BaseModel):
+    swift_rows: list[int]
+    flex_rows: list[int]
+    reason: str | None = None
+
+
+@app.post("/sessions/{session_id}/manual-split")
+def manual_split(session_id: int, payload: ManualSplitPayload,
+                 user: dict = Depends(require_role('ops', 'admin'))):
+    import uuid
+    if not payload.swift_rows or not payload.flex_rows:
+        raise HTTPException(400, "provide at least one row on each side")
+    one_side_swift = len(payload.swift_rows) == 1
+    one_side_flex  = len(payload.flex_rows) == 1
+    if not (one_side_swift ^ one_side_flex):
+        raise HTTPException(
+            400, "exactly one side must have a single row (the other N rows)")
+
+    conn = get_conn()
+    try:
+        # Validate all rows exist + none are already matched.
+        for sr in payload.swift_rows:
+            r = conn.execute(
+                "SELECT amount FROM swift_txns WHERE session_id=? AND row_number=?",
+                (session_id, sr),
+            ).fetchone()
+            if r is None:
+                raise HTTPException(404, f"SWIFT row {sr} not in session {session_id}")
+            blocker = conn.execute(
+                "SELECT id, status FROM assignments WHERE session_id=? AND swift_row=? "
+                "AND status != 'rejected'", (session_id, sr),
+            ).fetchone()
+            if blocker:
+                raise HTTPException(
+                    409, f"SWIFT row {sr} already on a {blocker['status']} assignment. "
+                    f"Reject it first.")
+        for fr in payload.flex_rows:
+            r = conn.execute(
+                "SELECT amount FROM flex_txns WHERE session_id=? AND row_number=?",
+                (session_id, fr),
+            ).fetchone()
+            if r is None:
+                raise HTTPException(404, f"Flex row {fr} not in session {session_id}")
+            blocker = conn.execute(
+                "SELECT id, status FROM assignments WHERE session_id=? AND flex_row=? "
+                "AND status != 'rejected'", (session_id, fr),
+            ).fetchone()
+            if blocker:
+                raise HTTPException(
+                    409, f"Flex row {fr} already on a {blocker['status']} assignment. "
+                    f"Reject it first.")
+
+        swift_total = sum(conn.execute(
+            "SELECT amount FROM swift_txns WHERE session_id=? AND row_number=?",
+            (session_id, sr)).fetchone()[0] or 0 for sr in payload.swift_rows)
+        flex_total  = sum(conn.execute(
+            "SELECT amount FROM flex_txns WHERE session_id=? AND row_number=?",
+            (session_id, fr)).fetchone()[0] or 0 for fr in payload.flex_rows)
+        amount_diff = flex_total - swift_total
+
+        now = datetime.utcnow().isoformat()
+        grp = uuid.uuid4().hex[:12]
+        reason = (f"manual split by {user['username']}: "
+                  f"{len(payload.swift_rows)} SWIFT vs {len(payload.flex_rows)} Flex")
+        if payload.reason:
+            reason += f" — {payload.reason}"
+
+        assignment_ids = []
+        if one_side_swift:
+            sw = payload.swift_rows[0]
+            per_row_diff = amount_diff / len(payload.flex_rows)
+            for fr in payload.flex_rows:
+                cur = conn.execute(
+                    "INSERT INTO assignments (session_id, swift_row, flex_row, tier, "
+                    "reason, amount_diff, status, decided_by, decided_at, source, "
+                    "manual_reason, split_group_id) "
+                    "VALUES (?,?,?,?,?,?, 'confirmed', ?, ?, 'manual_split', ?, ?)",
+                    (session_id, sw, fr, 5, reason, per_row_diff,
+                     user['username'], now, payload.reason, grp),
+                )
+                assignment_ids.append(cur.lastrowid)
+        else:
+            fr = payload.flex_rows[0]
+            per_row_diff = amount_diff / len(payload.swift_rows)
+            for sw in payload.swift_rows:
+                cur = conn.execute(
+                    "INSERT INTO assignments (session_id, swift_row, flex_row, tier, "
+                    "reason, amount_diff, status, decided_by, decided_at, source, "
+                    "manual_reason, split_group_id) "
+                    "VALUES (?,?,?,?,?,?, 'confirmed', ?, ?, 'manual_split', ?, ?)",
+                    (session_id, sw, fr, 5, reason, per_row_diff,
+                     user['username'], now, payload.reason, grp),
+                )
+                assignment_ids.append(cur.lastrowid)
+
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (?, 'manual_split', ?, ?, ?)",
+            (session_id, user['username'], now, json.dumps({
+                'split_group_id': grp, 'swift_rows': payload.swift_rows,
+                'flex_rows': payload.flex_rows, 'amount_diff': amount_diff,
+                'assignment_ids': assignment_ids, 'reason': payload.reason})),
+        )
+        conn.commit()
+        return {
+            'split_group_id': grp,
+            'assignment_ids': assignment_ids,
+            'amount_diff': amount_diff,
+            'status': 'confirmed',
+        }
+    finally:
+        conn.close()
+
+
+# --- /comments (break notes) -----------------------------------------------
+
+class CommentPayload(BaseModel):
+    target_type: str        # 'assignment' | 'open_item'
+    target_id: int
+    session_id: int | None = None
+    body: str
+
+
+@app.post("/comments")
+def add_comment(payload: CommentPayload,
+                user: dict = Depends(require_role('ops', 'admin', 'internal_control'))):
+    """Free-text note against an assignment or an open_item. No edit/delete
+    — an audit trail that allows edits isn't an audit trail."""
+    if payload.target_type not in ('assignment', 'open_item'):
+        raise HTTPException(400, "target_type must be 'assignment' or 'open_item'")
+    body = (payload.body or '').strip()
+    if not body:
+        raise HTTPException(400, "body must not be empty")
+    if len(body) > 4000:
+        raise HTTPException(400, "body must be 4000 characters or fewer")
+    conn = get_conn()
+    try:
+        # Verify the target exists — prevents orphan comments if an id is fat-fingered.
+        if payload.target_type == 'assignment':
+            exists = conn.execute("SELECT id FROM assignments WHERE id=?",
+                                  (payload.target_id,)).fetchone()
+        else:
+            exists = conn.execute("SELECT id FROM open_items WHERE id=?",
+                                  (payload.target_id,)).fetchone()
+        if exists is None:
+            raise HTTPException(404, f"{payload.target_type} {payload.target_id} not found")
+
+        now = datetime.utcnow().isoformat()
+        cur = conn.execute(
+            "INSERT INTO break_comments (target_type, target_id, session_id, author, "
+            "created_at, body) VALUES (?,?,?,?,?,?)",
+            (payload.target_type, payload.target_id, payload.session_id,
+             user['username'], now, body),
+        )
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (?, 'comment_added', ?, ?, ?)",
+            (payload.session_id, user['username'], now, json.dumps({
+                'comment_id': cur.lastrowid, 'target_type': payload.target_type,
+                'target_id': payload.target_id,
+            })),
+        )
+        conn.commit()
+        return {"id": cur.lastrowid, "created_at": now}
+    finally:
+        conn.close()
+
+
+@app.get("/comments")
+def list_comments(target_type: str, target_id: int,
+                  user: dict = Depends(current_user)):
+    """Fetch comments for a single target in chronological order."""
+    if target_type not in ('assignment', 'open_item'):
+        raise HTTPException(400, "target_type must be 'assignment' or 'open_item'")
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT id, author, created_at, body, session_id "
+            "FROM break_comments WHERE target_type=? AND target_id=? ORDER BY id",
+            (target_type, target_id),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+# --- /accounts/{id}/tolerance ----------------------------------------------
+
+class TolerancePayload(BaseModel):
+    amount_tol_abs: float
+    amount_tol_pct: float
+    date_tol_days: int
+    min_ref_len: int
+
+
+@app.get("/accounts/{account_id}/tolerance")
+def get_tolerance(account_id: int, user: dict = Depends(current_user)):
+    """Everyone can read the current rule so analysts understand why a
+    match did or didn't land. Edits are admin-only (PUT)."""
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            "SELECT amount_tol_abs, amount_tol_pct, date_tol_days, min_ref_len, "
+            "       updated_at, updated_by "
+            "FROM tolerance_rules WHERE account_id=?",
+            (account_id,),
+        ).fetchone()
+        if row is None:
+            # Return the defaults so the UI has something to render.
+            return {
+                "account_id": account_id,
+                "amount_tol_abs": 0.01, "amount_tol_pct": 0.0,
+                "date_tol_days": 1, "min_ref_len": 6,
+                "updated_at": None, "updated_by": None, "is_default": True,
+            }
+        return {"account_id": account_id, **dict(row), "is_default": False}
+    finally:
+        conn.close()
+
+
+@app.put("/accounts/{account_id}/tolerance")
+def put_tolerance(account_id: int, payload: TolerancePayload,
+                  user: dict = Depends(require_role('admin'))):
+    """Admin-only. Every change is audit-logged — loose tolerances hide
+    errors, so who-changed-what matters."""
+    if payload.amount_tol_abs < 0:
+        raise HTTPException(400, "amount_tol_abs must be >= 0")
+    if payload.amount_tol_pct < 0 or payload.amount_tol_pct > 10:
+        raise HTTPException(400, "amount_tol_pct must be between 0 and 10 (percent)")
+    if payload.date_tol_days < 0 or payload.date_tol_days > 30:
+        raise HTTPException(400, "date_tol_days must be between 0 and 30")
+    if payload.min_ref_len < 3 or payload.min_ref_len > 32:
+        raise HTTPException(400, "min_ref_len must be between 3 and 32")
+    conn = get_conn()
+    try:
+        exists = conn.execute("SELECT id FROM accounts WHERE id=?",
+                              (account_id,)).fetchone()
+        if exists is None:
+            raise HTTPException(404, "Account not found")
+        now = datetime.utcnow().isoformat()
+        prior = conn.execute(
+            "SELECT amount_tol_abs, amount_tol_pct, date_tol_days, min_ref_len "
+            "FROM tolerance_rules WHERE account_id=?", (account_id,),
+        ).fetchone()
+        conn.execute(
+            "INSERT INTO tolerance_rules (account_id, amount_tol_abs, amount_tol_pct, "
+            "date_tol_days, min_ref_len, updated_at, updated_by) "
+            "VALUES (?,?,?,?,?,?,?) "
+            "ON CONFLICT(account_id) DO UPDATE SET "
+            "  amount_tol_abs=excluded.amount_tol_abs, "
+            "  amount_tol_pct=excluded.amount_tol_pct, "
+            "  date_tol_days=excluded.date_tol_days, "
+            "  min_ref_len=excluded.min_ref_len, "
+            "  updated_at=excluded.updated_at, updated_by=excluded.updated_by",
+            (account_id, payload.amount_tol_abs, payload.amount_tol_pct,
+             payload.date_tol_days, payload.min_ref_len, now, user['username']),
+        )
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (NULL, 'tolerance_updated', ?, ?, ?)",
+            (user['username'], now, json.dumps({
+                'account_id': account_id,
+                'prior': dict(prior) if prior else None,
+                'new': payload.model_dump(),
+            })),
+        )
+        conn.commit()
+        return {"account_id": account_id, **payload.model_dump(),
+                "updated_at": now, "updated_by": user['username']}
+    finally:
+        conn.close()
+
+
+# --- /auto-cat-rules --------------------------------------------------------
+
+class AutoCatRulePayload(BaseModel):
+    name: str
+    priority: int = 100
+    side: str | None = None              # 'swift' | 'flex' | null
+    narration_contains: str | None = None
+    type_equals: str | None = None
+    amount_min: float | None = None
+    amount_max: float | None = None
+    category: str
+    active: bool = True
+
+
+@app.get("/auto-cat-rules")
+def list_auto_cat_rules(user: dict = Depends(current_user)):
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM auto_categorization_rules ORDER BY priority, id"
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+@app.post("/auto-cat-rules")
+def create_auto_cat_rule(payload: AutoCatRulePayload,
+                         user: dict = Depends(require_role('admin'))):
+    from db import BREAK_CATEGORIES
+    if payload.category not in BREAK_CATEGORIES:
+        raise HTTPException(400, f"category must be one of {BREAK_CATEGORIES}")
+    if payload.side and payload.side not in ('swift', 'flex'):
+        raise HTTPException(400, "side must be 'swift', 'flex', or null")
+    now = datetime.utcnow().isoformat()
+    conn = get_conn()
+    try:
+        cur = conn.execute(
+            "INSERT INTO auto_categorization_rules (name, priority, side, "
+            "narration_contains, type_equals, amount_min, amount_max, category, "
+            "active, created_at, created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (payload.name, payload.priority, payload.side, payload.narration_contains,
+             payload.type_equals, payload.amount_min, payload.amount_max,
+             payload.category, 1 if payload.active else 0, now, user['username']),
+        )
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (NULL, 'auto_cat_rule_created', ?, ?, ?)",
+            (user['username'], now, json.dumps({
+                'rule_id': cur.lastrowid, **payload.model_dump(),
+            })),
+        )
+        conn.commit()
+        return {"id": cur.lastrowid}
+    finally:
+        conn.close()
+
+
+class AutoGroupingRulePayload(BaseModel):
+    name: str
+    priority: int = 100
+    side: str | None = None
+    narration_contains: str | None = None
+    ref_contains: str | None = None
+    type_equals: str | None = None
+    amount_min: float | None = None
+    amount_max: float | None = None
+    functional_group: str
+    active: bool = True
+
+
+@app.get("/grouping-rules")
+def list_grouping_rules(user: dict = Depends(current_user)):
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM auto_grouping_rules ORDER BY priority, id"
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+@app.post("/grouping-rules")
+def create_grouping_rule(payload: AutoGroupingRulePayload,
+                         user: dict = Depends(require_role('admin'))):
+    from db import FUNCTIONAL_GROUPS
+    if payload.functional_group not in FUNCTIONAL_GROUPS:
+        # Allow arbitrary strings — ops may define new teams — but warn.
+        pass
+    if payload.side and payload.side not in ('swift', 'flex'):
+        raise HTTPException(400, "side must be 'swift', 'flex', or null")
+    now = datetime.utcnow().isoformat()
+    conn = get_conn()
+    try:
+        cur = conn.execute(
+            "INSERT INTO auto_grouping_rules (name, priority, side, "
+            "narration_contains, ref_contains, type_equals, amount_min, amount_max, "
+            "functional_group, active, created_at, created_by) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (payload.name, payload.priority, payload.side,
+             payload.narration_contains, payload.ref_contains, payload.type_equals,
+             payload.amount_min, payload.amount_max, payload.functional_group,
+             1 if payload.active else 0, now, user['username']),
+        )
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (NULL, 'grouping_rule_created', ?, ?, ?)",
+            (user['username'], now, json.dumps({
+                'rule_id': cur.lastrowid, **payload.model_dump()})),
+        )
+        conn.commit()
+        return {"id": cur.lastrowid}
+    finally:
+        conn.close()
+
+
+# Alias so the match-patterns promote modal can POST to a stable URL that
+# reads as "create a categorization rule" instead of the abbreviated
+# auto-cat-rules path.
+@app.post("/categorization-rules")
+def create_categorization_rule(payload: AutoCatRulePayload,
+                                user: dict = Depends(require_role('admin'))):
+    return create_auto_cat_rule(payload, user)
+
+
+@app.delete("/auto-cat-rules/{rule_id}")
+def deactivate_auto_cat_rule(rule_id: int,
+                              user: dict = Depends(require_role('admin'))):
+    """Soft delete — we retain rule rows so historic open_items.category_rule_id
+    points at something auditable. Flipping active=0 is enough to stop its
+    use on future classifications."""
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT id, active FROM auto_categorization_rules WHERE id=?",
+                           (rule_id,)).fetchone()
+        if row is None:
+            raise HTTPException(404, "Rule not found")
+        if not row['active']:
+            return {"id": rule_id, "active": False}
+        conn.execute(
+            "UPDATE auto_categorization_rules SET active=0 WHERE id=?", (rule_id,),
+        )
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (NULL, 'auto_cat_rule_deactivated', ?, ?, ?)",
+            (user['username'], datetime.utcnow().isoformat(),
+             json.dumps({'rule_id': rule_id})),
+        )
+        conn.commit()
+        return {"id": rule_id, "active": False}
+    finally:
+        conn.close()
+
+
+# --- /accounts/{id}/status --------------------------------------------------
+
+@app.get("/accounts/{account_id}/status")
+def account_recon_status(account_id: int, user: dict = Depends(current_user)):
+    """Per-account reconciliation dashboard. Gathers: match rate, last
+    reconciled session, open item counts & aging, and category breakdown.
+    Single endpoint so the status page is one round-trip."""
+    conn = get_conn()
+    try:
+        acc = conn.execute(
+            "SELECT id, label, shortname, access_area, bic, swift_account, "
+            "       flex_ac_no, currency, notes, active "
+            "FROM accounts WHERE id=?", (account_id,),
+        ).fetchone()
+        if acc is None:
+            raise HTTPException(404, "Account not found")
+
+        last_sess = conn.execute(
+            "SELECT id, created_at, swift_filename, flex_filename, "
+            "       closing_balance_amount, closing_balance_sign, closing_balance_date "
+            "FROM sessions WHERE account_id=? ORDER BY id DESC LIMIT 1",
+            (account_id,),
+        ).fetchone()
+
+        # Cumulative match rate across all sessions for this account.
+        totals = conn.execute(
+            "SELECT "
+            "  (SELECT COUNT(*) FROM swift_txns st JOIN sessions s ON s.id=st.session_id "
+            "   WHERE s.account_id=?) AS swift_total, "
+            "  (SELECT COUNT(*) FROM flex_txns ft JOIN sessions s ON s.id=ft.session_id "
+            "   WHERE s.account_id=?) AS flex_total, "
+            "  (SELECT COUNT(*) FROM assignments a JOIN sessions s ON s.id=a.session_id "
+            "   WHERE s.account_id=? AND a.status='confirmed') AS confirmed",
+            (account_id, account_id, account_id),
+        ).fetchone()
+
+        aging_rows = conn.execute(
+            "SELECT source_side, category, amount, opened_at FROM open_items "
+            "WHERE account_id=? AND status='open'", (account_id,),
+        ).fetchall()
+        now = datetime.utcnow()
+        buckets = {'0-7': 0, '8-30': 0, '31-90': 0, '90+': 0}
+        values  = {'0-7': 0.0, '8-30': 0.0, '31-90': 0.0, '90+': 0.0}
+        by_category: dict[str, dict] = {}
+        oldest = None
+        for r in aging_rows:
+            age = _age_in_days(r['opened_at'], now)
+            b = _age_bucket(age)
+            buckets[b] += 1
+            values[b] += r['amount'] or 0
+            c = r['category'] or 'uncategorized'
+            by_category.setdefault(c, {'count': 0, 'value': 0.0})
+            by_category[c]['count'] += 1
+            by_category[c]['value'] += r['amount'] or 0
+            if oldest is None or age > oldest:
+                oldest = age
+
+        writ = conn.execute(
+            "SELECT COUNT(*) FROM open_items WHERE account_id=? AND status='written_off'",
+            (account_id,),
+        ).fetchone()[0]
+        cleared = conn.execute(
+            "SELECT COUNT(*) FROM open_items WHERE account_id=? AND status='cleared'",
+            (account_id,),
+        ).fetchone()[0]
+
+        swift_total = totals['swift_total'] or 0
+        confirmed = totals['confirmed'] or 0
+        match_rate = (confirmed / swift_total * 100.0) if swift_total else 0.0
+
+        return {
+            "account": dict(acc),
+            "last_session": dict(last_sess) if last_sess else None,
+            "totals": {
+                "swift_total": swift_total,
+                "flex_total": totals['flex_total'] or 0,
+                "confirmed": confirmed,
+                "match_rate_pct": round(match_rate, 1),
+            },
+            "open_items": {
+                "count": len(aging_rows),
+                "oldest_days": oldest,
+                "buckets": buckets,
+                "bucket_values": values,
+                "by_category": by_category,
+                "cleared_historic": cleared,
+                "written_off": writ,
+            },
+        }
+    finally:
+        conn.close()
+
+
+# --- helpers (aging) -------------------------------------------------------
+
+def _age_in_days(opened_at_iso: str, now: datetime) -> int:
+    try:
+        opened = datetime.fromisoformat(opened_at_iso)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, (now - opened).days)
+
+
+def _age_bucket(age_days: int) -> str:
+    if age_days <= 7:
+        return '0-7'
+    if age_days <= 30:
+        return '8-30'
+    if age_days <= 90:
+        return '31-90'
+    return '90+'
+
+
+# --- rendered pages --------------------------------------------------------
+
+@app.get("/open-items-view")
+def open_items_page(request: Request):
+    return templates.TemplateResponse(request, "open_items.html")
+
+
+@app.get("/accounts/{account_id}/status-page")
+def account_status_page(request: Request, account_id: int):
+    return templates.TemplateResponse(request, "account_status.html",
+                                      {"account_id": account_id})
+
+
+@app.get("/tolerance-admin")
+def tolerance_admin_page(request: Request):
+    return templates.TemplateResponse(request, "tolerance_admin.html")
+
+
+# ===========================================================================
+# Reports endpoints (2026-04-22).
+#
+# Cross-session / cross-account views for pulling archived data. The
+# per-account status page and the review page handle single-session drill-in;
+# these endpoints answer "what happened across the fleet over time?"
+#
+# Every endpoint supports ?format=csv — the audit team exports these
+# straight into spreadsheets, so raw-data export is a first-class feature.
+# ===========================================================================
+
+def _parse_ymd(s: str | None) -> str | None:
+    """Accept YYYY-MM-DD, return ISO start-of-day string, or None."""
+    if not s:
+        return None
+    try:
+        dt = datetime.strptime(s.strip(), '%Y-%m-%d')
+        return dt.isoformat()
+    except ValueError:
+        raise HTTPException(400, f"Invalid date '{s}'. Use YYYY-MM-DD.")
+
+
+def _parse_ymd_end(s: str | None) -> str | None:
+    """Same as _parse_ymd but anchored to 23:59:59 so a single-day filter
+    includes everything on that day."""
+    if not s:
+        return None
+    try:
+        dt = datetime.strptime(s.strip(), '%Y-%m-%d')
+        return dt.replace(hour=23, minute=59, second=59).isoformat()
+    except ValueError:
+        raise HTTPException(400, f"Invalid date '{s}'. Use YYYY-MM-DD.")
+
+
+def _csv_response(rows: list[list], headers: list[str], filename: str) -> StreamingResponse:
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(headers)
+    for r in rows:
+        w.writerow(r)
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type='text/csv',
+        headers={'Content-Disposition': f'attachment; filename="{filename}"'},
+    )
+
+
+# --- Report #1: Archived sessions ------------------------------------------
+
+@app.get("/reports/sessions")
+def report_sessions(
+    account_id: int | None = None,
+    from_date: str | None = None,      # created_at >= YYYY-MM-DD
+    to_date: str | None = None,        # created_at <= YYYY-MM-DD 23:59:59
+    account_label: str | None = None,  # substring, case-insensitive
+    status: str | None = None,         # 'open' | 'closed'
+    format: str = 'json',
+    user: dict = Depends(current_user),
+    scope: list[str] | None = Depends(active_scope),
+):
+    """Archived sessions, filterable and ready to re-download. Scoped by
+    access area so a BRANCH 001 analyst doesn't see NOSTRO reconciliations."""
+    conn = get_conn()
+    try:
+        where = ["1=1"]
+        params: list = []
+        if account_id is not None:
+            where.append("s.account_id = ?"); params.append(account_id)
+        from_iso = _parse_ymd(from_date)
+        to_iso = _parse_ymd_end(to_date)
+        if from_iso:
+            where.append("s.created_at >= ?"); params.append(from_iso)
+        if to_iso:
+            where.append("s.created_at <= ?"); params.append(to_iso)
+        if account_label:
+            where.append("LOWER(COALESCE(a.label, '')) LIKE ?")
+            params.append(f"%{account_label.lower()}%")
+        if status == 'closed':
+            where.append("s.closed_at IS NOT NULL")
+        elif status == 'open':
+            where.append("s.closed_at IS NULL")
+        scope_sql, scope_params = _scope_clause(scope, alias='a')
+        where.append(scope_sql); params.extend(scope_params)
+        if scope:
+            where.append("a.id IS NOT NULL")
+
+        rows = conn.execute(
+            f"SELECT s.id, s.created_at, s.created_by, s.swift_filename, s.flex_filename, "
+            f"       s.swift_account, s.flex_ac_no, s.swift_currency, s.flex_currency, "
+            f"       s.account_label, s.closed_at, s.closed_by, "
+            f"       s.opening_balance_amount, s.closing_balance_amount, "
+            f"       s.open_items_seeded, s.open_items_cleared, "
+            f"       a.shortname AS account_shortname, a.access_area, a.id AS account_id, "
+            f"       (SELECT COUNT(*) FROM assignments WHERE session_id=s.id AND status='pending')   AS pending, "
+            f"       (SELECT COUNT(*) FROM assignments WHERE session_id=s.id AND status='confirmed') AS confirmed, "
+            f"       (SELECT COUNT(*) FROM assignments WHERE session_id=s.id AND status='rejected')  AS rejected, "
+            f"       (SELECT COUNT(*) FROM swift_txns   WHERE session_id=s.id) AS swift_total, "
+            f"       (SELECT COUNT(*) FROM flex_txns    WHERE session_id=s.id) AS flex_total "
+            f"FROM sessions s LEFT JOIN accounts a ON a.id = s.account_id "
+            f"WHERE {' AND '.join(where)} "
+            f"ORDER BY s.id DESC LIMIT 2000",
+            params,
+        ).fetchall()
+
+        out = []
+        for r in rows:
+            d = dict(r)
+            t = (d['confirmed'] or 0) + (d['pending'] or 0) + (d['rejected'] or 0)
+            d['match_rate_pct'] = round((d['confirmed'] or 0) / t * 100.0, 1) if t else 0.0
+            out.append(d)
+
+        if format == 'csv':
+            headers = ['session_id', 'created_at', 'created_by', 'account',
+                       'access_area', 'currency', 'swift_total', 'flex_total',
+                       'confirmed', 'pending', 'rejected', 'match_rate_pct',
+                       'open_items_seeded', 'open_items_cleared',
+                       'opening_balance', 'closing_balance', 'closed_at']
+            data = [
+                [r['id'], r['created_at'], r['created_by'],
+                 r['account_shortname'] or r['account_label'] or '',
+                 r['access_area'] or '', r['swift_currency'] or r['flex_currency'] or '',
+                 r['swift_total'], r['flex_total'], r['confirmed'], r['pending'],
+                 r['rejected'], r['match_rate_pct'], r['open_items_seeded'] or 0,
+                 r['open_items_cleared'] or 0, r['opening_balance_amount'] or '',
+                 r['closing_balance_amount'] or '', r['closed_at'] or '']
+                for r in out
+            ]
+            return _csv_response(data, headers,
+                f"kilter_sessions_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv")
+        return out
+    finally:
+        conn.close()
+
+
+# --- Report #3: Cleared & written-off items (archive of the ledger) --------
+
+@app.get("/reports/cleared-items")
+def report_cleared_items(
+    account_id: int | None = None,
+    from_date: str | None = None,       # cleared_at >= ...
+    to_date: str | None = None,
+    category: str | None = None,
+    outcome: str | None = None,         # 'cleared' | 'written_off' | null = both
+    format: str = 'json',
+    user: dict = Depends(current_user),
+    scope: list[str] | None = Depends(active_scope),
+):
+    """The archive side of the rolling ledger: everything that *used* to
+    be an open item and has since been resolved. Essential for audit trails
+    — proves a break was closed, by whom, via which mechanism."""
+    conn = get_conn()
+    try:
+        where = ["oi.status IN ('cleared', 'written_off')"]
+        params: list = []
+        if account_id is not None:
+            where.append("oi.account_id = ?"); params.append(account_id)
+        if outcome == 'cleared':
+            where.append("oi.status = 'cleared'")
+        elif outcome == 'written_off':
+            where.append("oi.status = 'written_off'")
+        if category:
+            where.append("oi.category = ?"); params.append(category)
+        from_iso = _parse_ymd(from_date)
+        to_iso = _parse_ymd_end(to_date)
+        if from_iso:
+            where.append("oi.cleared_at >= ?"); params.append(from_iso)
+        if to_iso:
+            where.append("oi.cleared_at <= ?"); params.append(to_iso)
+        scope_sql, scope_params = _scope_clause(scope, alias='a')
+        where.append(scope_sql); params.extend(scope_params)
+        if scope:
+            where.append("a.id IS NOT NULL")
+
+        rows = conn.execute(
+            f"SELECT oi.*, a.label AS account_label, a.shortname AS account_shortname, "
+            f"       a.access_area, a.currency AS account_currency "
+            f"FROM open_items oi LEFT JOIN accounts a ON a.id = oi.account_id "
+            f"WHERE {' AND '.join(where)} "
+            f"ORDER BY oi.cleared_at DESC LIMIT 5000",
+            params,
+        ).fetchall()
+        out = [dict(r) for r in rows]
+
+        if format == 'csv':
+            headers = ['open_item_id', 'account', 'access_area', 'currency',
+                       'source_side', 'value_date', 'amount', 'sign', 'ref',
+                       'narration', 'category', 'category_source', 'status',
+                       'opened_at', 'cleared_at', 'cleared_by', 'cleared_via',
+                       'cleared_session_id', 'cleared_assignment_id',
+                       'write_off_reason', 'src_session_id', 'src_row_number']
+            data = [
+                [r['id'], r['account_shortname'] or r['account_label'] or '',
+                 r['access_area'] or '', r['account_currency'] or '',
+                 r['source_side'], r['value_date'] or '', r['amount'],
+                 r['sign'] or '', r['ref'] or '', r['narration'] or '',
+                 r['category'] or '', r['category_source'] or '', r['status'],
+                 r['opened_at'], r['cleared_at'] or '', r['cleared_by'] or '',
+                 r['cleared_via'] or '', r['cleared_session_id'] or '',
+                 r['cleared_assignment_id'] or '', r['write_off_reason'] or '',
+                 r['src_session_id'], r['src_row_number']]
+                for r in out
+            ]
+            return _csv_response(data, headers,
+                f"kilter_cleared_items_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv")
+        return out
+    finally:
+        conn.close()
+
+
+# --- Report #2: Account reconciliation history -----------------------------
+
+@app.get("/reports/account-history/{account_id}")
+def report_account_history(
+    account_id: int,
+    from_date: str | None = None,
+    to_date: str | None = None,
+    format: str = 'json',
+    user: dict = Depends(current_user),
+):
+    """Per-session timeline for one account: match rate, open items added
+    vs. cleared, closing-balance trend. The shape the UI wants for
+    charting + the answer to 'is this nostro getting cleaner or messier?'"""
+    conn = get_conn()
+    try:
+        acc = conn.execute(
+            "SELECT id, label, shortname, access_area, swift_account, flex_ac_no, "
+            "       currency FROM accounts WHERE id=?", (account_id,),
+        ).fetchone()
+        if acc is None:
+            raise HTTPException(404, "Account not found")
+
+        where = ["s.account_id = ?"]
+        params: list = [account_id]
+        from_iso = _parse_ymd(from_date)
+        to_iso = _parse_ymd_end(to_date)
+        if from_iso:
+            where.append("s.created_at >= ?"); params.append(from_iso)
+        if to_iso:
+            where.append("s.created_at <= ?"); params.append(to_iso)
+
+        rows = conn.execute(
+            f"SELECT s.id, s.created_at, s.swift_filename, s.flex_filename, "
+            f"       s.opening_balance_amount, s.closing_balance_amount, "
+            f"       s.opening_balance_date, s.closing_balance_date, "
+            f"       s.open_items_seeded, s.open_items_cleared, "
+            f"       (SELECT COUNT(*) FROM assignments WHERE session_id=s.id AND status='confirmed') AS confirmed, "
+            f"       (SELECT COUNT(*) FROM assignments WHERE session_id=s.id AND status='pending')   AS pending, "
+            f"       (SELECT COUNT(*) FROM assignments WHERE session_id=s.id AND status='rejected')  AS rejected, "
+            f"       (SELECT COUNT(*) FROM swift_txns WHERE session_id=s.id) AS swift_total, "
+            f"       (SELECT COUNT(*) FROM flex_txns  WHERE session_id=s.id) AS flex_total "
+            f"FROM sessions s WHERE {' AND '.join(where)} "
+            f"ORDER BY s.created_at",
+            params,
+        ).fetchall()
+
+        series = []
+        for r in rows:
+            d = dict(r)
+            t = (d['confirmed'] or 0) + (d['pending'] or 0) + (d['rejected'] or 0)
+            d['match_rate_pct'] = round((d['confirmed'] or 0) / t * 100.0, 1) if t else 0.0
+            # Net change in open items for this session — helps spot runaway growth.
+            d['open_items_delta'] = (d['open_items_seeded'] or 0) - (d['open_items_cleared'] or 0)
+            series.append(d)
+
+        if format == 'csv':
+            headers = ['session_id', 'created_at', 'swift_total', 'flex_total',
+                       'confirmed', 'pending', 'rejected', 'match_rate_pct',
+                       'open_items_seeded', 'open_items_cleared', 'open_items_delta',
+                       'opening_balance', 'closing_balance']
+            data = [
+                [r['id'], r['created_at'], r['swift_total'], r['flex_total'],
+                 r['confirmed'], r['pending'], r['rejected'], r['match_rate_pct'],
+                 r['open_items_seeded'] or 0, r['open_items_cleared'] or 0,
+                 r['open_items_delta'], r['opening_balance_amount'] or '',
+                 r['closing_balance_amount'] or '']
+                for r in series
+            ]
+            return _csv_response(data, headers,
+                f"kilter_account_{account_id}_history_"
+                f"{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv")
+        return {"account": dict(acc), "sessions": series}
+    finally:
+        conn.close()
+
+
+# --- Report #4: Break analysis ---------------------------------------------
+
+@app.get("/reports/break-analysis")
+def report_break_analysis(
+    from_date: str | None = None,
+    to_date: str | None = None,
+    account_id: int | None = None,
+    format: str = 'json',
+    user: dict = Depends(current_user),
+    scope: list[str] | None = Depends(active_scope),
+):
+    """Pivots the open-items pool (open + written_off + cleared) by the
+    three dimensions ops cares about: category, account, and month.
+    Returns three separate tables — the UI composes them into stacked charts."""
+    conn = get_conn()
+    try:
+        where = ["1=1"]
+        params: list = []
+        from_iso = _parse_ymd(from_date)
+        to_iso = _parse_ymd_end(to_date)
+        if from_iso:
+            where.append("oi.opened_at >= ?"); params.append(from_iso)
+        if to_iso:
+            where.append("oi.opened_at <= ?"); params.append(to_iso)
+        if account_id is not None:
+            where.append("oi.account_id = ?"); params.append(account_id)
+        scope_sql, scope_params = _scope_clause(scope, alias='a')
+        where.append(scope_sql); params.extend(scope_params)
+        if scope:
+            where.append("a.id IS NOT NULL")
+        where_sql = " AND ".join(where)
+
+        # By category × status
+        by_category = [dict(r) for r in conn.execute(
+            f"SELECT COALESCE(oi.category, 'uncategorized') AS category, "
+            f"       oi.status, COUNT(*) AS cnt, COALESCE(SUM(oi.amount), 0) AS total "
+            f"FROM open_items oi LEFT JOIN accounts a ON a.id = oi.account_id "
+            f"WHERE {where_sql} GROUP BY category, oi.status "
+            f"ORDER BY category, oi.status",
+            params,
+        ).fetchall()]
+
+        # By account
+        by_account = [dict(r) for r in conn.execute(
+            f"SELECT oi.account_id, a.label AS account_label, a.shortname, "
+            f"       a.access_area, a.currency, oi.status, "
+            f"       COUNT(*) AS cnt, COALESCE(SUM(oi.amount), 0) AS total "
+            f"FROM open_items oi LEFT JOIN accounts a ON a.id = oi.account_id "
+            f"WHERE {where_sql} GROUP BY oi.account_id, oi.status "
+            f"ORDER BY a.label, oi.status",
+            params,
+        ).fetchall()]
+
+        # By month (opened_at) — SQLite substr is cheaper than strftime here.
+        by_month = [dict(r) for r in conn.execute(
+            f"SELECT SUBSTR(oi.opened_at, 1, 7) AS month, oi.status, "
+            f"       COUNT(*) AS cnt, COALESCE(SUM(oi.amount), 0) AS total "
+            f"FROM open_items oi LEFT JOIN accounts a ON a.id = oi.account_id "
+            f"WHERE {where_sql} GROUP BY month, oi.status ORDER BY month, oi.status",
+            params,
+        ).fetchall()]
+
+        # Tier distribution for confirmed matches in the same window.
+        tier_where = ["a2.decided_at IS NOT NULL", "a2.status='confirmed'"]
+        tier_params: list = []
+        if from_iso:
+            tier_where.append("a2.decided_at >= ?"); tier_params.append(from_iso)
+        if to_iso:
+            tier_where.append("a2.decided_at <= ?"); tier_params.append(to_iso)
+        if account_id is not None:
+            tier_where.append("s.account_id = ?"); tier_params.append(account_id)
+        by_tier = [dict(r) for r in conn.execute(
+            f"SELECT a2.tier, a2.source, COUNT(*) AS cnt "
+            f"FROM assignments a2 JOIN sessions s ON s.id = a2.session_id "
+            f"WHERE {' AND '.join(tier_where)} "
+            f"GROUP BY a2.tier, a2.source ORDER BY a2.tier, a2.source",
+            tier_params,
+        ).fetchall()]
+
+        if format == 'csv':
+            headers = ['dimension', 'key', 'status_or_source', 'count', 'total_value']
+            data = []
+            for r in by_category:
+                data.append(['category', r['category'], r['status'], r['cnt'], r['total']])
+            for r in by_account:
+                key = r['shortname'] or r['account_label'] or f"account_{r['account_id']}"
+                data.append(['account', key, r['status'], r['cnt'], r['total']])
+            for r in by_month:
+                data.append(['month', r['month'] or '', r['status'], r['cnt'], r['total']])
+            for r in by_tier:
+                data.append(['tier', f"T{r['tier']}", r['source'], r['cnt'], ''])
+            return _csv_response(data, headers,
+                f"kilter_break_analysis_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv")
+
+        return {
+            "by_category": by_category,
+            "by_account": by_account,
+            "by_month": by_month,
+            "by_tier": by_tier,
+        }
+    finally:
+        conn.close()
+
+
+# --- Report #5: Decision activity ------------------------------------------
+
+@app.get("/reports/decisions")
+def report_decisions(
+    from_date: str | None = None,
+    to_date: str | None = None,
+    actor: str | None = None,
+    format: str = 'json',
+    user: dict = Depends(require_role('admin', 'audit', 'internal_control')),
+):
+    """Per-user decision productivity — who's doing the work, and which
+    shapes of work (confirm/reject/manual/carry). Restricted to roles with
+    audit visibility because it touches individual users' activity."""
+    conn = get_conn()
+    try:
+        where = ["a.decided_at IS NOT NULL"]
+        params: list = []
+        from_iso = _parse_ymd(from_date)
+        to_iso = _parse_ymd_end(to_date)
+        if from_iso:
+            where.append("a.decided_at >= ?"); params.append(from_iso)
+        if to_iso:
+            where.append("a.decided_at <= ?"); params.append(to_iso)
+        if actor:
+            where.append("a.decided_by = ?"); params.append(actor)
+
+        # Per-user totals, split by status + source so manual matches don't
+        # get double-counted with engine-proposed confirmations.
+        by_user = [dict(r) for r in conn.execute(
+            f"SELECT a.decided_by AS actor, a.status, COALESCE(a.source, 'engine') AS source, "
+            f"       COUNT(*) AS cnt "
+            f"FROM assignments a WHERE {' AND '.join(where)} "
+            f"GROUP BY a.decided_by, a.status, source ORDER BY a.decided_by",
+            params,
+        ).fetchall()]
+
+        # Daily activity for sparkline-style charting.
+        by_day = [dict(r) for r in conn.execute(
+            f"SELECT SUBSTR(a.decided_at, 1, 10) AS day, a.status, COUNT(*) AS cnt "
+            f"FROM assignments a WHERE {' AND '.join(where)} "
+            f"GROUP BY day, a.status ORDER BY day",
+            params,
+        ).fetchall()]
+
+        # Write-offs + notes attributed to each user, from the ledger-adjacent
+        # tables — useful for spotting analysts who never leave context.
+        wo_where = ["oi.status='written_off'"]
+        wo_params: list = []
+        if from_iso:
+            wo_where.append("oi.cleared_at >= ?"); wo_params.append(from_iso)
+        if to_iso:
+            wo_where.append("oi.cleared_at <= ?"); wo_params.append(to_iso)
+        if actor:
+            wo_where.append("oi.cleared_by = ?"); wo_params.append(actor)
+        writeoffs = [dict(r) for r in conn.execute(
+            f"SELECT oi.cleared_by AS actor, COUNT(*) AS cnt "
+            f"FROM open_items oi WHERE {' AND '.join(wo_where)} "
+            f"GROUP BY oi.cleared_by",
+            wo_params,
+        ).fetchall()]
+
+        nt_where = ["1=1"]
+        nt_params: list = []
+        if from_iso:
+            nt_where.append("bc.created_at >= ?"); nt_params.append(from_iso)
+        if to_iso:
+            nt_where.append("bc.created_at <= ?"); nt_params.append(to_iso)
+        if actor:
+            nt_where.append("bc.author = ?"); nt_params.append(actor)
+        notes = [dict(r) for r in conn.execute(
+            f"SELECT bc.author AS actor, COUNT(*) AS cnt "
+            f"FROM break_comments bc WHERE {' AND '.join(nt_where)} "
+            f"GROUP BY bc.author",
+            nt_params,
+        ).fetchall()]
+
+        if format == 'csv':
+            headers = ['actor', 'status', 'source', 'count']
+            data = [[r['actor'] or '', r['status'], r['source'], r['cnt']] for r in by_user]
+            return _csv_response(data, headers,
+                f"kilter_decisions_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv")
+
+        return {
+            "by_user": by_user,
+            "by_day": by_day,
+            "writeoffs": writeoffs,
+            "notes": notes,
+        }
+    finally:
+        conn.close()
+
+
+@app.get("/reports")
+def reports_page(request: Request):
+    return templates.TemplateResponse(request, "reports.html")
+
+
+# ---------------------------------------------------------------------------
+# Daily breaks report — multi-tab xlsx grouped by functional_group + currency.
+# Mirrors ops' current manual "BOG CEDI / FOREIGN" report layout so the team
+# can stop hand-building it every evening. Pulls open_items with status='open'
+# as of the given date, groups by functional_group, and within each group
+# sub-splits by currency when currencies mix.
+# ---------------------------------------------------------------------------
+
+@app.get("/reports/daily-breaks")
+def report_daily_breaks(
+    as_of: str | None = None,     # YYYY-MM-DD; defaults to today
+    account_id: int | None = None,
+    format: str = 'xlsx',         # 'xlsx' or 'json'
+    user: dict = Depends(current_user),
+    scope: list[str] | None = Depends(active_scope),
+):
+    from io import BytesIO
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.utils import get_column_letter
+    from db import FUNCTIONAL_GROUPS
+
+    as_of_iso = _parse_ymd_end(as_of) if as_of else _parse_ymd_end(
+        datetime.utcnow().strftime('%Y-%m-%d'))
+    as_of_label = (as_of or datetime.utcnow().strftime('%Y-%m-%d'))
+
+    conn = get_conn()
+    try:
+        where = ["oi.status='open'", "oi.opened_at <= ?"]
+        params: list = [as_of_iso]
+        if account_id is not None:
+            where.append("oi.account_id=?"); params.append(account_id)
+        scope_sql, scope_params = _scope_clause(scope, alias='a')
+        where.append(scope_sql); params.extend(scope_params)
+        if scope:
+            where.append("a.id IS NOT NULL")
+
+        rows = conn.execute(
+            f"SELECT oi.*, a.label AS account_label, a.shortname, a.access_area, "
+            f"       a.currency AS account_currency "
+            f"FROM open_items oi LEFT JOIN accounts a ON a.id=oi.account_id "
+            f"WHERE {' AND '.join(where)} "
+            f"ORDER BY COALESCE(oi.functional_group, 'ZZZ'), oi.amount DESC",
+            params,
+        ).fetchall()
+
+        now = datetime.utcnow()
+        items = []
+        for r in rows:
+            d = dict(r)
+            d['age_days'] = _age_in_days(r['opened_at'], now)
+            items.append(d)
+    finally:
+        conn.close()
+
+    if format == 'json':
+        return {"as_of": as_of_label, "count": len(items), "items": items}
+
+    # ----- build xlsx -----
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)  # drop default sheet; we create named ones below
+
+    hdr_font = Font(bold=True, color='FFFFFF')
+    hdr_fill = PatternFill('solid', fgColor='305496')
+    total_font = Font(bold=True)
+    total_fill = PatternFill('solid', fgColor='D9E1F2')
+
+    COLS = ['Account', 'Value date', 'Curr.', 'Amount', 'S', 'Origin', 'Type',
+            'Status', 'Age', 'Book. date', 'Our reference 1', 'Their reference 1',
+            'Booking text 1', 'Booking text 2', 'Matching type']
+
+    def _add_sheet(title: str, bucket: list[dict]):
+        # Excel sheet names max 31 chars, no special chars.
+        safe = title[:31].replace('/', '-').replace(':', '-')
+        ws = wb.create_sheet(safe)
+        ws.append(COLS)
+        for cell in ws[1]:
+            cell.font = hdr_font
+            cell.fill = hdr_fill
+        if not bucket:
+            ws.append([''] * 5 + ['NO OPENED ITEMS'] + [''] * 9)
+        else:
+            for it in bucket:
+                ws.append([
+                    it['account_label'] or '',
+                    it['value_date'] or '',
+                    it['account_currency'] or '',
+                    it['amount'] or 0,
+                    it['sign'] or '',
+                    'Our' if it['source_side'] == 'flex' else 'Their',
+                    'Other',
+                    'Open',
+                    it['age_days'],
+                    it['value_date'] or '',
+                    it['ref'] or '',
+                    it['ref'] or '',
+                    (it['narration'] or '')[:70],
+                    (it['narration'] or '')[70:140],
+                    '',
+                ])
+            # totals row
+            total_cr = sum(it['amount'] or 0 for it in bucket if it['sign'] in ('C', 'CR'))
+            total_dr = sum(it['amount'] or 0 for it in bucket if it['sign'] in ('D', 'DR'))
+            ws.append([])
+            tr = ws.max_row + 1
+            ws.append([f'TOTAL ({len(bucket)} items)', '', '',
+                       f'CR: {total_cr:,.2f} / DR: {total_dr:,.2f} / NET: {total_cr - total_dr:+,.2f}',
+                       '', '', '', '', '', '', '', '', '', '', ''])
+            for cell in ws[ws.max_row]:
+                cell.font = total_font
+                cell.fill = total_fill
+        ws.freeze_panes = 'A2'
+        # column widths
+        for col in range(1, ws.max_column + 1):
+            letter = get_column_letter(col)
+            max_len = 10
+            for row in ws.iter_rows(min_col=col, max_col=col, values_only=True):
+                v = row[0]
+                if v is None:
+                    continue
+                max_len = max(max_len, min(50, len(str(v)) + 2))
+            ws.column_dimensions[letter].width = max_len
+
+    # Currency-split for foreign nostros (USD/EUR/GBP/AUD/etc.), functional-split for GHS.
+    by_group: dict[str, list[dict]] = {g: [] for g in FUNCTIONAL_GROUPS}
+    by_currency: dict[str, list[dict]] = {}
+    for it in items:
+        ccy = (it['account_currency'] or '').upper()
+        if ccy and ccy != 'GHS':
+            by_currency.setdefault(ccy, []).append(it)
+        else:
+            grp = it['functional_group'] or 'PSC TROPS'
+            by_group.setdefault(grp, []).append(it)
+
+    # Summary tab first.
+    summary = wb.create_sheet('Summary')
+    summary.append(['Kilter daily breaks report', f'as of {as_of_label}'])
+    summary['A1'].font = Font(bold=True, size=14)
+    summary.append([])
+    summary.append(['Tab', 'Rows', 'CR total', 'DR total', 'Net'])
+    for cell in summary[summary.max_row]:
+        cell.font = hdr_font
+        cell.fill = hdr_fill
+
+    def _stats(bucket):
+        cr = sum(it['amount'] or 0 for it in bucket if it['sign'] in ('C', 'CR'))
+        dr = sum(it['amount'] or 0 for it in bucket if it['sign'] in ('D', 'DR'))
+        return len(bucket), cr, dr, cr - dr
+
+    # Foreign sub-tabs — one per currency, labelled "BOG <ccy>".
+    for ccy in sorted(by_currency):
+        _add_sheet(f'BOG {ccy}', by_currency[ccy])
+        n, cr, dr, net = _stats(by_currency[ccy])
+        summary.append([f'BOG {ccy}', n, cr, dr, net])
+
+    # GHS functional-group tabs in canonical order.
+    for grp in FUNCTIONAL_GROUPS:
+        bucket = by_group.get(grp, [])
+        _add_sheet(grp, bucket)
+        n, cr, dr, net = _stats(bucket)
+        summary.append([grp, n, cr, dr, net])
+
+    # Move summary to the front.
+    wb.move_sheet('Summary', offset=-len(wb.sheetnames) + 1)
+
+    # Column widths on summary.
+    for col in range(1, summary.max_column + 1):
+        letter = get_column_letter(col)
+        max_len = 14
+        for row in summary.iter_rows(min_col=col, max_col=col, values_only=True):
+            v = row[0]
+            if v is None:
+                continue
+            max_len = max(max_len, min(30, len(str(v)) + 2))
+        summary.column_dimensions[letter].width = max_len
+
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    filename = f"Kilter daily breaks {as_of_label}.xlsx"
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers={'Content-Disposition': f'attachment; filename="{filename}"'},
+    )
+
+
+# ===========================================================================
+# (End of reconciliation-ledger endpoints)
+# ===========================================================================
+
+
+async def _save_upload(upload: UploadFile, prefix: str) -> Path:
+    """Write an upload to the persistent uploads/ folder with a timestamped
+    name. Files are retained for audit — we don't try to delete them because
+    openpyxl's read-only mode holds the handle open on Windows and unlink
+    races with GC. Disk use is bounded by retention policy, not per-request."""
+    ts = datetime.utcnow().strftime('%Y%m%d_%H%M%S_%f')
+    safe_name = f"{ts}_{prefix}_{Path(upload.filename).name}"
+    path = UPLOAD_DIR / safe_name
+    with path.open('wb') as f:
+        f.write(await upload.read())
+    return path
+
+
+def _swift_row_to_dict(r) -> dict:
+    return {
+        '_source': 'swift', '_row_number': r['row_number'], '_used': False,
+        'value_date': r['value_date'], 'amount': r['amount'], 'sign': r['sign'],
+        'origin': r['origin'], 'type': r['type'], 'status': r['status'],
+        'book_date': r['book_date'], 'our_ref': r['our_ref'],
+        'their_ref': r['their_ref'], 'booking_text_1': r['booking_text_1'],
+        'booking_text_2': r['booking_text_2'],
+    }
+
+
+def _flex_row_to_dict(r) -> dict:
+    return {
+        '_source': 'flexcube', '_row_number': r['row_number'], '_used': False,
+        'trn_ref': r['trn_ref'], 'ac_branch': r['ac_branch'], 'ac_no': r['ac_no'],
+        'booking_date': r['booking_date'], 'value_date': r['value_date'],
+        'type': r['type'], 'narration': r['narration'], 'amount': r['amount'],
+        'ccy': r['ccy'], 'module': r['module'], 'external_ref': r['external_ref'],
+        'user_id': r['user_id'],
+    }
+

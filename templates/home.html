@@ -1,0 +1,557 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · Kilter{% endblock %}
+{% block crumbs %}<span class="current">Dashboard</span>{% endblock %}
+
+{% block content %}
+<style>
+  /* First-run welcome card. Visible only on a fresh install (zero accounts
+     OR zero sessions) and dismissable. Removed from the DOM as soon as the
+     dashboard loads enough state to confirm onboarding is complete. */
+  .welcome-card {
+    margin-bottom: 22px;
+    padding: 22px 26px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 60%, #fef3c7 100%);
+    border: 1px solid #c7d2fe;
+    box-shadow: 0 4px 16px rgba(55, 48, 163, 0.08);
+    position: relative;
+  }
+  .welcome-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 16px; margin-bottom: 4px;
+  }
+  .welcome-head h2 {
+    margin: 0; font-size: 1.4em; font-weight: 700; color: #1e1b4b;
+    letter-spacing: -0.3px;
+  }
+  .welcome-dismiss {
+    background: transparent; border: none; cursor: pointer;
+    color: #6366f1; font-size: 1.4em; line-height: 1; padding: 4px 10px;
+    border-radius: 6px;
+  }
+  .welcome-dismiss:hover { background: rgba(79, 70, 229, 0.08); }
+  .welcome-sub { color: #4338ca; margin: 0 0 16px; font-size: 0.92em; }
+  .welcome-steps {
+    list-style: none; padding: 0; margin: 0;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  }
+  .welcome-steps li {
+    display: flex; gap: 12px; align-items: flex-start;
+    background: rgba(255, 255, 255, 0.65);
+    padding: 12px 14px; border-radius: 10px;
+    border: 1px solid rgba(199, 210, 254, 0.7);
+    transition: opacity 200ms ease;
+  }
+  .welcome-steps li.done { opacity: 0.55; }
+  .welcome-steps li.done .welcome-num {
+    background: #10b981; color: white;
+  }
+  .welcome-steps li.done .welcome-num::before { content: "✓"; }
+  .welcome-steps li.done .welcome-num span { display: none; }
+  .welcome-num {
+    flex-shrink: 0; width: 28px; height: 28px; border-radius: 8px;
+    background: #4f46e5; color: white;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 0.95em;
+    box-shadow: 0 2px 6px rgba(79, 70, 229, 0.3);
+  }
+  .welcome-body { flex: 1; min-width: 0; }
+  .welcome-title { font-weight: 600; color: #1e1b4b; font-size: 0.92em; margin-bottom: 2px; }
+  .welcome-desc  { color: #4b5563; font-size: 0.82em; line-height: 1.4; margin-bottom: 8px; }
+  .welcome-body code {
+    background: rgba(79, 70, 229, 0.08); padding: 1px 6px; border-radius: 3px;
+    font-size: 0.88em; color: #3730a3;
+  }
+  .welcome-cta { font-size: 0.82em; }
+  @media (max-width: 900px) {
+    .welcome-steps { grid-template-columns: 1fr; }
+  }
+</style>
+
+<div class="page-head">
+  <div>
+    <h1>Dashboard</h1>
+    <div class="subtitle">Overview of reconciliation activity and intake queues.</div>
+  </div>
+</div>
+
+<!-- First-run onboarding card. Hidden by default; loadDashboard() reveals it
+     when accounts === 0 or sessions === 0, and removes it when both pass. -->
+<div id="welcome-card" class="welcome-card" style="display:none">
+  <div class="welcome-head">
+    <h2>Welcome to Kilter</h2>
+    <button class="welcome-dismiss" onclick="dismissWelcome()" aria-label="Dismiss welcome card" title="Dismiss">×</button>
+  </div>
+  <p class="welcome-sub">Four short steps to your first reconciliation. This card disappears once you've ingested a session.</p>
+  <ol class="welcome-steps">
+    <li id="welcome-step-1">
+      <div class="welcome-num"><span>1</span></div>
+      <div class="welcome-body">
+        <div class="welcome-title">Register your first nostro account</div>
+        <div class="welcome-desc">Pair a SWIFT account number with the corresponding core-banking GL. Pick a currency and a BIC.</div>
+        <a href="/cash-accounts" class="btn btn-primary btn-sm welcome-cta">Open Cash accounts →</a>
+      </div>
+    </li>
+    <li id="welcome-step-2">
+      <div class="welcome-num"><span>2</span></div>
+      <div class="welcome-body">
+        <div class="welcome-title">Drop a SWIFT statement into intake</div>
+        <div class="welcome-desc">Paste an MT940/950 <code>.out</code> or camt.053/054 <code>.xml</code> into <code>messages/swift/</code>.</div>
+      </div>
+    </li>
+    <li id="welcome-step-3">
+      <div class="welcome-num"><span>3</span></div>
+      <div class="welcome-body">
+        <div class="welcome-title">Drop the matching GL export</div>
+        <div class="welcome-desc">Place the core-banking <code>.xlsx</code> for that same account into <code>messages/flexcube/</code>.</div>
+      </div>
+    </li>
+    <li id="welcome-step-4">
+      <div class="welcome-num"><span>4</span></div>
+      <div class="welcome-body">
+        <div class="welcome-title">Run the scanner</div>
+        <div class="welcome-desc">Files pair, sessions get created, the matching engine proposes candidates.</div>
+        <button id="welcome-scan-btn" class="btn btn-primary btn-sm welcome-cta">Scan now</button>
+      </div>
+    </li>
+  </ol>
+</div>
+
+<!-- At-risk callout (only shown when open items > 30 days exist) -->
+<div id="risk-callout-slot"></div>
+
+<div class="stats" id="stats">
+  <div class="stat accent-warn"><div class="label">Pending decisions</div><div class="value" id="s-pending">—</div><div class="hint">Across open sessions</div></div>
+  <div class="stat accent-success"><div class="label">Confirmed matches</div><div class="value" id="s-confirmed">—</div><div class="hint">Lifetime</div></div>
+  <div class="stat accent-primary"><div class="label">Open sessions</div><div class="value" id="s-sessions">—</div><div class="hint">With pending work</div></div>
+  <div class="stat"><div class="label">Registered cash accounts</div><div class="value" id="s-accounts">—</div><div class="hint">Auto-paired on scan</div></div>
+</div>
+
+<!-- Analytics row: trend sparkline + ageing histogram + by-group breakdown -->
+<div style="display:grid;grid-template-columns:1.6fr 1fr 1fr;gap:16px;margin-bottom:20px">
+  <div class="card chart-card">
+    <div class="card-head">
+      <h2>Match activity · last 14 days</h2>
+      <div class="hint" id="trend-summary">—</div>
+    </div>
+    <div class="card-body">
+      <div id="trend-chart" style="height:140px"></div>
+      <div class="chart-legend">
+        <span><span class="dot" style="background:var(--c-state-cleared)"></span>Confirmed</span>
+        <span><span class="dot" style="background:var(--c-state-aged)"></span>Rejected</span>
+        <span><span class="dot" style="background:var(--c-state-pending)"></span>Pending</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card chart-card">
+    <div class="card-head">
+      <h2>Ageing of open items</h2>
+      <div class="hint" id="ageing-summary">—</div>
+    </div>
+    <div class="card-body" id="ageing-chart">
+      <div class="chart-row"><div class="label">Loading…</div></div>
+    </div>
+  </div>
+
+  <div class="card chart-card">
+    <div class="card-head">
+      <h2>By functional team</h2>
+      <a href="/open-items-view" class="btn btn-ghost btn-sm">Details &rarr;</a>
+    </div>
+    <div class="card-body" id="group-chart">
+      <div class="chart-row"><div class="label">Loading…</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="card admin-only" id="scan" style="display:none">
+  <div class="card-head">
+    <h2>Scan messages folder</h2>
+    <div class="hint">Picks up <code>messages/swift/</code> and <code>messages/flexcube/</code>, pairs by registered cash account.</div>
+  </div>
+  <div class="card-body">
+    <button class="btn btn-primary" id="scan-btn" type="button">Scan now</button>
+    <div class="status" id="scan-status"></div>
+    <div id="scan-results" style="margin-top:14px"></div>
+  </div>
+</div>
+
+<div class="card admin-only" id="upload" style="display:none">
+  <div class="card-head">
+    <h2>Manual upload</h2>
+    <div class="hint">For one-off runs. Dedup + validation applied identically to scan.</div>
+  </div>
+  <div class="card-body">
+    <form id="upload-form" class="form-grid">
+      <div class="field">
+        <label>SWIFT file (.out MT940/950, .xml or .txt camt.053/054, .xlsx parsed)</label>
+        <input class="input" type="file" id="swift" accept=".out,.xml,.txt,.xlsx" required>
+      </div>
+      <div class="field">
+        <label>Flexcube acc_entries xlsx</label>
+        <input class="input" type="file" id="flex" accept=".xlsx" required>
+      </div>
+      <div class="span-full" style="grid-column:1/-1">
+        <button type="submit" class="btn btn-primary" id="upload-submit">Upload and reconcile</button>
+        <span class="status" id="upload-status"></span>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <h2>Daily breaks report</h2>
+    <div class="hint">Multi-tab xlsx replacing ops' manual daily breaks workbook. Groups by functional team and currency.</div>
+  </div>
+  <div class="card-body">
+    <form id="daily-breaks-form" style="display:flex;gap:12px;align-items:end;flex-wrap:wrap">
+      <div class="field">
+        <label>As-of date</label>
+        <input class="input" type="date" id="breaks-date">
+      </div>
+      <button class="btn btn-primary" type="submit">Download xlsx</button>
+      <span class="status" id="breaks-status"></span>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <h2>Recent sessions</h2>
+    <a href="/sessions-list" class="btn btn-ghost btn-sm">View all &rarr;</a>
+  </div>
+  <div class="card-body tight">
+    <table class="table" id="sessions-table">
+      <thead>
+        <tr>
+          <th>ID</th><th>Created</th><th>Cash account</th><th>CCY</th>
+          <th>Pending</th><th>Confirmed</th><th>Rejected</th><th></th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.body.dataset.nav = 'dashboard';
+
+async function loadDashboard() {
+  const [sessionsR, accountsR, statsR, trendR, ageingR, groupR] = await Promise.all([
+    fetch('/sessions'), fetch('/accounts'), fetch('/stats'),
+    fetch('/dashboard/trend?days=14'),
+    fetch('/dashboard/ageing'),
+    fetch('/dashboard/by-group'),
+  ]);
+  const sessions = await sessionsR.json();
+  const accounts = await accountsR.json();
+  const stats = await statsR.json();
+  const trend  = trendR.ok  ? await trendR.json()  : [];
+  const ageing = ageingR.ok ? await ageingR.json() : { buckets: [], total_count: 0, at_risk_count: 0 };
+  const groups = groupR.ok  ? await groupR.json()  : [];
+
+  document.getElementById('s-pending').textContent = stats.pending ?? 0;
+  document.getElementById('s-confirmed').textContent = stats.confirmed ?? 0;
+  document.getElementById('s-sessions').textContent = stats.open_sessions ?? 0;
+  document.getElementById('s-accounts').textContent = accounts.length;
+
+  renderWelcomeCard(accounts.length, sessions.length);
+
+  renderRiskCallout(ageing);
+  renderTrend(trend);
+  renderAgeing(ageing);
+  renderByGroup(groups);
+
+  const tbody = document.querySelector('#sessions-table tbody');
+  if (sessions.length === 0) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="8">No sessions yet. Scan the messages folder or upload files above.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = sessions.slice(0, 10).map(s => {
+    const acct = s.account_label
+      ? `<strong>${esc(s.account_label)}</strong>`
+      : `<span class="badge badge-warn">Unregistered</span> <span class="muted">${esc(s.swift_account || '')} ↔ ${esc(s.flex_ac_no || '')}</span>`;
+    return `
+      <tr>
+        <td><a href="/sessions/${s.id}/review">#${s.id}</a></td>
+        <td class="muted">${fmtDateTime(s.created_at)}</td>
+        <td>${acct}</td>
+        <td>${esc(s.swift_currency || s.flex_currency || '')}</td>
+        <td class="num">${s.counts?.pending ?? '—'}</td>
+        <td class="num">${s.counts?.confirmed ?? '—'}</td>
+        <td class="num">${s.counts?.rejected ?? '—'}</td>
+        <td><a class="btn btn-default btn-sm" href="/sessions/${s.id}/review">Review &rarr;</a></td>
+      </tr>`;
+  }).join('');
+}
+
+// ------- Risk callout -------
+function renderRiskCallout(ageing) {
+  const slot = document.getElementById('risk-callout-slot');
+  if (!ageing || !ageing.at_risk_count || ageing.at_risk_count === 0) {
+    slot.innerHTML = '';
+    return;
+  }
+  const n = ageing.at_risk_count;
+  slot.innerHTML = `
+    <div class="risk-callout">
+      <div class="icon">⚠️</div>
+      <div class="body">
+        <div class="title">${n} open item${n === 1 ? '' : 's'} aged over 30 days</div>
+        <div>These need investigation or write-off — carrying them forward indefinitely distorts the ledger.</div>
+      </div>
+      <a href="/open-items-view?min_age=31" class="btn btn-primary btn-sm">Review now &rarr;</a>
+    </div>`;
+}
+
+// ------- Charts: pure inline SVG, no deps -------
+function renderTrend(trend) {
+  const host = document.getElementById('trend-chart');
+  const summary = document.getElementById('trend-summary');
+  if (!trend || trend.length === 0) {
+    host.innerHTML = '<div class="muted" style="padding:40px 0;text-align:center">No activity in the window.</div>';
+    summary.textContent = '';
+    return;
+  }
+
+  const W = Math.max(host.clientWidth || 600, 300);
+  const H = 140;
+  const PAD_L = 28, PAD_R = 10, PAD_T = 10, PAD_B = 24;
+  const innerW = W - PAD_L - PAD_R;
+  const innerH = H - PAD_T - PAD_B;
+
+  const maxY = Math.max(5, ...trend.map(d => Math.max(d.confirmed + d.rejected + d.pending, 1)));
+  const bw = innerW / trend.length - 3;
+
+  const totalConfirmed = trend.reduce((s, d) => s + d.confirmed, 0);
+  const totalRejected  = trend.reduce((s, d) => s + d.rejected,  0);
+  const totalDecided   = totalConfirmed + totalRejected;
+  const matchRate      = totalDecided ? Math.round(100 * totalConfirmed / totalDecided) : null;
+  summary.textContent = matchRate == null
+    ? `${totalConfirmed + totalRejected + trend.reduce((s,d)=>s+d.pending,0)} events`
+    : `${totalConfirmed} confirmed · ${matchRate}% match rate`;
+
+  let bars = '';
+  const gridY = [0, 0.5, 1];
+  for (const g of gridY) {
+    const y = PAD_T + innerH * (1 - g);
+    bars += `<line x1="${PAD_L}" x2="${W - PAD_R}" y1="${y}" y2="${y}" stroke="var(--c-chart-grid)" stroke-width="1" stroke-dasharray="2 3"/>`;
+    bars += `<text x="${PAD_L - 6}" y="${y + 3}" text-anchor="end" fill="var(--c-text-subtle)" font-size="10">${Math.round(maxY * g)}</text>`;
+  }
+
+  trend.forEach((d, i) => {
+    const x = PAD_L + i * (innerW / trend.length) + 1.5;
+    const yConf = PAD_T + innerH - (d.confirmed / maxY) * innerH;
+    const hConf = (d.confirmed / maxY) * innerH;
+    const hRej  = (d.rejected  / maxY) * innerH;
+    const hPend = (d.pending   / maxY) * innerH;
+    let y = PAD_T + innerH;
+    // Confirmed (cleared) at the bottom of the stack.
+    y -= hConf;
+    bars += `<rect x="${x}" y="${y}" width="${bw}" height="${hConf}" fill="var(--c-state-cleared)" rx="1.5"><title>${d.date}: ${d.confirmed} confirmed</title></rect>`;
+    y -= hRej;
+    bars += `<rect x="${x}" y="${y}" width="${bw}" height="${hRej}"  fill="var(--c-state-aged)"     rx="1.5"><title>${d.date}: ${d.rejected} rejected</title></rect>`;
+    y -= hPend;
+    bars += `<rect x="${x}" y="${y}" width="${bw}" height="${hPend}" fill="var(--c-state-pending)"  rx="1.5"><title>${d.date}: ${d.pending} pending</title></rect>`;
+    if (i % Math.ceil(trend.length / 7) === 0) {
+      bars += `<text x="${x + bw/2}" y="${H - 8}" text-anchor="middle" fill="var(--c-text-subtle)" font-size="10">${d.date.slice(5)}</text>`;
+    }
+  });
+
+  host.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="xMidYMid meet">${bars}</svg>`;
+}
+
+function renderAgeing(ageing) {
+  const host = document.getElementById('ageing-chart');
+  const summary = document.getElementById('ageing-summary');
+  if (!ageing || !ageing.buckets || ageing.buckets.length === 0 || ageing.total_count === 0) {
+    host.innerHTML = '<div class="muted" style="padding:24px 0;text-align:center">No open items.</div>';
+    summary.textContent = '0 open';
+    return;
+  }
+  const colors = ['var(--c-state-cleared)', 'var(--c-chart-2)', 'var(--c-state-pending)', 'var(--c-warn)', 'var(--c-state-aged)'];
+  const max = Math.max(1, ...ageing.buckets.map(b => b.count));
+  host.innerHTML = ageing.buckets.map((b, i) => `
+    <div class="chart-row">
+      <div class="label">${esc(b.label)}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${(b.count/max*100).toFixed(1)}%;background:${colors[i] || 'var(--c-primary)'}"></div></div>
+      <div class="val">${b.count}</div>
+    </div>`).join('');
+  summary.textContent = `${ageing.total_count} open`;
+}
+
+function renderByGroup(groups) {
+  const host = document.getElementById('group-chart');
+  if (!groups || groups.length === 0) {
+    host.innerHTML = '<div class="muted" style="padding:24px 0;text-align:center">No open items.</div>';
+    return;
+  }
+  const series = ['var(--c-chart-1)', 'var(--c-chart-2)', 'var(--c-chart-3)', 'var(--c-chart-4)', 'var(--c-chart-5)', 'var(--c-chart-6)', 'var(--c-violet)'];
+  const max = Math.max(1, ...groups.map(g => g.count));
+  host.innerHTML = groups.slice(0, 7).map((g, i) => `
+    <div class="chart-row">
+      <div class="label" title="${esc(g.group)}">${esc(g.group)}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${(g.count/max*100).toFixed(1)}%;background:${series[i % series.length]}"></div></div>
+      <div class="val">${g.count}</div>
+    </div>`).join('');
+}
+
+// ------- Scan -------
+document.getElementById('scan-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('scan-btn');
+  const status = document.getElementById('scan-status');
+  const results = document.getElementById('scan-results');
+  btn.disabled = true;
+  status.className = 'status';
+  status.textContent = 'Scanning...';
+  results.innerHTML = '';
+  try {
+    const r = await fetch('/scan', { method: 'POST' });
+    if (!r.ok) throw new Error((await r.json()).detail || 'Scan failed');
+    const j = await r.json();
+    const created = j.sessions_created.length;
+    const parts = Object.entries(j.counts).map(([k, v]) => `${v} ${k}`).join(' · ');
+    status.className = created > 0 ? 'status success' : 'status';
+    status.textContent = created > 0
+      ? `Created ${created} session${created === 1 ? '' : 's'}. ${parts}.`
+      : (j.outcomes.length === 0 ? 'Nothing new in the messages folder.' : parts);
+
+    if (j.outcomes.length > 0) {
+      const badgeClass = {
+        ingested: 'badge-success', duplicate: 'badge-danger',
+        unregistered: 'badge-warn', no_partner: 'badge-info',
+        mismatch: 'badge-danger', error: 'badge-danger',
+      };
+      results.innerHTML = `
+        <table class="table">
+          <thead><tr><th>File</th><th>Kind</th><th>Status</th><th>Reason</th><th></th></tr></thead>
+          <tbody>${j.outcomes.map(o => `
+            <tr>
+              <td><code>${esc(o.file)}</code></td>
+              <td class="muted">${esc(o.kind)}</td>
+              <td><span class="badge ${badgeClass[o.status] || 'badge-neutral'}">${esc(o.status)}</span></td>
+              <td class="muted">${esc(o.reason)}</td>
+              <td>${o.session_id ? `<a class="btn btn-default btn-sm" href="/sessions/${o.session_id}/review">Session ${o.session_id} &rarr;</a>` : ''}</td>
+            </tr>`).join('')}</tbody>
+        </table>`;
+    }
+    loadDashboard();
+  } catch (err) {
+    status.className = 'status error';
+    status.textContent = err.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// ------- Upload -------
+document.getElementById('upload-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const swift = document.getElementById('swift').files[0];
+  const flex = document.getElementById('flex').files[0];
+  const status = document.getElementById('upload-status');
+  const btn = document.getElementById('upload-submit');
+  if (!swift || !flex) return;
+  const fd = new FormData();
+  fd.append('swift', swift);
+  fd.append('flex', flex);
+  btn.disabled = true;
+  status.className = 'status';
+  status.textContent = 'Uploading and running engine...';
+  try {
+    const r = await fetch('/sessions', { method: 'POST', body: fd });
+    if (!r.ok) throw new Error((await r.json()).detail || 'Upload failed');
+    const j = await r.json();
+    status.className = 'status success';
+    const acctBadge = j.account.registered
+      ? `<span class="badge badge-success">${esc(j.account.label)}</span>`
+      : `<span class="badge badge-warn">Unregistered</span> <span class="muted">${esc(j.account.swift_account)} ↔ ${esc(j.account.flex_ac_no)} (${esc(j.account.currency)})</span>`;
+    status.innerHTML = `Session ${j.session_id}: ${acctBadge} · ${j.pending_assignments} pending, ${j.unmatched_swift} unmatched SWIFT, ${j.unmatched_flex} unmatched Flex. <a href="/sessions/${j.session_id}/review">Review now &rarr;</a>`;
+    loadDashboard();
+  } catch (err) {
+    status.className = 'status error';
+    status.textContent = err.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// ------- Daily breaks report -------
+(function () {
+  const dateEl = document.getElementById('breaks-date');
+  // default to today (local) in YYYY-MM-DD
+  const today = new Date();
+  const iso = today.getFullYear() + '-' +
+    String(today.getMonth() + 1).padStart(2, '0') + '-' +
+    String(today.getDate()).padStart(2, '0');
+  dateEl.value = iso;
+
+  document.getElementById('daily-breaks-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const status = document.getElementById('breaks-status');
+    const d = dateEl.value || iso;
+    status.className = 'status';
+    status.textContent = 'Building report...';
+    // Browser handles the download as a normal GET.
+    const url = `/reports/daily-breaks?as_of=${encodeURIComponent(d)}&format=xlsx`;
+    window.location.href = url;
+    setTimeout(() => {
+      status.className = 'status success';
+      status.textContent = `Report for ${d} downloaded.`;
+    }, 400);
+  });
+})();
+
+// ---- Welcome card (first-run onboarding) ---------------------------------
+const WELCOME_DISMISSED_KEY = 'kilter.welcome.dismissed';
+
+function renderWelcomeCard(numAccounts, numSessions) {
+  const card = document.getElementById('welcome-card');
+  if (!card) return;
+  // Permanently dismissed by the user — leave hidden.
+  if (localStorage.getItem(WELCOME_DISMISSED_KEY) === '1') return;
+  // Both done — never need to show.
+  if (numAccounts > 0 && numSessions > 0) {
+    card.style.display = 'none';
+    return;
+  }
+  card.style.display = '';
+  // Mark step 1 (account registered) and step 4 (session exists) done.
+  document.getElementById('welcome-step-1').classList.toggle('done', numAccounts > 0);
+  document.getElementById('welcome-step-4').classList.toggle('done', numSessions > 0);
+  // Steps 2/3 are instructions — auto-mark done if any session exists, since
+  // that means files were already paired and ingested at least once.
+  document.getElementById('welcome-step-2').classList.toggle('done', numSessions > 0);
+  document.getElementById('welcome-step-3').classList.toggle('done', numSessions > 0);
+}
+
+function dismissWelcome() {
+  localStorage.setItem(WELCOME_DISMISSED_KEY, '1');
+  const card = document.getElementById('welcome-card');
+  if (card) card.style.display = 'none';
+}
+
+document.getElementById('welcome-scan-btn')?.addEventListener('click', async (ev) => {
+  const btn = ev.currentTarget;
+  btn.disabled = true;
+  btn.textContent = 'Scanning…';
+  try {
+    const r = await fetch('/scan', { method: 'POST' });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || 'Scan failed');
+    // Reload so the dashboard repopulates with the new sessions and the
+    // welcome card auto-collapses (or vanishes) based on the new state.
+    window.location.reload();
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = 'Scan now';
+    alert('Scan failed: ' + e.message);
+  }
+});
+
+loadDashboard();
+</script>
+{% endblock %}

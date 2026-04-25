@@ -1,0 +1,364 @@
+{% extends "manual_base.html" %}
+{% block title %}Kilter · Training Curriculum{% endblock %}
+{% block bar_label %}Training{% endblock %}
+{% block footer_left %}Training &amp; Onboarding{% endblock %}
+{% block cover_eyebrow %}New-Hire Onboarding{% endblock %}
+{% block cover_title %}Training Curriculum — 4 Weeks to Independent{% endblock %}
+{% block cover_subtitle %}A structured curriculum for a new ops analyst on the reconciliation desk. Hands-on exercises, comprehension checks, supervisor sign-off at each stage.{% endblock %}
+{% block audience %}New hires + supervisors{% endblock %}
+
+{% block toc %}
+<div class="toc">
+  <h2>Contents</h2>
+  <ol>
+    <li>How this curriculum works</li>
+    <li>Pre-requisites for the new hire</li>
+    <li>Pre-requisites for the supervisor</li>
+    <li><strong>Day 1</strong> — Orientation, access, first login</li>
+    <li><strong>Day 2</strong> — The ledger language &amp; shadowed review</li>
+    <li><strong>Days 3–5</strong> — Solo review with supervisor spot-checks</li>
+    <li><strong>Week 2</strong> — Open items, carry-forward, force-match</li>
+    <li><strong>Week 3</strong> — Certificates &amp; the month-end flow</li>
+    <li><strong>Week 4</strong> — Independent operation</li>
+    <li>Supervisor sign-off checklist</li>
+    <li>Common new-hire mistakes &amp; how to spot them</li>
+    <li>Appendix A — Exercise answer key (supervisor only)</li>
+  </ol>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<h2 id="how">1. How this curriculum works</h2>
+
+<p>Four weeks, structured as follows:</p>
+<ul>
+  <li><strong>Week 1 (Days 1–5)</strong> — Orientation and supervised review. Goal: confidently clear a tier-1 queue.</li>
+  <li><strong>Week 2</strong> — Open items + force-match. Goal: handle stale items and ambiguous cases.</li>
+  <li><strong>Week 3</strong> — Certificates and reporting. Goal: prepare a month-end certificate end-to-end.</li>
+  <li><strong>Week 4</strong> — Independent operation. Goal: carry the desk for one full day with supervisor available but not active.</li>
+</ul>
+
+<p>Every day has three parts:</p>
+<ol>
+  <li><strong>Concept check</strong> — 10-minute briefing on a specific concept.</li>
+  <li><strong>Hands-on exercise</strong> — guided activity on the real system (or the staging instance during the pilot).</li>
+  <li><strong>Reflection</strong> — 5-minute sit-down with the supervisor. What did you do, what was hard, what's next?</li>
+</ol>
+
+<div class="callout tip">
+  <strong>For supervisors.</strong> Block 90 minutes a day for the new hire in Week 1, 45 minutes in Week 2, 30 minutes in Weeks 3–4. Most of the learning is doing; your job is to answer the question that blocks them from moving forward.
+</div>
+
+<h2 id="prereq-hire">2. Pre-requisites for the new hire</h2>
+
+<ul>
+  <li><strong>Basic reconciliation literacy</strong> — understand what a SWIFT statement is (MT940/950 or the newer ISO 20022 camt.053/camt.054), what a core-banking GL posting is, and why they need to be compared.</li>
+  <li><strong>Working laptop</strong> with a modern browser (Chrome / Edge / Firefox).</li>
+  <li><strong>Microsoft Authenticator</strong> installed on a smartphone.</li>
+  <li><strong>Corporate email</strong> active — for receiving the enrollment link and SLA alerts.</li>
+  <li><strong>Read the Overview manual</strong> before Day 1. ~20 minutes. <span class="path">/manuals/overview</span>.</li>
+</ul>
+
+<h2 id="prereq-sup">3. Pre-requisites for the supervisor</h2>
+
+<ul>
+  <li><strong>Admin or Ops role</strong> on Kilter. You will be creating accounts and setting scope.</li>
+  <li><strong>A training session</strong> — a session that's safe to practise on. Either (a) a closed but un-archived production session, or (b) a session in a staging instance.</li>
+  <li><strong>A blank notebook</strong> for the new hire to take notes. Surprisingly, hand-written notes stick better than Ctrl+F.</li>
+</ul>
+
+<h2 id="day1">4. Day 1 — Orientation, access, first login</h2>
+
+<h3>Concept check (30 min)</h3>
+<p>Walk the new hire through the <span class="path">Overview manual</span> in person. Focus on:</p>
+<ul>
+  <li>The four roles and which one they've been assigned.</li>
+  <li>The "day in the life" timeline. Most of the automation runs without them.</li>
+  <li>The concept of a <em>session</em> vs an <em>open item</em>. Draw it on paper if it helps.</li>
+</ul>
+
+<h3>Hands-on exercise 1.1 — First login</h3>
+<ol>
+  <li>Supervisor: go to <span class="path">Users</span>, click <strong>+ New user</strong>. Enter new hire's details. Role = <code>ops</code>.</li>
+  <li>Copy the enrollment URL. Share it with the new hire over chat.</li>
+  <li>New hire: open the URL, scan the QR, enter the first 6-digit code.</li>
+  <li>New hire: go to <span class="path">/login</span>, sign in. Confirm they land on the dashboard.</li>
+</ol>
+
+<h3>Hands-on exercise 1.2 — Dashboard tour</h3>
+<ol>
+  <li>Point at each stat counter. Ask: "What does 'Pending decisions' mean?" (Answer: assignments awaiting your confirm/reject.)</li>
+  <li>Walk through the three charts. Hover bars on the sparkline.</li>
+  <li>Press <kbd>Ctrl</kbd>+<kbd>K</kbd>. Type "cash". Press Enter on Cash accounts. Explain why this shortcut matters.</li>
+  <li>Press <kbd>?</kbd>. Show the keyboard-help overlay. Close it with <kbd>Esc</kbd>.</li>
+</ol>
+
+<h3>Comprehension check</h3>
+<p>Ask, and listen to the answer before moving on:</p>
+<ol>
+  <li>"What's the difference between an assignment and an open item?"</li>
+  <li>"What is MFA? Why do we use it?"</li>
+  <li>"If you accidentally reject a match, is it gone forever?"</li>
+</ol>
+
+<h3>Reflection (10 min)</h3>
+<p>Sit down. Ask:</p>
+<ul>
+  <li>What was clearest?</li>
+  <li>What's still fuzzy?</li>
+  <li>What's the one thing you'd like to try yourself tomorrow?</li>
+</ul>
+
+<h2 id="day2">5. Day 2 — The ledger language &amp; shadowed review</h2>
+
+<h3>Concept check (20 min)</h3>
+<p>Today's concept: the five match tiers.</p>
+<ul>
+  <li>Draw the tiers on paper. Green → amber → orange → red → violet (split).</li>
+  <li>Explain: tiers are the engine's confidence, not the correctness. A tier-1 match can still be wrong. A tier-4 match can be right. Your judgement matters.</li>
+  <li>Walk through the <a href="/manuals/matching">Matching Engine Manual</a> section 2.</li>
+</ul>
+
+<h3>Hands-on exercise 2.1 — Shadow a review session</h3>
+<p>Supervisor drives; new hire narrates.</p>
+<ol>
+  <li>Open a session with at least 20 pending matches.</li>
+  <li>Supervisor: open the first match. Ask new hire: "What tier is this? Why?"</li>
+  <li>Supervisor: confirm or reject based on the new hire's reasoning. Correct the reasoning if wrong.</li>
+  <li>Repeat for the first 10 matches. Mix tiers where possible.</li>
+  <li>Hand over the keyboard. New hire takes the next 5. Supervisor narrates.</li>
+</ol>
+
+<h3>Exercise 2.2 — Writing a good note</h3>
+<p>For one of the matches reviewed in 2.1, have the new hire press <kbd>N</kbd> and write a note. Then review it:</p>
+<ul>
+  <li>A bad note: "looks ok"</li>
+  <li>An OK note: "matched despite amount diff, ref found in narration"</li>
+  <li>A good note: "ref ABC123 in narration; amount diff $12 is FX rounding at spot 11.2 GHS/USD; confirmed"</li>
+</ul>
+
+<p>Rewrite until the note would help a future auditor understand the decision with no other context.</p>
+
+<h3>Comprehension check</h3>
+<ol>
+  <li>"What's a tier-5 match? Give an example."</li>
+  <li>"You see a tier-1 match where the narration doesn't actually contain the ref. What do you do?"</li>
+  <li>"Name three situations where writing a note is worth 30 seconds."</li>
+</ol>
+
+<h2 id="days-3-5">6. Days 3–5 — Solo review with spot-checks</h2>
+
+<h3>Structure</h3>
+<p>The new hire drives the review queue. The supervisor is available but not in the same room. Check in three times a day.</p>
+
+<h3>Exercise 3 — Solo queue</h3>
+<ol>
+  <li>At 09:00, open a session assigned by the supervisor.</li>
+  <li>Work the queue using <kbd>Space</kbd> / <kbd>X</kbd> / <kbd>J</kbd> / <kbd>N</kbd>.</li>
+  <li>When a match is genuinely ambiguous, <em>skip</em> it rather than guess. Note the row number.</li>
+  <li>At 12:00, 15:00, 17:00 — supervisor spot-check. New hire shows three decisions, explains the reasoning.</li>
+</ol>
+
+<h3>Exercise 3.2 — Reject-and-force</h3>
+<p>One supervised exercise each day: find a match where the engine paired the wrong rows, <strong>reject it</strong>, then use the Register tab to force-match the correct partner.</p>
+<ol>
+  <li>Scroll the register. Look for a row the engine should have matched but didn't.</li>
+  <li>Reject the wrong pairing.</li>
+  <li>Tick the two correct rows. Click <strong>Force-match</strong>. Write a reason note.</li>
+  <li>Verify the audit log captured both actions — reject then manual-match.</li>
+</ol>
+
+<h3>Comprehension check at end of Day 5</h3>
+<ol>
+  <li>"How fast are you through a 100-row queue now?" (aim: under 20 minutes for a mostly tier-1 queue)</li>
+  <li>"What did you skip? Walk me through why."</li>
+  <li>"What's the most surprising thing you've seen this week?"</li>
+</ol>
+
+<h3>Week 1 sign-off</h3>
+<p>The new hire passes Week 1 when:</p>
+<ul>
+  <li>☐ They can log in, navigate, and operate the queue unassisted.</li>
+  <li>☐ They have cleared at least 200 pending matches with &lt; 5% supervisor-reversal rate.</li>
+  <li>☐ They have written at least 5 notes rated "good" by the supervisor.</li>
+  <li>☐ They understand what a skip vs a reject actually means.</li>
+</ul>
+
+<h2 id="week2">7. Week 2 — Open items, carry-forward, force-match</h2>
+
+<h3>Concept check (30 min)</h3>
+<ul>
+  <li>The rolling ledger: why breaks outlive sessions.</li>
+  <li>Carry-forward: the engine re-tries prior open items against every new session for that account.</li>
+  <li>The ageing buckets (0-7 / 8-30 / 31-90 / 90+) and why 90+ is a red flag.</li>
+  <li>Write-off: when, why, and how to write a good reason.</li>
+</ul>
+
+<h3>Exercise 4 — Age triage</h3>
+<p>Goal: clear the backlog for one access area.</p>
+<ol>
+  <li>Go to <span class="path">Open items</span>. Filter to the area you've been assigned.</li>
+  <li>Sort by age descending. Start with the oldest.</li>
+  <li>For each item: click <strong>History</strong> first. Read what's known.</li>
+  <li>Decide: clear, comment, or write off. Document your reasoning in a note on the item.</li>
+  <li>Target: 20 items cleared or resolved by end of day.</li>
+</ol>
+
+<h3>Exercise 5 — Split view &amp; force-match</h3>
+<ol>
+  <li>Find a session with unmatched SWIFT and Flex rows that you believe should pair.</li>
+  <li>Open the Split view tab.</li>
+  <li>Select the candidates. Watch the amount-tie pill.</li>
+  <li>Match them. Write a reason.</li>
+  <li>Repeat at least three times during the week, including at least one 1:N split.</li>
+</ol>
+
+<h3>Exercise 6 — Shadowing a write-off</h3>
+<p>Supervisor picks one 90+ day open item with no clear counterpart.</p>
+<ol>
+  <li>Discuss: is this a genuine break or timing? What evidence exists?</li>
+  <li>Draft the write-off reason together. Should include: why, when the last counterpart attempt was, any email references.</li>
+  <li>Execute the write-off. Observe the audit log entry.</li>
+</ol>
+
+<div class="callout warn">
+  <strong>Write-offs are serious.</strong> Until the new hire has shadowed at least 5 write-offs with the supervisor, they should not execute a write-off solo. This rule survives Week 2.
+</div>
+
+<h2 id="week3">8. Week 3 — Certificates &amp; the month-end flow</h2>
+
+<h3>Concept check (45 min)</h3>
+<ul>
+  <li>The maker-checker-approver pattern. Segregation of duties.</li>
+  <li>What each role does on a certificate: ops prepares, IC reviews, admin signs.</li>
+  <li>The difference between a draft certificate (live figures) and a signed one (frozen snapshot).</li>
+  <li>Walk through the <a href="/manuals/control">Internal Control Manual</a> section 4 — the review checklist.</li>
+</ul>
+
+<h3>Exercise 7 — Draft a certificate</h3>
+<ol>
+  <li>Pick a closed-month account. (If mid-month, use last month.)</li>
+  <li>Go to <span class="path">Certificates</span>. Generate a draft.</li>
+  <li>Click <strong>PDF 🖨</strong>. Review every figure.</li>
+  <li>Self-check: does opening balance match last month's closing? Is match rate &gt; 95%? Are there zero pending matches?</li>
+  <li>Click <strong>Prepare</strong>. Add a note: "prepared as part of training exercise 7".</li>
+</ol>
+
+<h3>Exercise 8 — IC review shadow</h3>
+<p>Supervisor (with Internal Control role) performs the review. New hire watches.</p>
+<ol>
+  <li>Supervisor opens the prepared certificate.</li>
+  <li>They walk through the Internal Control Manual checklist out loud.</li>
+  <li>They perform one drill-through on an open item.</li>
+  <li>They click <strong>Review</strong> — or rewrite the draft if issues are found.</li>
+</ol>
+
+<h3>Exercise 9 — Defend a certificate</h3>
+<p>New hire prepares 3 certificates for different accounts. Supervisor role-plays the reviewer. New hire must defend each figure without help.</p>
+
+<h3>Comprehension check end of Week 3</h3>
+<ol>
+  <li>"If you sign a certificate and next week the ledger changes, does the signed certificate change?" (Answer: no — it's frozen.)</li>
+  <li>"Can you prepare and review the same certificate?" (Answer: no — different role required.)</li>
+  <li>"What's the first thing a reviewer looks at?" (Answer: opening balance matches prior month's closing.)</li>
+</ol>
+
+<h2 id="week4">9. Week 4 — Independent operation</h2>
+
+<h3>Structure</h3>
+<p>The new hire runs the desk for the whole week. Supervisor is available by chat but does not sit in.</p>
+
+<h3>Daily rhythm</h3>
+<table>
+  <thead><tr><th>Time</th><th>Task</th></tr></thead>
+  <tbody>
+    <tr><td>08:00</td><td>Sign in. Scan Dashboard. Note any new at-risk callouts.</td></tr>
+    <tr><td>08:15</td><td>Download the Daily breaks report. Glance for outliers.</td></tr>
+    <tr><td>08:30</td><td>Open review queue. Process in tier order.</td></tr>
+    <tr><td>10:30</td><td>Coffee + 5 min on Open items for the area you own.</td></tr>
+    <tr><td>11:00–16:00</td><td>Review queue, open items, exception investigations.</td></tr>
+    <tr><td>16:00</td><td>End-of-day: anything still pending gets a note or a decision. Close sessions ready for auto-close.</td></tr>
+    <tr><td>16:30</td><td>Glance at Scheduler history — any failed jobs?</td></tr>
+  </tbody>
+</table>
+
+<h3>Friday review</h3>
+<p>End-of-week meeting with supervisor:</p>
+<ul>
+  <li>Week's metrics — assignments decided, open items cleared, write-offs, certificates prepared.</li>
+  <li>What went wrong. What got stuck. What took too long.</li>
+  <li>Any patterns in the breaks that might warrant a new auto-grouping rule — check <span class="path">Match patterns</span> together.</li>
+</ul>
+
+<h2 id="signoff">10. Supervisor sign-off checklist</h2>
+
+<p>At the end of Week 4, the supervisor signs off the new hire as <strong>independent</strong>. Criteria:</p>
+
+<ul>
+  <li>☐ <strong>Week 1</strong> — queue literacy: confirms / rejects / notes at a steady pace with &lt; 5% reversal rate.</li>
+  <li>☐ <strong>Week 2</strong> — open items: can triage by age and make a clear decision (clear / comment / write-off).</li>
+  <li>☐ <strong>Week 2</strong> — force-match: has executed at least one 1:1 and one 1:N manual match correctly.</li>
+  <li>☐ <strong>Week 3</strong> — certificates: has prepared at least 3 certificates that passed IC review without rework.</li>
+  <li>☐ <strong>Week 4</strong> — independent day: ran the desk for 5 consecutive days without escalations.</li>
+  <li>☐ <strong>Comprehension</strong> — correctly answers 8 of 10 questions from the oral exam (see Appendix A).</li>
+  <li>☐ <strong>Audit posture</strong> — the Activity log shows only clean actions. No patterns suggesting rushing or guessing.</li>
+</ul>
+
+<p>When all boxes are ticked, the supervisor posts a note against the user record: "Training complete, independent as of YYYY-MM-DD". That's visible in the Users admin page and becomes evidence in the next compliance review.</p>
+
+<h2 id="mistakes">11. Common new-hire mistakes &amp; how to spot them</h2>
+
+<table>
+  <thead><tr><th>Mistake</th><th>Signal</th><th>Coaching</th></tr></thead>
+  <tbody>
+    <tr><td>Confirming tier-4 matches without reading the narration</td><td>High reversal rate on tier-4s</td><td>"Tier 4 is the engine guessing. You're the last line."</td></tr>
+    <tr><td>Rejecting rather than skipping when uncertain</td><td>Lots of manual re-pairings the next day</td><td>"Reject is a decision. Skip is a pause. If you're not sure, skip."</td></tr>
+    <tr><td>One-word notes</td><td>"ok", "yes", "matched" in the note column</td><td>"Write the note as if you'll read it in 6 months with no memory of today."</td></tr>
+    <tr><td>Writing off old items without investigation</td><td>Write-offs with reason "old" or "timing"</td><td>Lock write-off access for 2 more weeks. Review each case together.</td></tr>
+    <tr><td>Force-matching to clear the queue</td><td>Unusual number of manual matches, especially tier-1 rejections immediately followed by manual re-pair</td><td>"Force-match fixes engine mistakes, not your queue impatience."</td></tr>
+    <tr><td>Skipping the certificate checklist</td><td>IC reviewer pushes back on prepared certificates</td><td>Review the checklist together line by line before the next prep.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="answerkey">12. Appendix A — Exercise answer key (supervisor only)</h2>
+
+<div class="callout warn">
+  <strong>Do not share with the new hire before the oral exam.</strong> The point of the questions is the reasoning, not the memorised answer.
+</div>
+
+<h3>Oral exam — pass mark 8 of 10</h3>
+
+<ol>
+  <li><strong>Q: What is the difference between an assignment and an open item?</strong><br>
+      A: An assignment is a proposed or decided pairing inside a single session. An open item is a single-sided row that outlived its session and is now in the rolling ledger.</li>
+
+  <li><strong>Q: Explain the tier system in one sentence.</strong><br>
+      A: Tiers 1–4 express engine confidence on 1:1 matches (ref + amount → ref alone → date + amount → date-tolerated); tier 5 is for ref-gated 1:N / N:1 splits.</li>
+
+  <li><strong>Q: If you reject a match and the two rows go back to unmatched, what happens to them at end of day?</strong><br>
+      A: When the session closes, they become open items on the rolling ledger, auto-categorised, auto-assigned to a functional team. Future sessions may carry-forward-clear them.</li>
+
+  <li><strong>Q: Why can't you edit a signed certificate?</strong><br>
+      A: Signing freezes the figures into a JSON snapshot on the certificate record. Later ledger changes don't rewrite history. This is the control property.</li>
+
+  <li><strong>Q: What does Ctrl+K do?</strong><br>
+      A: Opens the command palette — a fuzzy-search overlay that jumps to any page, account, or recent session.</li>
+
+  <li><strong>Q: You find a 120-day-old open item with no counterpart ever arriving. What do you do?</strong><br>
+      A: Check the history. If no counterpart in sight, escalate to supervisor for a write-off decision. Draft a reason that names the investigation, the date of last correspondent contact, and the risk.</li>
+
+  <li><strong>Q: What's the point of reference normalisation?</strong><br>
+      A: Collapse formatting differences (<code>ABC/12-3</code> vs <code>ABC123</code> vs <code>000ABC123</code>) so the same underlying reference matches regardless of which upstream system formatted it.</li>
+
+  <li><strong>Q: When would you use the Split view instead of the Queue tab?</strong><br>
+      A: When you need to hunt for a counterpart visually — especially for cases where the engine didn't propose a match but you suspect one exists, or for 1:N / N:1 aggregates.</li>
+
+  <li><strong>Q: What's the difference between a tier-1 match and a confirmed match?</strong><br>
+      A: Tier-1 is the engine's confidence. Confirmed is a human's decision. Every confirmed match carries its tier — the tier alone doesn't mean confirmed.</li>
+
+  <li><strong>Q: The scheduler is showing a red dot. What do you do?</strong><br>
+      A: Alert IT or the admin — the automation daemon has died. Scheduled jobs aren't firing. Manual scan + close will still work, but automation needs to come back before SLA alerts miss.</li>
+</ol>
+
+{% endblock %}

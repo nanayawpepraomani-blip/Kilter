@@ -1,0 +1,672 @@
+{% extends "base.html" %}
+{% block title %}Reports — Kilter{% endblock %}
+{% block crumbs %}<span class="current">Reports</span>{% endblock %}
+
+{% block head %}
+<style>
+  .tabs-bar {
+    display: flex; gap: 0; border-bottom: 1px solid var(--c-border);
+    margin-bottom: 20px; flex-wrap: wrap;
+  }
+  .tab-btn {
+    padding: 10px 18px; font-size: var(--t-body); color: var(--c-text-muted);
+    cursor: pointer; border-bottom: 2px solid transparent; font-weight: 500;
+    background: none; border-top: 0; border-left: 0; border-right: 0; font-family: inherit;
+  }
+  .tab-btn:hover { color: var(--c-text); }
+  .tab-btn.active { color: var(--c-primary); border-bottom-color: var(--c-primary); font-weight: 600; }
+
+  .filter-row {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px; padding: 16px 20px; background: #fafbfc;
+    border-bottom: 1px solid var(--c-border); align-items: end;
+  }
+  .filter-row .actions { display: flex; gap: 8px; align-items: end; }
+
+  /* Tiny sparkline-ish bar chart built out of divs for the history charts.
+     Keeps the whole app dependency-free. */
+  .mini-chart {
+    display: flex; align-items: flex-end; gap: 2px;
+    height: 80px; padding: 6px 8px;
+    background: #fafbfc; border: 1px solid var(--c-border); border-radius: 6px;
+  }
+  .mini-chart .bar {
+    flex: 1; background: var(--c-primary); border-radius: 2px 2px 0 0; min-height: 2px;
+    position: relative;
+  }
+  .mini-chart .bar:hover::after {
+    content: attr(data-tip); position: absolute; bottom: 100%; left: 50%;
+    transform: translateX(-50%); background: #0b1220; color: white;
+    padding: 4px 8px; font-size: var(--t-micro); white-space: nowrap;
+    border-radius: 4px; margin-bottom: 4px; z-index: 10;
+  }
+  .mini-chart .bar.warn { background: var(--c-warn); }
+  .mini-chart .bar.danger { background: var(--c-danger); }
+
+  .pivot td .bar-inner {
+    height: 12px; background: #e0e7ff; border-radius: 3px; overflow: hidden;
+  }
+  .pivot td .bar-inner > div {
+    height: 100%; background: var(--c-primary);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Reports</h1>
+    <div class="subtitle">Pull archived reconciliation data. Each tab exports CSV.</div>
+  </div>
+</div>
+
+<div class="tabs-bar">
+  <button class="tab-btn active" data-tab="sessions">Archived sessions</button>
+  <button class="tab-btn" data-tab="cleared">Cleared &amp; written-off</button>
+  <button class="tab-btn" data-tab="history">Account history</button>
+  <button class="tab-btn" data-tab="breaks">Break analysis</button>
+  <button class="tab-btn" data-tab="decisions">Decision activity</button>
+</div>
+
+<!-- ============ Tab 1: Archived sessions ============ -->
+<div id="pane-sessions" class="pane">
+  <div class="card">
+    <div class="filter-row">
+      <div class="field"><label>Account</label>
+        <select id="s-account" class="input"><option value="">All</option></select></div>
+      <div class="field"><label>From</label><input id="s-from" type="date" class="input"></div>
+      <div class="field"><label>To</label><input id="s-to" type="date" class="input"></div>
+      <div class="field"><label>Status</label>
+        <select id="s-status" class="input">
+          <option value="">Any</option>
+          <option value="open">Open</option>
+          <option value="closed">Closed</option>
+        </select></div>
+      <div class="field"><label>Label contains</label><input id="s-label" class="input"></div>
+      <div class="actions">
+        <button id="s-apply" class="btn btn-primary">Apply</button>
+        <button id="s-csv"   class="btn btn-default">CSV</button>
+      </div>
+    </div>
+    <div class="card-body tight">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>#</th><th>Created</th><th>Account</th><th>Currency</th>
+            <th class="num">SWIFT</th><th class="num">Flex</th>
+            <th class="num">Confirmed</th><th class="num">Pending</th>
+            <th class="num">Rate</th>
+            <th class="num">OI seeded</th><th class="num">OI cleared</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="s-body"><tr class="empty-row"><td colspan="12">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ============ Tab 2 (#3): Cleared & written-off ============ -->
+<div id="pane-cleared" class="pane" style="display:none">
+  <div class="card">
+    <div class="filter-row">
+      <div class="field"><label>Account</label>
+        <select id="c-account" class="input"><option value="">All</option></select></div>
+      <div class="field"><label>Cleared from</label><input id="c-from" type="date" class="input"></div>
+      <div class="field"><label>Cleared to</label><input id="c-to" type="date" class="input"></div>
+      <div class="field"><label>Outcome</label>
+        <select id="c-outcome" class="input">
+          <option value="">All</option>
+          <option value="cleared">Cleared</option>
+          <option value="written_off">Written off</option>
+        </select></div>
+      <div class="field"><label>Category</label>
+        <select id="c-category" class="input">
+          <option value="">All</option>
+          <option value="timing_diff">timing_diff</option>
+          <option value="fx_mismatch">fx_mismatch</option>
+          <option value="internal_journal">internal_journal</option>
+          <option value="reversal_pending">reversal_pending</option>
+          <option value="bank_error">bank_error</option>
+          <option value="genuine_break">genuine_break</option>
+          <option value="uncategorized">uncategorized</option>
+        </select></div>
+      <div class="actions">
+        <button id="c-apply" class="btn btn-primary">Apply</button>
+        <button id="c-csv"   class="btn btn-default">CSV</button>
+      </div>
+    </div>
+    <div class="card-body tight">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Cleared at</th><th>Account</th><th>Side</th>
+            <th class="num">Amount</th><th>Sign</th>
+            <th>Ref / narration</th>
+            <th>Category</th><th>Outcome</th>
+            <th>Cleared by</th><th>Via</th>
+          </tr>
+        </thead>
+        <tbody id="c-body"><tr class="empty-row"><td colspan="10">—</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ============ Tab 3 (#2): Account history ============ -->
+<div id="pane-history" class="pane" style="display:none">
+  <div class="card">
+    <div class="filter-row">
+      <div class="field"><label>Account (required)</label>
+        <select id="h-account" class="input"><option value="">Select account</option></select></div>
+      <div class="field"><label>From</label><input id="h-from" type="date" class="input"></div>
+      <div class="field"><label>To</label><input id="h-to" type="date" class="input"></div>
+      <div class="actions">
+        <button id="h-apply" class="btn btn-primary">Load</button>
+        <button id="h-csv"   class="btn btn-default">CSV</button>
+      </div>
+    </div>
+    <div class="card-body" id="h-charts">
+      <div class="empty-state"><h3>Pick an account to load its history</h3></div>
+    </div>
+    <div class="card-body tight">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>#</th><th>Created</th>
+            <th class="num">SWIFT</th><th class="num">Flex</th>
+            <th class="num">Confirmed</th><th class="num">Rate</th>
+            <th class="num">OI added</th><th class="num">OI cleared</th><th class="num">Net OI</th>
+            <th class="num">Opening</th><th class="num">Closing</th>
+          </tr>
+        </thead>
+        <tbody id="h-body"><tr class="empty-row"><td colspan="11">—</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ============ Tab 4 (#4): Break analysis ============ -->
+<div id="pane-breaks" class="pane" style="display:none">
+  <div class="card">
+    <div class="filter-row">
+      <div class="field"><label>Account (optional)</label>
+        <select id="b-account" class="input"><option value="">All</option></select></div>
+      <div class="field"><label>Opened from</label><input id="b-from" type="date" class="input"></div>
+      <div class="field"><label>Opened to</label><input id="b-to" type="date" class="input"></div>
+      <div class="actions">
+        <button id="b-apply" class="btn btn-primary">Apply</button>
+        <button id="b-csv"   class="btn btn-default">CSV</button>
+      </div>
+    </div>
+  </div>
+  <div class="card" style="margin-top:16px;">
+    <div class="card-head"><h2>By category</h2></div>
+    <div class="card-body tight">
+      <table class="table pivot">
+        <thead><tr><th>Category</th><th class="num">Open</th><th class="num">Cleared</th><th class="num">Written off</th><th class="num">Total</th><th class="num">Total value</th></tr></thead>
+        <tbody id="b-cat-body"><tr class="empty-row"><td colspan="6">—</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="card" style="margin-top:16px;">
+    <div class="card-head"><h2>By account</h2></div>
+    <div class="card-body tight">
+      <table class="table pivot">
+        <thead><tr><th>Account</th><th>Area</th><th>Currency</th><th class="num">Open</th><th class="num">Cleared</th><th class="num">Written off</th><th class="num">Total</th></tr></thead>
+        <tbody id="b-acc-body"><tr class="empty-row"><td colspan="7">—</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="card" style="margin-top:16px;">
+    <div class="card-head"><h2>Items opened by month</h2></div>
+    <div class="card-body" id="b-month-chart"><div class="empty-state">—</div></div>
+  </div>
+  <div class="card" style="margin-top:16px;">
+    <div class="card-head"><h2>Confirmed matches by tier</h2></div>
+    <div class="card-body tight">
+      <table class="table pivot">
+        <thead><tr><th>Tier</th><th>Source</th><th class="num">Confirmed</th></tr></thead>
+        <tbody id="b-tier-body"><tr class="empty-row"><td colspan="3">—</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ============ Tab 5 (#5): Decision activity ============ -->
+<div id="pane-decisions" class="pane" style="display:none">
+  <div class="card">
+    <div class="filter-row">
+      <div class="field"><label>Actor (optional)</label><input id="d-actor" class="input"></div>
+      <div class="field"><label>From</label><input id="d-from" type="date" class="input"></div>
+      <div class="field"><label>To</label><input id="d-to" type="date" class="input"></div>
+      <div class="actions">
+        <button id="d-apply" class="btn btn-primary">Apply</button>
+        <button id="d-csv"   class="btn btn-default">CSV</button>
+      </div>
+    </div>
+  </div>
+  <div class="card" style="margin-top:16px;">
+    <div class="card-head"><h2>By user</h2>
+      <span class="hint">Split by status × source so manual matches are distinguishable from engine confirms</span>
+    </div>
+    <div class="card-body tight">
+      <table class="table">
+        <thead><tr><th>Actor</th><th>Status</th><th>Source</th><th class="num">Count</th></tr></thead>
+        <tbody id="d-user-body"><tr class="empty-row"><td colspan="4">—</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="card" style="margin-top:16px;">
+    <div class="card-head"><h2>Decisions per day</h2></div>
+    <div class="card-body" id="d-day-chart"><div class="empty-state">—</div></div>
+  </div>
+  <div class="card" style="margin-top:16px;">
+    <div class="card-head"><h2>Side activity</h2>
+      <span class="hint">Write-offs and notes authored in the window — catches &quot;never leaves context&quot; outliers</span>
+    </div>
+    <div class="card-body tight" style="display:grid;grid-template-columns:1fr 1fr;">
+      <table class="table">
+        <thead><tr><th>Write-offs</th><th class="num">Count</th></tr></thead>
+        <tbody id="d-wo-body"><tr class="empty-row"><td colspan="2">—</td></tr></tbody>
+      </table>
+      <table class="table" style="border-left:1px solid var(--c-border);">
+        <thead><tr><th>Notes authored</th><th class="num">Count</th></tr></thead>
+        <tbody id="d-note-body"><tr class="empty-row"><td colspan="2">—</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+  // -------------- Shared helpers --------------
+  let accounts = [];
+
+  async function loadAccountsInto(selectIds) {
+    if (accounts.length === 0) {
+      const r = await fetch('/accounts');
+      accounts = r.ok ? await r.json() : [];
+    }
+    const opts = accounts.map(a =>
+      `<option value="${a.id}">${esc(a.shortname || a.label)} (${esc(a.currency)})</option>`
+    ).join('');
+    for (const id of selectIds) {
+      const el = document.getElementById(id);
+      if (!el) continue;
+      const keep = el.querySelector('option');
+      el.innerHTML = (keep ? keep.outerHTML : '') + opts;
+    }
+  }
+
+  function qs(obj) {
+    const u = new URLSearchParams();
+    for (const [k, v] of Object.entries(obj)) if (v !== '' && v != null) u.set(k, v);
+    return u.toString();
+  }
+
+  function download(url) {
+    // Re-download through fetch so the X-Session-Token header is attached;
+    // plain anchor clicks arrive unauth'd and hit 401.
+    fetch(url).then(async r => {
+      if (!r.ok) { alert('Export failed'); return; }
+      const blob = await r.blob();
+      const cd = r.headers.get('Content-Disposition') || '';
+      const m = /filename="([^"]+)"/.exec(cd);
+      const fname = m ? m[1] : 'kilter_report.csv';
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob); a.download = fname; a.click();
+      URL.revokeObjectURL(a.href);
+    });
+  }
+
+  async function downloadSessionXlsx(sessionId) {
+    const r = await fetch(`/sessions/${sessionId}/export`);
+    if (!r.ok) { alert('Export failed'); return; }
+    const blob = await r.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `kilter_session_${sessionId}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+  window.downloadSessionXlsx = downloadSessionXlsx;
+
+  // -------------- Tab switching --------------
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const which = btn.dataset.tab;
+      for (const p of document.querySelectorAll('.pane')) p.style.display = 'none';
+      document.getElementById(`pane-${which}`).style.display = '';
+      loaders[which] && loaders[which]();
+    });
+  });
+
+  const loaders = {};
+
+  // =============== Tab 1: Archived sessions ===============
+  loaders.sessions = async () => {
+    await loadAccountsInto(['s-account']);
+    const args = () => ({
+      account_id: document.getElementById('s-account').value,
+      from_date:  document.getElementById('s-from').value,
+      to_date:    document.getElementById('s-to').value,
+      status:     document.getElementById('s-status').value,
+      account_label: document.getElementById('s-label').value,
+    });
+    const run = async () => {
+      const r = await fetch('/reports/sessions?' + qs(args()));
+      const body = document.getElementById('s-body');
+      if (!r.ok) { body.innerHTML = '<tr class="empty-row"><td colspan="12">Failed</td></tr>'; return; }
+      const rows = await r.json();
+      if (!rows.length) {
+        body.innerHTML = '<tr class="empty-row"><td colspan="12">No sessions match the filters</td></tr>';
+        return;
+      }
+      body.innerHTML = rows.map(r => `
+        <tr>
+          <td><a href="/sessions/${r.id}/review">#${r.id}</a></td>
+          <td class="muted">${fmtDateTime(r.created_at)}</td>
+          <td>${esc(r.account_shortname || r.account_label || '—')}
+              ${r.access_area ? `<span class="muted" style="font-size:var(--t-micro)"> · ${esc(r.access_area)}</span>` : ''}</td>
+          <td>${esc(r.swift_currency || r.flex_currency || '')}</td>
+          <td class="num">${r.swift_total}</td>
+          <td class="num">${r.flex_total}</td>
+          <td class="num">${r.confirmed}</td>
+          <td class="num">${r.pending}</td>
+          <td class="num">${r.match_rate_pct}%</td>
+          <td class="num">${r.open_items_seeded || 0}</td>
+          <td class="num">${r.open_items_cleared || 0}</td>
+          <td style="white-space:nowrap">
+            <button class="btn btn-sm btn-default" onclick="downloadSessionXlsx(${r.id})">xlsx</button>
+            <a class="btn btn-sm btn-ghost" href="/sessions/${r.id}/review">Open</a>
+          </td>
+        </tr>`).join('');
+    };
+    document.getElementById('s-apply').onclick = run;
+    document.getElementById('s-csv').onclick = () =>
+      download('/reports/sessions?' + qs({ ...args(), format: 'csv' }));
+    run();
+  };
+
+  // =============== Tab 2 (#3): Cleared items ===============
+  loaders.cleared = async () => {
+    await loadAccountsInto(['c-account']);
+    const args = () => ({
+      account_id: document.getElementById('c-account').value,
+      from_date:  document.getElementById('c-from').value,
+      to_date:    document.getElementById('c-to').value,
+      outcome:    document.getElementById('c-outcome').value,
+      category:   document.getElementById('c-category').value,
+    });
+    const run = async () => {
+      const r = await fetch('/reports/cleared-items?' + qs(args()));
+      const body = document.getElementById('c-body');
+      if (!r.ok) { body.innerHTML = '<tr class="empty-row"><td colspan="10">Failed</td></tr>'; return; }
+      const rows = await r.json();
+      if (!rows.length) {
+        body.innerHTML = '<tr class="empty-row"><td colspan="10">No resolved items in this window</td></tr>';
+        return;
+      }
+      body.innerHTML = rows.map(r => `
+        <tr>
+          <td class="muted">${fmtDateTime(r.cleared_at)}</td>
+          <td>${esc(r.account_shortname || r.account_label || '—')}</td>
+          <td><span class="badge ${r.source_side === 'swift' ? 'badge-info' : 'badge-neutral'}">${esc(r.source_side)}</span></td>
+          <td class="num">${fmtAmount(r.amount)}</td>
+          <td>${esc(r.sign || '')}</td>
+          <td style="max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(r.narration || '')}">
+            <strong>${esc(r.ref || '')}</strong> ${esc(r.narration || '')}
+          </td>
+          <td><span class="badge badge-neutral">${esc(r.category || 'uncategorized')}</span></td>
+          <td>${r.status === 'written_off'
+                ? `<span class="badge badge-danger">written off</span>`
+                : `<span class="badge badge-success">cleared</span>`}</td>
+          <td>${esc(r.cleared_by || '')}</td>
+          <td>${esc(r.cleared_via || '')}${r.write_off_reason ? ` <span class="muted" title="${esc(r.write_off_reason)}">·</span>` : ''}</td>
+        </tr>`).join('');
+    };
+    document.getElementById('c-apply').onclick = run;
+    document.getElementById('c-csv').onclick = () =>
+      download('/reports/cleared-items?' + qs({ ...args(), format: 'csv' }));
+    run();
+  };
+
+  // =============== Tab 3 (#2): Account history ===============
+  loaders.history = async () => {
+    await loadAccountsInto(['h-account']);
+    const args = () => ({
+      from_date: document.getElementById('h-from').value,
+      to_date:   document.getElementById('h-to').value,
+    });
+    const run = async () => {
+      const acctId = document.getElementById('h-account').value;
+      const body = document.getElementById('h-body');
+      const charts = document.getElementById('h-charts');
+      if (!acctId) {
+        body.innerHTML = '<tr class="empty-row"><td colspan="11">Pick an account first</td></tr>';
+        charts.innerHTML = '<div class="empty-state"><h3>Pick an account to load its history</h3></div>';
+        return;
+      }
+      const r = await fetch(`/reports/account-history/${acctId}?` + qs(args()));
+      if (!r.ok) {
+        body.innerHTML = '<tr class="empty-row"><td colspan="11">Failed</td></tr>';
+        return;
+      }
+      const data = await r.json();
+      const sessions = data.sessions || [];
+      if (!sessions.length) {
+        body.innerHTML = '<tr class="empty-row"><td colspan="11">No sessions in this window</td></tr>';
+        charts.innerHTML = '<div class="empty-state"><h3>No sessions</h3></div>';
+        return;
+      }
+      const maxConf = Math.max(...sessions.map(s => s.confirmed || 0), 1);
+      const maxOI   = Math.max(...sessions.map(s => Math.abs(s.open_items_delta || 0)), 1);
+      charts.innerHTML = `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+          <div>
+            <div class="label" style="font-size:var(--t-small);color:var(--c-text-muted);margin-bottom:6px">Match rate per session (%)</div>
+            <div class="mini-chart">
+              ${sessions.map(s => {
+                const h = ((s.match_rate_pct || 0) / 100 * 100).toFixed(0);
+                const cls = s.match_rate_pct >= 90 ? '' : s.match_rate_pct >= 70 ? 'warn' : 'danger';
+                return `<div class="bar ${cls}" style="height:${h}%" data-tip="#${s.id} · ${s.match_rate_pct}%"></div>`;
+              }).join('')}
+            </div>
+          </div>
+          <div>
+            <div class="label" style="font-size:var(--t-small);color:var(--c-text-muted);margin-bottom:6px">Net open-items change per session (seeded − cleared)</div>
+            <div class="mini-chart">
+              ${sessions.map(s => {
+                const d = s.open_items_delta || 0;
+                const h = Math.min(100, Math.abs(d) / maxOI * 100).toFixed(0);
+                const cls = d > 0 ? 'danger' : d < 0 ? '' : 'warn';
+                return `<div class="bar ${cls}" style="height:${h}%" data-tip="#${s.id} · ${d > 0 ? '+' : ''}${d}"></div>`;
+              }).join('')}
+            </div>
+          </div>
+        </div>`;
+      body.innerHTML = sessions.map(s => `
+        <tr>
+          <td><a href="/sessions/${s.id}/review">#${s.id}</a></td>
+          <td class="muted">${fmtDateTime(s.created_at)}</td>
+          <td class="num">${s.swift_total}</td>
+          <td class="num">${s.flex_total}</td>
+          <td class="num">${s.confirmed}</td>
+          <td class="num">${s.match_rate_pct}%</td>
+          <td class="num">${s.open_items_seeded || 0}</td>
+          <td class="num">${s.open_items_cleared || 0}</td>
+          <td class="num" style="${(s.open_items_delta||0) > 0 ? 'color:var(--c-danger)' : (s.open_items_delta||0) < 0 ? 'color:var(--c-success)' : ''}">${(s.open_items_delta||0) > 0 ? '+' : ''}${s.open_items_delta||0}</td>
+          <td class="num">${s.opening_balance_amount != null ? fmtAmount(s.opening_balance_amount) : ''}</td>
+          <td class="num">${s.closing_balance_amount != null ? fmtAmount(s.closing_balance_amount) : ''}</td>
+        </tr>`).join('');
+    };
+    document.getElementById('h-apply').onclick = run;
+    document.getElementById('h-csv').onclick = () => {
+      const id = document.getElementById('h-account').value;
+      if (!id) return alert('Pick an account first');
+      download(`/reports/account-history/${id}?` + qs({ ...args(), format: 'csv' }));
+    };
+    run();
+  };
+
+  // =============== Tab 4 (#4): Break analysis ===============
+  loaders.breaks = async () => {
+    await loadAccountsInto(['b-account']);
+    const args = () => ({
+      account_id: document.getElementById('b-account').value,
+      from_date:  document.getElementById('b-from').value,
+      to_date:    document.getElementById('b-to').value,
+    });
+    const run = async () => {
+      const r = await fetch('/reports/break-analysis?' + qs(args()));
+      if (!r.ok) {
+        for (const id of ['b-cat-body','b-acc-body','b-tier-body']) {
+          document.getElementById(id).innerHTML = '<tr class="empty-row"><td colspan="7">Failed</td></tr>';
+        }
+        return;
+      }
+      const data = await r.json();
+      // By category — pivot by status
+      const catMap = {};
+      for (const r of data.by_category) {
+        catMap[r.category] = catMap[r.category] || { open: 0, cleared: 0, written_off: 0, total: 0, value: 0 };
+        catMap[r.category][r.status] = r.cnt;
+        catMap[r.category].total += r.cnt;
+        catMap[r.category].value += r.total || 0;
+      }
+      const catBody = document.getElementById('b-cat-body');
+      const catEntries = Object.entries(catMap).sort((a,b) => b[1].total - a[1].total);
+      catBody.innerHTML = catEntries.length
+        ? catEntries.map(([k,v]) => `
+          <tr><td><span class="badge badge-neutral">${esc(k)}</span></td>
+            <td class="num">${v.open||0}</td><td class="num">${v.cleared||0}</td>
+            <td class="num">${v.written_off||0}</td><td class="num">${v.total}</td>
+            <td class="num">${fmtAmount(v.value)}</td></tr>`).join('')
+        : '<tr class="empty-row"><td colspan="6">No items in this window</td></tr>';
+
+      // By account
+      const accMap = {};
+      for (const r of data.by_account) {
+        const key = r.account_id || 'unregistered';
+        accMap[key] = accMap[key] || {
+          label: r.shortname || r.account_label || 'Unregistered',
+          area: r.access_area, currency: r.currency, open: 0, cleared: 0, written_off: 0, total: 0,
+        };
+        accMap[key][r.status] = r.cnt;
+        accMap[key].total += r.cnt;
+      }
+      const accBody = document.getElementById('b-acc-body');
+      const accEntries = Object.values(accMap).sort((a,b) => b.total - a.total);
+      accBody.innerHTML = accEntries.length
+        ? accEntries.map(v => `
+          <tr><td>${esc(v.label)}</td><td>${esc(v.area || '')}</td><td>${esc(v.currency || '')}</td>
+            <td class="num">${v.open||0}</td><td class="num">${v.cleared||0}</td>
+            <td class="num">${v.written_off||0}</td><td class="num">${v.total}</td></tr>`).join('')
+        : '<tr class="empty-row"><td colspan="7">—</td></tr>';
+
+      // By month chart — stacked bars would be a chart lib; keep it simple as a grouped chart
+      const months = [...new Set(data.by_month.map(r => r.month).filter(Boolean))].sort();
+      const monthMap = {};
+      for (const r of data.by_month) {
+        monthMap[r.month] = monthMap[r.month] || { open: 0, cleared: 0, written_off: 0 };
+        monthMap[r.month][r.status] = r.cnt;
+      }
+      const maxMonth = Math.max(1, ...months.map(m =>
+        (monthMap[m].open||0) + (monthMap[m].cleared||0) + (monthMap[m].written_off||0)));
+      const monthEl = document.getElementById('b-month-chart');
+      monthEl.innerHTML = months.length === 0
+        ? '<div class="empty-state">No items in this window</div>'
+        : `<div class="mini-chart" style="height:140px">
+            ${months.map(m => {
+              const v = monthMap[m];
+              const t = (v.open||0) + (v.cleared||0) + (v.written_off||0);
+              const h = (t / maxMonth * 100).toFixed(0);
+              const cls = (v.open||0) > (v.cleared||0) ? 'warn' : '';
+              return `<div class="bar ${cls}" style="height:${h}%" data-tip="${m}: ${t} items (open ${v.open||0}, cleared ${v.cleared||0}, WO ${v.written_off||0})"></div>`;
+            }).join('')}
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:var(--t-micro);color:var(--c-text-muted);margin-top:4px">
+            ${months.map(m => `<span>${esc(m)}</span>`).join('')}
+          </div>`;
+
+      // Tier distribution
+      const tierBody = document.getElementById('b-tier-body');
+      tierBody.innerHTML = data.by_tier.length
+        ? data.by_tier.map(r => `
+          <tr><td>T${r.tier}</td><td><span class="badge badge-neutral">${esc(r.source || 'engine')}</span></td>
+            <td class="num">${r.cnt}</td></tr>`).join('')
+        : '<tr class="empty-row"><td colspan="3">—</td></tr>';
+    };
+    document.getElementById('b-apply').onclick = run;
+    document.getElementById('b-csv').onclick = () =>
+      download('/reports/break-analysis?' + qs({ ...args(), format: 'csv' }));
+    run();
+  };
+
+  // =============== Tab 5 (#5): Decision activity ===============
+  loaders.decisions = async () => {
+    const args = () => ({
+      actor: document.getElementById('d-actor').value,
+      from_date: document.getElementById('d-from').value,
+      to_date: document.getElementById('d-to').value,
+    });
+    const run = async () => {
+      const r = await fetch('/reports/decisions?' + qs(args()));
+      const ubody = document.getElementById('d-user-body');
+      const dayChart = document.getElementById('d-day-chart');
+      const wbody = document.getElementById('d-wo-body');
+      const nbody = document.getElementById('d-note-body');
+      if (r.status === 403) {
+        ubody.innerHTML = '<tr class="empty-row"><td colspan="4">Requires admin / audit / internal_control role</td></tr>';
+        dayChart.innerHTML = '<div class="empty-state">Requires elevated role</div>';
+        return;
+      }
+      if (!r.ok) { ubody.innerHTML = '<tr class="empty-row"><td colspan="4">Failed</td></tr>'; return; }
+      const data = await r.json();
+
+      ubody.innerHTML = data.by_user.length
+        ? data.by_user.map(r => `
+          <tr><td>${esc(r.actor || '—')}</td>
+              <td><span class="badge ${r.status==='confirmed'?'badge-success':r.status==='rejected'?'badge-danger':'badge-neutral'}">${esc(r.status)}</span></td>
+              <td>${esc(r.source || 'engine')}</td>
+              <td class="num">${r.cnt}</td></tr>`).join('')
+        : '<tr class="empty-row"><td colspan="4">No decisions in this window</td></tr>';
+
+      const days = [...new Set(data.by_day.map(r => r.day))].sort();
+      const dayMap = {};
+      for (const r of data.by_day) {
+        dayMap[r.day] = dayMap[r.day] || { confirmed: 0, rejected: 0, pending: 0 };
+        dayMap[r.day][r.status] = r.cnt;
+      }
+      const maxDay = Math.max(1, ...days.map(d => (dayMap[d].confirmed||0) + (dayMap[d].rejected||0)));
+      dayChart.innerHTML = days.length === 0
+        ? '<div class="empty-state">No decisions in this window</div>'
+        : `<div class="mini-chart" style="height:140px">
+            ${days.map(d => {
+              const v = dayMap[d];
+              const t = (v.confirmed||0) + (v.rejected||0);
+              const h = (t / maxDay * 100).toFixed(0);
+              return `<div class="bar" style="height:${h}%" data-tip="${d}: ${v.confirmed||0} confirmed, ${v.rejected||0} rejected"></div>`;
+            }).join('')}
+          </div>`;
+
+      wbody.innerHTML = data.writeoffs.length
+        ? data.writeoffs.map(r => `<tr><td>${esc(r.actor || '—')}</td><td class="num">${r.cnt}</td></tr>`).join('')
+        : '<tr class="empty-row"><td colspan="2">—</td></tr>';
+      nbody.innerHTML = data.notes.length
+        ? data.notes.map(r => `<tr><td>${esc(r.actor || '—')}</td><td class="num">${r.cnt}</td></tr>`).join('')
+        : '<tr class="empty-row"><td colspan="2">—</td></tr>';
+    };
+    document.getElementById('d-apply').onclick = run;
+    document.getElementById('d-csv').onclick = () =>
+      download('/reports/decisions?' + qs({ ...args(), format: 'csv' }));
+    run();
+  };
+
+  // Load the first tab on page ready.
+  loaders.sessions();
+  document.body.dataset.nav = 'reports';
+</script>
+{% endblock %}
