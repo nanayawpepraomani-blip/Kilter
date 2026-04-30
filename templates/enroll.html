@@ -95,6 +95,16 @@
       </form>
     </div>
 
+    <div id="recovery-codes-panel" style="display:none">
+      <div class="step-heading" style="color:#92400e">Save your recovery codes</div>
+      <p style="font-size:13px;color:var(--c-text-muted);margin-bottom:12px">
+        These 8 single-use codes let you sign in if you lose your phone.
+        <strong>They cannot be shown again.</strong> Store them somewhere safe (password manager, printed copy).
+      </p>
+      <pre class="rc-list" style="background:#fef3c7;border:1px solid #f59e0b;border-radius:6px;padding:14px;font-family:monospace;font-size:15px;letter-spacing:1px;line-height:2;text-align:center"></pre>
+      <button class="full" style="margin-top:16px" onclick="window.location.href='/login'">I've saved my codes — sign in</button>
+    </div>
+
     <div id="step2" style="display:none">
       <div class="step-heading"><span class="step-no">2</span>Scan the QR code with Microsoft Authenticator</div>
       <ol class="instructions">
@@ -186,9 +196,17 @@
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.detail || 'Failed');
-      cSuccess.innerHTML = 'Enrollment complete. Redirecting to sign-in...';
-      cSuccess.style.display = 'block';
-      setTimeout(() => window.location.href = '/login', 1500);
+      // Show recovery codes before redirecting — they cannot be retrieved again.
+      if (j.recovery_codes && j.recovery_codes.length) {
+        document.getElementById('step2').style.display = 'none';
+        const recDiv = document.getElementById('recovery-codes-panel');
+        recDiv.querySelector('.rc-list').textContent = j.recovery_codes.join('\n');
+        recDiv.style.display = 'block';
+      } else {
+        cSuccess.innerHTML = 'Enrollment complete. Redirecting to sign-in...';
+        cSuccess.style.display = 'block';
+        setTimeout(() => window.location.href = '/login', 1500);
+      }
     } catch (err) {
       cError.textContent = err.message;
       cError.style.display = 'block';

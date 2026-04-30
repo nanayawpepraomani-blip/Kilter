@@ -37,6 +37,7 @@ Out of scope for v1:
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Iterable
@@ -51,8 +52,14 @@ DEFAULT_TOLERANCE = 0.01
 # Recon-status values written to card_settlement_records.recon_status.
 # 'disputed' and 'written_off' are operator-driven and never overwritten
 # by the engine — they win over any computed status.
-COMPUTED_STATUSES   = ('matched', 'mismatched', 'unmatched')
+COMPUTED_STATUSES   = ('matched', 'mismatched', 'unmatched', 'incomplete')
 PROTECTED_STATUSES  = ('disputed', 'written_off')
+
+# Required stages for a group to be considered fully matched. Operators
+# can override via environment — e.g. set to 'auth,settlement' to skip
+# clearing for schemes that don't emit clearing files.
+_raw_required = os.environ.get('KILTER_CARDS_REQUIRED_STAGES', 'auth,clearing,settlement')
+REQUIRED_STAGES = {s for s in _raw_required.split(',') if s}
 
 
 @dataclass
@@ -70,6 +77,7 @@ class MatchGroup:
     currencies: list[str]
     pan_last4_set: list[str]
     schemes: list[str]
+    stages: list[str]             # distinct stages present across files in this group
     status: str                   # one of COMPUTED_STATUSES
 
     @property
@@ -124,7 +132,8 @@ def compute_match_groups(conn, *, scheme: str | None = None,
                GROUP_CONCAT(DISTINCT r.id)                  AS record_ids_csv,
                GROUP_CONCAT(DISTINCT r.currency_settlement) AS currencies_csv,
                GROUP_CONCAT(DISTINCT r.pan_last4)           AS pan4_csv,
-               GROUP_CONCAT(DISTINCT f.scheme)              AS schemes_csv
+               GROUP_CONCAT(DISTINCT f.scheme)              AS schemes_csv,
+               GROUP_CONCAT(DISTINCT f.stage)               AS stages_concat
         FROM card_settlement_records r
         JOIN card_settlement_files f ON f.id = r.file_id
         WHERE {where_sql}
@@ -151,12 +160,19 @@ def compute_match_groups(conn, *, scheme: str | None = None,
         # `100.00 + 0.01` lands on 0.01000000000000023 due to IEEE-754
         # rounding, which would falsely fail a strict `<=` against 0.01.
         # Add a fixed epsilon to absorb that.
+        stages = [s for s in (r['stages_concat'] or '').split(',') if s]
+
         if file_count <= 1:
             status = 'unmatched'
-        elif spread <= tolerance + 1e-9:
-            status = 'matched'
-        else:
+        elif spread > tolerance + 1e-9:
             status = 'mismatched'
+        elif (REQUIRED_STAGES and file_count >= 2
+              and not REQUIRED_STAGES.issubset(set(stages))):
+            # All amounts agree but not all required stages are present.
+            # 'incomplete' takes priority over 'matched'.
+            status = 'incomplete'
+        else:
+            status = 'matched'
 
         groups.append(MatchGroup(
             scheme_ref=r['scheme_ref'],
@@ -171,11 +187,12 @@ def compute_match_groups(conn, *, scheme: str | None = None,
             currencies=[c.upper() for c in _parse_csv(r['currencies_csv'])],
             pan_last4_set=_parse_csv(r['pan4_csv']),
             schemes=_parse_csv(r['schemes_csv']),
+            stages=stages,
             status=status,
         ))
 
     # Stable ordering: most-mismatched first, then alpha by ref.
-    status_rank = {'mismatched': 0, 'matched': 1, 'unmatched': 2}
+    status_rank = {'mismatched': 0, 'incomplete': 1, 'matched': 2, 'unmatched': 3}
     groups.sort(key=lambda g: (status_rank.get(g.status, 9),
                                 -g.amount_spread, g.scheme_ref))
     return groups
@@ -187,6 +204,7 @@ class RecomputeResult:
     matched: int
     mismatched: int
     unmatched: int
+    incomplete: int
     records_updated: int
     records_protected: int   # operator status preserved (disputed / written_off)
 
@@ -199,7 +217,7 @@ def apply_match_status(conn, groups: Iterable[MatchGroup], *,
 
     Wraps writes in `with conn:` so the run is atomic — partial failures
     leave the table consistent."""
-    counts = {'matched': 0, 'mismatched': 0, 'unmatched': 0}
+    counts = {'matched': 0, 'mismatched': 0, 'unmatched': 0, 'incomplete': 0}
     updated = 0
     protected = 0
     now = datetime.utcnow().isoformat()
@@ -212,6 +230,8 @@ def apply_match_status(conn, groups: Iterable[MatchGroup], *,
             placeholders = ",".join("?" * len(g.record_ids))
             # Skip rows in operator-controlled status. SQLite doesn't
             # support array-valued IN binding so we splice param markers.
+            # For 'matched' and 'incomplete', record matched_at/matched_by
+            # only when the status is 'matched'.
             cur = conn.execute(
                 f"UPDATE card_settlement_records "
                 f"SET recon_status=?, matched_at=?, matched_by=? "
@@ -236,6 +256,7 @@ def apply_match_status(conn, groups: Iterable[MatchGroup], *,
         matched=counts.get('matched', 0),
         mismatched=counts.get('mismatched', 0),
         unmatched=counts.get('unmatched', 0),
+        incomplete=counts.get('incomplete', 0),
         records_updated=updated,
         records_protected=protected,
     )

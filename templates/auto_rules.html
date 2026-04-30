@@ -1,0 +1,218 @@
+{% extends "base.html" %}
+{% block title %}Auto-match rules · Kilter{% endblock %}
+{% block crumbs %}<a href="/">Dashboard</a><span class="sep">/</span><span class="current">Auto-match rules</span>{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Auto-match rules</h1>
+    <div class="subtitle">Rules are evaluated in priority order. The first matching rule wins and auto-confirms the assignment with <code>decided_by=system_auto:&lt;rule name&gt;</code>.</div>
+  </div>
+  <button class="btn btn-primary" onclick="document.getElementById('new-rule').open = true">+ New rule</button>
+</div>
+
+<div id="not-authorized" class="card" style="display:none">
+  <div class="card-body">
+    <div class="empty-state">
+      <h3>Admin-only page</h3>
+      <p>You need the admin role to manage auto-match rules.</p>
+    </div>
+  </div>
+</div>
+
+<div id="authorized">
+  <div class="card">
+    <div class="card-head">
+      <h2>Rules</h2>
+      <div class="hint"><span id="rule-count">0</span> total</div>
+    </div>
+    <div class="card-body tight">
+      <table class="table" id="rules-table">
+        <thead>
+          <tr>
+            <th>Priority</th>
+            <th>Name</th>
+            <th>Description</th>
+            <th>Tier</th>
+            <th>Exact amt</th>
+            <th>Ref match</th>
+            <th>Max diff</th>
+            <th>Same date</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <details id="new-rule" style="margin-top:20px">
+    <summary>Add a new rule</summary>
+    <div class="card" style="margin-top:8px">
+      <div class="card-body">
+        <form id="new-form" class="form-grid">
+          <div class="field">
+            <label>Name <span style="color:var(--c-danger)">*</span></label>
+            <input class="input" name="name" placeholder="e.g. tier1-exact" required>
+          </div>
+          <div class="field">
+            <label>Description</label>
+            <input class="input" name="description" placeholder="Optional notes">
+          </div>
+          <div class="field">
+            <label>Priority</label>
+            <input class="input" type="number" name="priority" value="0" min="0">
+          </div>
+          <div class="field">
+            <label>Require tier</label>
+            <select class="input" name="require_tier">
+              <option value="">Any</option>
+              <option value="1">Tier 1</option>
+              <option value="2">Tier 2</option>
+              <option value="3">Tier 3</option>
+              <option value="4">Tier 4</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Require exact amount</label>
+            <select class="input" name="require_amount_exact">
+              <option value="">No</option>
+              <option value="1">Yes</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Require ref match</label>
+            <select class="input" name="require_ref_match">
+              <option value="">No</option>
+              <option value="1">Yes</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Max amount diff</label>
+            <input class="input" type="number" name="max_amount_diff" placeholder="Leave blank for session tolerance" step="0.01" min="0">
+          </div>
+          <div class="field">
+            <label>Require same date</label>
+            <select class="input" name="require_same_date">
+              <option value="">No</option>
+              <option value="1">Yes</option>
+            </select>
+          </div>
+          <div class="field" style="align-self:end">
+            <button type="submit" class="btn btn-primary">Create rule</button>
+          </div>
+          <div style="grid-column:1/-1"><span class="status" id="new-status"></span></div>
+        </form>
+      </div>
+    </div>
+  </details>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.body.dataset.nav = 'auto-rules';
+
+document.addEventListener('me:loaded', () => {
+  if (!window.me || window.me.role !== 'admin') {
+    document.getElementById('not-authorized').style.display = '';
+    document.getElementById('authorized').style.display = 'none';
+    return;
+  }
+  document.getElementById('not-authorized').style.display = 'none';
+  document.getElementById('authorized').style.display = '';
+  load();
+});
+
+async function load() {
+  const r = await fetch('/auto-rules');
+  if (!r.ok) return;
+  const rules = await r.json();
+  document.getElementById('rule-count').textContent = rules.length;
+  const tbody = document.querySelector('#rules-table tbody');
+  if (rules.length === 0) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="10">No rules yet. Create one below.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rules.map(rule => `
+    <tr id="row-${rule.id}">
+      <td>${rule.priority}</td>
+      <td><strong>${esc(rule.name)}</strong></td>
+      <td class="muted">${esc(rule.description || '')}</td>
+      <td>${rule.require_tier ? `<span class="badge badge-info">Tier ${esc(rule.require_tier)}</span>` : '<span class="muted">Any</span>'}</td>
+      <td>${rule.require_amount_exact ? '<span class="badge badge-success">Yes</span>' : '<span class="muted">No</span>'}</td>
+      <td>${rule.require_ref_match ? '<span class="badge badge-success">Yes</span>' : '<span class="muted">No</span>'}</td>
+      <td>${rule.max_amount_diff != null ? rule.max_amount_diff : '<span class="muted">Session tol.</span>'}</td>
+      <td>${rule.require_same_date ? '<span class="badge badge-success">Yes</span>' : '<span class="muted">No</span>'}</td>
+      <td>${rule.active
+        ? '<span class="badge badge-success">Active</span>'
+        : '<span class="badge badge-neutral">Inactive</span>'}</td>
+      <td style="white-space:nowrap">
+        ${rule.active
+          ? `<button class="btn btn-sm btn-ghost" onclick="toggleActive(${rule.id}, false)">Deactivate</button>`
+          : `<button class="btn btn-sm btn-ghost" onclick="toggleActive(${rule.id}, true)">Activate</button>`}
+        <button class="btn btn-sm btn-danger-soft" style="margin-left:4px" onclick="deactivate(${rule.id})">Delete</button>
+      </td>
+    </tr>`).join('');
+}
+
+async function toggleActive(id, active) {
+  // Fetch the current rule then PATCH with active toggled.
+  const r0 = await fetch('/auto-rules');
+  if (!r0.ok) return;
+  const rules = await r0.json();
+  const rule = rules.find(r => r.id === id);
+  if (!rule) return;
+  const r = await fetch(`/auto-rules/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...rule, active: active ? 1 : 0 }),
+  });
+  if (!r.ok) { alert((await r.json()).detail || 'Update failed'); return; }
+  load();
+}
+
+async function deactivate(id) {
+  if (!confirm('Deactivate this rule? It will no longer fire at ingest.')) return;
+  const r = await fetch(`/auto-rules/${id}`, { method: 'DELETE' });
+  if (!r.ok) { alert((await r.json()).detail || 'Failed'); return; }
+  load();
+}
+
+document.getElementById('new-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const raw = Object.fromEntries(fd.entries());
+  const payload = {
+    name: raw.name,
+    description: raw.description || null,
+    priority: parseInt(raw.priority, 10) || 0,
+    active: 1,
+    require_tier: raw.require_tier || null,
+    require_amount_exact: raw.require_amount_exact ? parseInt(raw.require_amount_exact, 10) : null,
+    require_ref_match: raw.require_ref_match ? parseInt(raw.require_ref_match, 10) : null,
+    max_amount_diff: raw.max_amount_diff !== '' ? parseFloat(raw.max_amount_diff) : null,
+    require_same_date: raw.require_same_date ? parseInt(raw.require_same_date, 10) : null,
+  };
+  const status = document.getElementById('new-status');
+  try {
+    const r = await fetch('/auto-rules', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.detail || 'Failed');
+    e.target.reset();
+    status.className = 'status success';
+    status.textContent = `Rule "${j.name}" created (id ${j.id}).`;
+    document.getElementById('new-rule').open = false;
+    load();
+  } catch (err) {
+    status.className = 'status error';
+    status.textContent = err.message;
+  }
+});
+</script>
+{% endblock %}

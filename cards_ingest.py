@@ -37,6 +37,7 @@ from pci_safety import RefusedPanError
 
 VALID_SCHEMES = ('visa', 'mastercard', 'verve', 'gh_cardlink', 'other')
 VALID_ROLES   = ('issuer', 'acquirer', 'switch')
+VALID_STAGES  = ('auth', 'clearing', 'settlement')
 
 
 class CardsIngestError(Exception):
@@ -57,6 +58,7 @@ class CardsIngestResult:
     file_id: int
     scheme: str
     role: str
+    stage: str | None
     record_count: int
     total_amount: float
     currency: str | None
@@ -76,6 +78,7 @@ def ingest_card_settlement(
     pan_field: str | None = None,
     pan_masked_field: str | None = None,
     notes: str | None = None,
+    stage: str | None = None,
 ) -> CardsIngestResult:
     """Ingest one cards settlement file. Currently CSV-only via profile.
 
@@ -89,6 +92,9 @@ def ingest_card_settlement(
     if role not in VALID_ROLES:
         raise CardsIngestError(
             f"role must be one of {VALID_ROLES}, got {role!r}")
+    if stage is not None and stage not in VALID_STAGES:
+        raise CardsIngestError(
+            f"stage must be one of {VALID_STAGES}, got {stage!r}")
     if profile_id is None:
         # Without a profile we'd need a Visa/Mastercard binary parser,
         # which is still stubbed. Tell the operator clearly.
@@ -160,12 +166,12 @@ def ingest_card_settlement(
         with conn:
             cur = conn.execute(
                 "INSERT INTO card_settlement_files "
-                "(sha256, scheme, role, file_id, processing_date, "
+                "(sha256, scheme, role, stage, file_id, processing_date, "
                 "settlement_date, record_count, total_amount, currency, "
                 "original_filename, ingested_at, ingested_by, notes) "
-                "VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
-                    sha, scheme, role,
+                    sha, scheme, role, stage,
                     settlement_date or now[:10],
                     settlement_date,
                     parsed.file_meta['record_count'],
@@ -209,6 +215,7 @@ def ingest_card_settlement(
         return CardsIngestResult(
             file_id=file_id,
             scheme=scheme, role=role,
+            stage=stage,
             record_count=parsed.file_meta['record_count'],
             total_amount=parsed.file_meta.get('total_amount') or 0.0,
             currency=(currency or '').upper() or None,

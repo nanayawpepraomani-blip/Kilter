@@ -122,6 +122,7 @@ async function load() {
         ${roleSelector(u)}
         ${authSelector(u)}
         ${toggleButton(u)}
+        ${u.totp_enrolled_at ? `<button class="btn btn-sm btn-ghost" style="margin-left:4px" onclick="resetRecoveryCodes('${esc(u.username)}')" title="Generate new recovery codes for this user">Recovery codes</button>` : ''}
       </td>
     </tr>`).join('');
 }
@@ -222,6 +223,15 @@ document.getElementById('new-form').addEventListener('submit', async (e) => {
     status.textContent = err.message;
   }
 });
+
+async function resetRecoveryCodes(username) {
+  if (!confirm(`Generate new recovery codes for ${username}? All existing unused codes will be invalidated.`)) return;
+  const r = await fetch(`/users/${encodeURIComponent(username)}/recovery-codes/reset`, { method: 'POST' });
+  const j = await r.json();
+  if (!r.ok) { alert(j.detail || 'Failed'); return; }
+  const codes = j.recovery_codes.join('\n');
+  alert(`New recovery codes for ${username}. Give these to the user securely:\n\n${codes}\n\nThese cannot be shown again.`);
+}
 
 async function exportUsers() {
   // Fetching via /users/export via window.fetch preserves the auth header,

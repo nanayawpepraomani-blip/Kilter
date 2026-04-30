@@ -89,6 +89,7 @@
   .pill.matched     { background: #dcfce7; color: #166534; }
   .pill.mismatched  { background: #fee2e2; color: #991b1b; }
   .pill.unmatched   { background: #f3f4f6; color: #4b5563; }
+  .pill.incomplete  { background: #fef9c3; color: #854d0e; }
   .pill.disputed    { background: #fef3c7; color: #92400e; }
   .pill.written_off { background: #e0e7ff; color: #3730a3; }
 
@@ -207,6 +208,7 @@
         <div class="chip-row" id="match-chips">
           <span class="chip active" data-status="">All<span class="n" id="chip-all">0</span></span>
           <span class="chip" data-status="mismatched">Mismatched<span class="n" id="chip-mismatched">0</span></span>
+          <span class="chip" data-status="incomplete">Incomplete<span class="n" id="chip-incomplete">0</span></span>
           <span class="chip" data-status="matched">Matched<span class="n" id="chip-matched">0</span></span>
           <span class="chip" data-status="unmatched">Unmatched<span class="n" id="chip-unmatched">0</span></span>
         </div>
@@ -234,6 +236,7 @@
             <th>Status</th>
             <th>Scheme ref</th>
             <th>Schemes</th>
+            <th>Stages</th>
             <th class="num">Records</th>
             <th class="num">Files</th>
             <th class="num">Min</th>
@@ -244,7 +247,7 @@
             <th></th>
           </tr>
         </thead>
-        <tbody><tr class="empty-row"><td colspan="11">Loading…</td></tr></tbody>
+        <tbody><tr class="empty-row"><td colspan="12">Loading…</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -305,6 +308,15 @@
         <div class="muted" style="font-size:var(--t-small);margin-top:4px">
           The profile defines column mapping for the issuer's CSV format. Define new ones in <a href="/byo-formats">BYO formats</a>.
         </div>
+      </div>
+      <div class="form-row">
+        <label>Stage <span class="muted">(optional)</span></label>
+        <select name="stage">
+          <option value="">Unknown / not applicable</option>
+          <option value="auth">Auth (authorization)</option>
+          <option value="clearing">Clearing</option>
+          <option value="settlement">Settlement</option>
+        </select>
       </div>
       <div class="form-row">
         <label>File</label>
@@ -569,6 +581,7 @@ async function loadMatches() {
   // show the population, not the current-view subset.
   document.getElementById('chip-all').textContent          = data.total_groups;
   document.getElementById('chip-mismatched').textContent   = data.counts.mismatched;
+  document.getElementById('chip-incomplete').textContent   = data.counts.incomplete || 0;
   document.getElementById('chip-matched').textContent      = data.counts.matched;
   document.getElementById('chip-unmatched').textContent    = data.counts.unmatched;
   document.getElementById('tab-matches-count').textContent = `(${data.total_groups})`;
@@ -624,7 +637,7 @@ function renderMatches() {
   // The server's compute_match_groups already sorts this way, but we
   // re-sort client-side after chip filtering so the population stays
   // intuitive even on a narrowed view.
-  const statusRank = { mismatched: 0, matched: 1, unmatched: 2 };
+  const statusRank = { mismatched: 0, incomplete: 1, matched: 2, unmatched: 3 };
   let groups = allMatches.slice();
   if (currentMatchStatus) {
     groups = groups.filter(g => g.status === currentMatchStatus);
@@ -641,11 +654,24 @@ function renderMatches() {
     tbody.innerHTML = '<tr class="empty-row"><td colspan="11">No groups in this scope.</td></tr>';
     return;
   }
-  tbody.innerHTML = groups.map(g => `
+  tbody.innerHTML = groups.map(g => {
+    const ALL_STAGES = ['auth', 'clearing', 'settlement'];
+    const STAGE_STYLE = { auth: 'background:#dcfce7;color:#166534', clearing: 'background:#dbeafe;color:#1e40af', settlement: 'background:#ede9fe;color:#5b21b6' };
+    const presentStages = new Set(g.stages || []);
+    const stageBadges = ALL_STAGES.map(s =>
+      presentStages.has(s)
+        ? `<span class="pill" style="${STAGE_STYLE[s] || ''};padding:1px 7px;font-size:10px">${s} ✓</span>`
+        : `<span class="pill" style="background:#f3f4f6;color:#9ca3af;padding:1px 7px;font-size:10px">${s} ✗</span>`
+    ).join(' ');
+    const incompleteWarn = g.status === 'incomplete'
+      ? ' <span class="pill" style="background:#fef9c3;color:#854d0e;font-size:10px">⚠ incomplete</span>'
+      : '';
+    return `
     <tr>
       <td><span class="pill ${esc(g.status)}">${esc(g.status)}</span></td>
       <td><span class="ref-cell">${esc(g.scheme_ref)}</span></td>
       <td>${(g.schemes || []).map(s => esc(SCHEME_LABELS[s] || s)).join(', ') || '<span class="muted">—</span>'}</td>
+      <td>${stageBadges}${incompleteWarn}</td>
       <td class="num">${g.record_count}</td>
       <td class="num">${g.file_count}</td>
       <td class="num">${fmtAmount(g.amount_min)}</td>
@@ -654,7 +680,8 @@ function renderMatches() {
       <td>${(g.currencies || []).join(', ') || '<span class="muted">—</span>'}</td>
       <td>${(g.pan_last4_set || []).map(p => `<span class="pan-cell">••${esc(p)}</span>`).join(' ') || '<span class="muted">—</span>'}</td>
       <td><button class="btn btn-default btn-sm" onclick="openDrawer('${encodeURIComponent(g.scheme_ref)}')">Records &rarr;</button></td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
 }
 
 // ---------------- Drill-in drawer ----------------

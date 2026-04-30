@@ -26,6 +26,7 @@ audit trail clean ("who was logged in at 14:30?" → look at user_sessions).
 from __future__ import annotations
 
 import base64
+import hashlib
 import secrets
 from datetime import datetime, timedelta
 from io import BytesIO
@@ -176,3 +177,52 @@ def revoke_all_sessions_for(conn, username: str) -> None:
 
 def generate_enrollment_token() -> str:
     return secrets.token_urlsafe(16)
+
+
+# ---------------------------------------------------------------------------
+# MFA Recovery codes — single-use backup codes issued at enrollment.
+# Each code is 12 chars from an unambiguous charset (no 0/O/I/1) formatted
+# as XXXX-XXXX-XXXX. Stored as SHA-256 hashes; plaintext shown only once.
+# ---------------------------------------------------------------------------
+
+_RECOVERY_CHARSET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+
+
+def _hash_recovery_code(code: str) -> str:
+    return hashlib.sha256(code.encode()).hexdigest()
+
+
+def generate_recovery_codes(count: int = 8) -> list[str]:
+    codes = []
+    for _ in range(count):
+        raw = ''.join(secrets.choice(_RECOVERY_CHARSET) for _ in range(12))
+        codes.append(f"{raw[:4]}-{raw[4:8]}-{raw[8:]}")
+    return codes
+
+
+def store_recovery_codes(conn, username: str, codes: list[str]) -> None:
+    """Replace existing recovery codes with a fresh set (hashed)."""
+    now = datetime.utcnow().isoformat()
+    conn.execute("DELETE FROM user_recovery_codes WHERE username=?", (username,))
+    rows = [(username, _hash_recovery_code(c.replace('-', '')), now) for c in codes]
+    conn.executemany(
+        "INSERT INTO user_recovery_codes (username, code_hash, created_at) VALUES (?,?,?)",
+        rows,
+    )
+
+
+def consume_recovery_code(conn, username: str, code: str) -> bool:
+    """Try to consume a recovery code. Returns True and marks it used if valid."""
+    h = _hash_recovery_code(code.replace('-', '').upper())
+    row = conn.execute(
+        "SELECT id FROM user_recovery_codes "
+        "WHERE username=? AND code_hash=? AND used_at IS NULL",
+        (username, h),
+    ).fetchone()
+    if row is None:
+        return False
+    conn.execute(
+        "UPDATE user_recovery_codes SET used_at=? WHERE id=?",
+        (datetime.utcnow().isoformat(), row['id']),
+    )
+    return True

@@ -304,6 +304,47 @@ Usually the scheduler running a long job blocks the worker. Check
 scheduler is the cause, raise the healthcheck `start_period` and
 `timeout` and consider running uvicorn with `--workers 2`.
 
+## 5b. MySQL Deployment
+
+Set `DATABASE_URL=mysql://kilter:password@localhost:3306/kilter` in `.env`.
+
+Install the MySQL driver:
+```bash
+.venv/bin/pip install mysql-connector-python
+```
+
+Create the database:
+```sql
+CREATE DATABASE kilter CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'kilter'@'localhost' IDENTIFIED BY 'strong-password';
+GRANT ALL PRIVILEGES ON kilter.* TO 'kilter'@'localhost';
+```
+
+The app runs the same schema DDL on first start. MySQL-specific notes:
+- Triggers (audit_log immutability) are created automatically
+- WAL mode and PRAGMA statements are ignored for MySQL
+- All timestamps remain ISO-8601 strings (no TIMESTAMP columns)
+
+See [docs/MYSQL.md](MYSQL.md) for the full MySQL guide including migration from SQLite, connection pooling, and backup.
+
+---
+
+## Environment Variables Reference
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `KILTER_SECRET_KEY` | **Yes** | — | Fernet key for encrypting TOTP secrets and SMTP passwords |
+| `KILTER_DB_PATH` | No | `kilter.db` | Path to the SQLite database file |
+| `DATABASE_URL` | No | — | MySQL URI: `mysql://user:pass@host:3306/dbname` (overrides SQLite) |
+| `KILTER_SESSION_IDLE_MINUTES` | No | `30` | Idle session timeout in minutes |
+| `KILTER_REQUIRE_APPROVAL` | No | `false` | Enable two-person approval gate for match decisions |
+| `KILTER_CARDS_REQUIRED_STAGES` | No | `auth,clearing,settlement` | Comma-separated card stages required for a "matched" result |
+| `KILTER_LDAP_URL` | No | — | LDAP server URL: `ldaps://dc.yourbank.com:636` |
+| `KILTER_LDAP_BASE_DN` | No | — | LDAP search base: `DC=yourbank,DC=com` |
+| `KILTER_LDAP_CA_CERTS_FILE` | No | — | Path to CA bundle for LDAP TLS verification |
+
+---
+
 ## 6. Next steps after pilot conversion
 
 These are out of scope for the initial pilot but worth planning:

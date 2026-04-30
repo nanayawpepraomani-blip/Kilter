@@ -24,3 +24,6 @@ ldap3==2.9.1
 # Optional — only required if the Flexcube Oracle pull is enabled.
 # Pilot banks without Flexcube can omit this dependency entirely.
 # oracledb==3.4.1
+
+# MySQL support — optional, only needed when DATABASE_URL=mysql://...
+# mysql-connector-python>=8.4

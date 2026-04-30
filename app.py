@@ -29,6 +29,7 @@ Run:
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, List, Tuple
@@ -49,6 +50,7 @@ from scanner import scan, ensure_dirs
 from auth import (
     generate_enrollment_token, generate_totp_secret, qr_data_url, provisioning_uri,
     verify_totp, issue_session, resolve_session, revoke_session, revoke_all_sessions_for,
+    generate_recovery_codes, store_recovery_codes, consume_recovery_code,
     SESSION_LIFETIME, ISSUER,
 )
 
@@ -149,6 +151,10 @@ MAX_REQUEST_BYTES = 300 * 1024 * 1024
 # footprint for the request worker — at 250 MB / 1 MB that's 250 writes
 # per upload, well within syscall budget on any modern host.
 UPLOAD_CHUNK_BYTES = 1 * 1024 * 1024
+
+# Two-person approval gate. When true, operator confirmations go to
+# 'pending_approval' instead of 'confirmed' and require a manager sign-off.
+REQUIRE_APPROVAL = os.environ.get('KILTER_REQUIRE_APPROVAL', '').lower() in ('1', 'true', 'yes')
 
 
 @app.middleware("http")
@@ -311,6 +317,15 @@ def active_scope(request: Request,
         return [str(x) for x in areas]
     finally:
         conn.close()
+
+
+def _assert_session_not_locked(conn, session_id: int) -> None:
+    """Raise 423 if the session has been locked by a signed certificate."""
+    row = conn.execute(
+        "SELECT locked_at FROM sessions WHERE id=?", (session_id,)
+    ).fetchone()
+    if row and row['locked_at']:
+        raise HTTPException(423, "Session is locked after certificate sign-off and cannot be modified.")
 
 
 def _scope_clause(scope: Optional[List[str]], alias: str = 'a') -> Tuple[str, list]:
@@ -488,9 +503,15 @@ def login(payload: LoginPayload, request: Request):
                 raise HTTPException(401, "Invalid username or authenticator code.")
             ldap_dn = result.user_dn
 
+        used_recovery = False
         if not verify_totp(row['totp_secret'], code):
-            _audit_login_failure(conn, username, request, reason="totp")
-            raise HTTPException(401, "Invalid username or authenticator code.")
+            # Recovery codes are 14 chars with dashes (XXXX-XXXX-XXXX).
+            # Accept them as a fallback when the TOTP code fails.
+            if len(code.replace('-', '')) == 12 and consume_recovery_code(conn, username, code):
+                used_recovery = True
+            else:
+                _audit_login_failure(conn, username, request, reason="totp")
+                raise HTTPException(401, "Invalid username or authenticator code.")
 
         ua = request.headers.get('user-agent', '')[:250]
         session = issue_session(conn, username, user_agent=ua)
@@ -511,6 +532,7 @@ def login(payload: LoginPayload, request: Request):
             (username, now, json.dumps({
                 "user_agent": ua,
                 "auth_source": row['auth_source'] or 'local',
+                "method": "recovery_code" if used_recovery else "totp",
             })),
         )
         conn.commit()
@@ -632,13 +654,17 @@ def enroll_complete(payload: EnrollCompletePayload):
             "WHERE username=?",
             (now, payload.username),
         )
+        # Generate and store single-use recovery codes. Returned once — the
+        # client must display them; they cannot be retrieved again.
+        recovery_codes = generate_recovery_codes(8)
+        store_recovery_codes(conn, payload.username, recovery_codes)
         conn.execute(
             "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
             "VALUES (NULL, 'totp_enrolled', ?, ?, NULL)",
             (payload.username, now),
         )
         conn.commit()
-        return {"ok": True, "username": payload.username}
+        return {"ok": True, "username": payload.username, "recovery_codes": recovery_codes}
     finally:
         conn.close()
 
@@ -1089,6 +1115,34 @@ def update_user(target: str, payload: UserPatch, user: dict = Depends(require_ro
             (target,),
         ).fetchone()
         return dict(updated)
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# /users/{username}/recovery-codes — admin reset of MFA backup codes
+# ---------------------------------------------------------------------------
+
+@app.post("/users/{target}/recovery-codes/reset")
+def reset_recovery_codes(target: str, user: dict = Depends(require_role('admin'))):
+    """Generate and store a new set of recovery codes for the target user.
+    The new codes are returned once — the admin must relay them out-of-band.
+    Any unused prior codes are invalidated."""
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT username FROM users WHERE username=?", (target,)).fetchone()
+        if row is None:
+            raise HTTPException(404, f"User '{target}' not found")
+        codes = generate_recovery_codes(8)
+        store_recovery_codes(conn, target, codes)
+        now = datetime.utcnow().isoformat()
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (NULL, 'recovery_codes_reset', ?, ?, ?)",
+            (user['username'], now, json.dumps({"target": target})),
+        )
+        conn.commit()
+        return {"username": target, "recovery_codes": codes}
     finally:
         conn.close()
 
@@ -1978,16 +2032,45 @@ def post_decision(
     username = user['username']
     conn = get_conn()
     try:
+        _assert_session_not_locked(conn, session_id)
         a = conn.execute(
             "SELECT * FROM assignments WHERE id=? AND session_id=?",
             (payload.assignment_id, session_id),
         ).fetchone()
         if a is None:
             raise HTTPException(404, "Assignment not found")
+        if a['status'] == 'pending_approval':
+            raise HTTPException(400, "Assignment is awaiting manager approval")
         if a['status'] != 'pending':
             raise HTTPException(400, f"Assignment already {a['status']}")
 
         now = datetime.utcnow().isoformat()
+
+        # Two-person approval gate: confirmations by ops go to pending_approval.
+        if payload.action == 'confirm' and REQUIRE_APPROVAL:
+            conn.execute(
+                "UPDATE assignments SET status='pending_approval', decided_by=?, decided_at=? WHERE id=?",
+                (username, now, payload.assignment_id),
+            )
+            conn.execute(
+                "INSERT INTO approval_requests (assignment_id, requested_by, requested_at) "
+                "VALUES (?, ?, ?)",
+                (payload.assignment_id, username, now),
+            )
+            conn.execute(
+                "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (session_id, 'decision_pending_approval', username, now,
+                 json.dumps({
+                     "assignment_id": payload.assignment_id,
+                     "swift_row": a['swift_row'],
+                     "flex_row": a['flex_row'],
+                     "tier": a['tier'],
+                 })),
+            )
+            conn.commit()
+            return {"assignment_id": payload.assignment_id, "status": "pending_approval"}
+
         new_status = 'confirmed' if payload.action == 'confirm' else 'rejected'
         conn.execute(
             "UPDATE assignments SET status=?, decided_by=?, decided_at=? WHERE id=?",
@@ -2006,6 +2089,97 @@ def post_decision(
         )
         conn.commit()
         return {"assignment_id": payload.assignment_id, "status": new_status}
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# POST /sessions/{id}/assignments/{id}/approve  (two-person approval gate)
+# GET  /sessions/{id}/pending-approvals
+# ---------------------------------------------------------------------------
+
+class ApprovePayload(BaseModel):
+    action: str   # 'approved' | 'rejected'
+    note: str = ''
+
+
+@app.post("/sessions/{session_id}/assignments/{assignment_id}/approve")
+def approve_decision(
+    session_id: int,
+    assignment_id: int,
+    payload: ApprovePayload,
+    user: dict = Depends(require_role('admin', 'internal_control')),
+):
+    if payload.action not in ('approved', 'rejected'):
+        raise HTTPException(400, "action must be 'approved' or 'rejected'")
+
+    username = user['username']
+    conn = get_conn()
+    try:
+        _assert_session_not_locked(conn, session_id)
+        a = conn.execute(
+            "SELECT * FROM assignments WHERE id=? AND session_id=?",
+            (assignment_id, session_id),
+        ).fetchone()
+        if a is None:
+            raise HTTPException(404, "Assignment not found")
+        if a['status'] != 'pending_approval':
+            raise HTTPException(400, f"Assignment is not pending approval (status: {a['status']})")
+
+        # Self-approval guard.
+        ar = conn.execute(
+            "SELECT requested_by FROM approval_requests WHERE assignment_id=? AND reviewed_by IS NULL",
+            (assignment_id,),
+        ).fetchone()
+        if ar and ar['requested_by'] == username:
+            raise HTTPException(403, "You cannot approve your own decisions")
+
+        now = datetime.utcnow().isoformat()
+        new_status = 'confirmed' if payload.action == 'approved' else 'rejected'
+
+        conn.execute(
+            "UPDATE assignments SET status=?, decided_by=?, decided_at=? WHERE id=?",
+            (new_status, username, now, assignment_id),
+        )
+        conn.execute(
+            "UPDATE approval_requests SET reviewed_by=?, reviewed_at=?, action=? "
+            "WHERE assignment_id=? AND reviewed_by IS NULL",
+            (username, now, payload.action, assignment_id),
+        )
+        audit_action = 'decision_approved' if payload.action == 'approved' else 'decision_rejected_approval'
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (session_id, audit_action, username, now,
+             json.dumps({
+                 "assignment_id": assignment_id,
+                 "swift_row": a['swift_row'],
+                 "flex_row": a['flex_row'],
+                 "tier": a['tier'],
+                 "note": payload.note,
+             })),
+        )
+        conn.commit()
+        return {"assignment_id": assignment_id, "status": new_status}
+    finally:
+        conn.close()
+
+
+@app.get("/sessions/{session_id}/pending-approvals")
+def list_pending_approvals(
+    session_id: int,
+    user: dict = Depends(require_role('admin', 'internal_control', 'ops')),
+):
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT a.*, ar.requested_by, ar.requested_at "
+            "FROM assignments a "
+            "JOIN approval_requests ar ON ar.assignment_id = a.id "
+            "WHERE a.session_id=? AND a.status='pending_approval' AND ar.reviewed_by IS NULL",
+            (session_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
     finally:
         conn.close()
 
@@ -2796,6 +2970,15 @@ def sign_certificate(cert_id: int, payload: CertActionPayload,
             "UPDATE reconciliation_certificates SET status='signed', "
             "signed_by=?, signed_at=?, snapshot_json=? WHERE id=?",
             (user['username'], now, json.dumps(figures, default=str), cert_id),
+        )
+        # Lock all closed sessions for this account within the certificate period.
+        # Locked sessions reject further decisions, preserving the frozen figures.
+        conn.execute(
+            "UPDATE sessions SET locked_at=?, locked_by=? "
+            "WHERE account_id=? AND status='closed' "
+            "AND created_at >= ? AND created_at <= ?",
+            (now, user['username'], row['account_id'],
+             row['period_start'], row['period_end'] + 'T23:59:59'),
         )
         conn.execute(
             "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
@@ -3843,6 +4026,54 @@ def write_off_open_item_endpoint(open_item_id: int,
         conn.close()
 
 
+class SnoozePayload(BaseModel):
+    days: int  # 1-90
+
+@app.post("/open-items/{item_id}/snooze")
+def snooze_open_item(item_id: int, payload: SnoozePayload,
+                     user: dict = Depends(current_user)):
+    if not (1 <= payload.days <= 90):
+        raise HTTPException(400, "days must be between 1 and 90")
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT id, status FROM open_items WHERE id=?", (item_id,)).fetchone()
+        if row is None: raise HTTPException(404, "Open item not found")
+        if row['status'] != 'open': raise HTTPException(400, "Only open items can be snoozed")
+        from datetime import timedelta
+        until = (datetime.utcnow() + timedelta(days=payload.days)).isoformat()
+        conn.execute("UPDATE open_items SET snoozed_until=? WHERE id=?", (until, item_id))
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (NULL, 'open_item_snoozed', ?, ?, ?)",
+            (user['username'], datetime.utcnow().isoformat(),
+             json.dumps({"item_id": item_id, "days": payload.days, "until": until})),
+        )
+        conn.commit()
+        return {"item_id": item_id, "snoozed_until": until}
+    finally:
+        conn.close()
+
+@app.post("/open-items/{item_id}/acknowledge")
+def acknowledge_open_item(item_id: int, user: dict = Depends(current_user)):
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT id, status FROM open_items WHERE id=?", (item_id,)).fetchone()
+        if row is None: raise HTTPException(404, "Open item not found")
+        if row['status'] != 'open': raise HTTPException(400, "Only open items can be acknowledged")
+        now = datetime.utcnow().isoformat()
+        conn.execute("UPDATE open_items SET acknowledged_by=?, acknowledged_at=? WHERE id=?",
+                     (user['username'], now, item_id))
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (NULL, 'open_item_acknowledged', ?, ?, ?)",
+            (user['username'], now, json.dumps({"item_id": item_id})),
+        )
+        conn.commit()
+        return {"item_id": item_id, "acknowledged_by": user['username'], "acknowledged_at": now}
+    finally:
+        conn.close()
+
+
 class OpenItemCategoryPayload(BaseModel):
     category: str
 
@@ -3899,6 +4130,7 @@ def manual_match(session_id: int, payload: ManualMatchPayload,
     first so the audit trail shows the re-pairing."""
     conn = get_conn()
     try:
+        _assert_session_not_locked(conn, session_id)
         s = conn.execute(
             "SELECT row_number, sign, amount FROM swift_txns WHERE session_id=? AND row_number=?",
             (session_id, payload.swift_row),
@@ -3984,6 +4216,7 @@ def manual_split(session_id: int, payload: ManualSplitPayload,
 
     conn = get_conn()
     try:
+        _assert_session_not_locked(conn, session_id)
         # Validate all rows exist + none are already matched.
         for sr in payload.swift_rows:
             r = conn.execute(
@@ -4074,6 +4307,52 @@ def manual_split(session_id: int, payload: ManualSplitPayload,
             'amount_diff': amount_diff,
             'status': 'confirmed',
         }
+    finally:
+        conn.close()
+
+
+# --- /sessions/{id}/split-groups/{group_id}/decision -----------------------
+# Batch confirm or reject all pending assignments sharing a split_group_id.
+
+class SplitGroupDecisionPayload(BaseModel):
+    action: str  # 'confirm' | 'reject'
+
+
+@app.post("/sessions/{session_id}/split-groups/{group_id}/decision")
+def split_group_decision(
+    session_id: int, group_id: str,
+    payload: SplitGroupDecisionPayload,
+    user: dict = Depends(require_role('ops', 'admin')),
+):
+    if payload.action not in ('confirm', 'reject'):
+        raise HTTPException(400, "action must be 'confirm' or 'reject'")
+    conn = get_conn()
+    try:
+        _assert_session_not_locked(conn, session_id)
+        rows = conn.execute(
+            "SELECT id FROM assignments WHERE session_id=? AND split_group_id=? AND status='pending'",
+            (session_id, group_id),
+        ).fetchall()
+        if not rows:
+            raise HTTPException(404, "No pending assignments found for this split group")
+
+        new_status = 'confirmed' if payload.action == 'confirm' else 'rejected'
+        now = datetime.utcnow().isoformat()
+        ids = [r['id'] for r in rows]
+
+        for aid in ids:
+            conn.execute(
+                "UPDATE assignments SET status=?, decided_by=?, decided_at=? WHERE id=?",
+                (new_status, user['username'], now, aid),
+            )
+            conn.execute(
+                "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (session_id, f"split_group_{payload.action}", user['username'], now,
+                 json.dumps({"split_group_id": group_id, "assignment_id": aid})),
+            )
+        conn.commit()
+        return {"split_group_id": group_id, "action": payload.action, "count": len(ids)}
     finally:
         conn.close()
 
@@ -4533,6 +4812,120 @@ def tolerance_admin_page(request: Request):
 
 
 # ---------------------------------------------------------------------------
+# Auto-match rules — operator-defined rules for auto-confirming proposals
+# ---------------------------------------------------------------------------
+
+class AutoRulePayload(BaseModel):
+    name: str
+    description: Optional[str] = None
+    priority: int = 0
+    active: int = 1
+    require_tier: Optional[str] = None
+    require_amount_exact: Optional[int] = None
+    require_ref_match: Optional[int] = None
+    max_amount_diff: Optional[float] = None
+    require_same_date: Optional[int] = None
+
+@app.get("/auto-rules")
+def list_auto_rules(user: dict = Depends(require_role('admin', 'ops', 'internal_control'))):
+    conn = get_conn()
+    try:
+        rows = conn.execute("SELECT * FROM auto_match_rules ORDER BY priority, id").fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+@app.post("/auto-rules")
+def create_auto_rule(payload: AutoRulePayload,
+                     user: dict = Depends(require_role('admin'))):
+    conn = get_conn()
+    try:
+        now = datetime.utcnow().isoformat()
+        cur = conn.execute(
+            "INSERT INTO auto_match_rules "
+            "(name, description, priority, active, require_tier, require_amount_exact, "
+            "require_ref_match, max_amount_diff, require_same_date, action, created_by, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,'confirm',?,?)",
+            (payload.name, payload.description, payload.priority, payload.active,
+             payload.require_tier, payload.require_amount_exact, payload.require_ref_match,
+             payload.max_amount_diff, payload.require_same_date,
+             user['username'], now)
+        )
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (NULL, 'auto_rule_created', ?, ?, ?)",
+            (user['username'], now, json.dumps({'rule_id': cur.lastrowid, 'name': payload.name}))
+        )
+        conn.commit()
+        return dict(conn.execute("SELECT * FROM auto_match_rules WHERE id=?", (cur.lastrowid,)).fetchone())
+    finally:
+        conn.close()
+
+@app.patch("/auto-rules/{rule_id}")
+def update_auto_rule(rule_id: int, payload: AutoRulePayload,
+                     user: dict = Depends(require_role('admin'))):
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT id FROM auto_match_rules WHERE id=?", (rule_id,)).fetchone()
+        if row is None:
+            raise HTTPException(404, "Rule not found")
+        now = datetime.utcnow().isoformat()
+        conn.execute(
+            "UPDATE auto_match_rules SET name=?, description=?, priority=?, active=?, "
+            "require_tier=?, require_amount_exact=?, require_ref_match=?, "
+            "max_amount_diff=?, require_same_date=?, updated_at=? WHERE id=?",
+            (payload.name, payload.description, payload.priority, payload.active,
+             payload.require_tier, payload.require_amount_exact, payload.require_ref_match,
+             payload.max_amount_diff, payload.require_same_date, now, rule_id)
+        )
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (NULL, 'auto_rule_updated', ?, ?, ?)",
+            (user['username'], now, json.dumps({'rule_id': rule_id}))
+        )
+        conn.commit()
+        return dict(conn.execute("SELECT * FROM auto_match_rules WHERE id=?", (rule_id,)).fetchone())
+    finally:
+        conn.close()
+
+@app.delete("/auto-rules/{rule_id}")
+def deactivate_auto_rule(rule_id: int, user: dict = Depends(require_role('admin'))):
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT id FROM auto_match_rules WHERE id=?", (rule_id,)).fetchone()
+        if row is None:
+            raise HTTPException(404, "Rule not found")
+        now = datetime.utcnow().isoformat()
+        conn.execute("UPDATE auto_match_rules SET active=0, updated_at=? WHERE id=?", (now, rule_id))
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (NULL, 'auto_rule_deactivated', ?, ?, ?)",
+            (user['username'], now, json.dumps({'rule_id': rule_id}))
+        )
+        conn.commit()
+        return {"rule_id": rule_id, "active": 0}
+    finally:
+        conn.close()
+
+@app.post("/sessions/{session_id}/auto-match")
+def manual_auto_match(session_id: int, user: dict = Depends(require_role('admin', 'ops'))):
+    """Manually trigger the auto-match rule engine on a session's pending assignments."""
+    from auto_match_engine import apply_auto_rules
+    conn = get_conn()
+    try:
+        _assert_session_not_locked(conn, session_id)
+        result = apply_auto_rules(conn, session_id, actor=f'manual_auto:{user["username"]}')
+        conn.commit()
+        return result
+    finally:
+        conn.close()
+
+@app.get("/admin/auto-rules")
+def auto_rules_page(request: Request):
+    return templates.TemplateResponse(request, "auto_rules.html")
+
+
+# ---------------------------------------------------------------------------
 # BYO format profiles — admin-managed CSV column mappings.
 #
 # Workflow:
@@ -4794,6 +5187,7 @@ async def upload_card_settlement(
     pan_field: Optional[str] = Form(None),
     pan_masked_field: Optional[str] = Form(None),
     notes: Optional[str] = Form(None),
+    stage: Optional[str] = Form(None),
     user: dict = Depends(require_role('admin')),
 ):
     """Ingest one cards settlement file. Body shape:
@@ -4839,6 +5233,7 @@ async def upload_card_settlement(
             pan_field=pan_field,
             pan_masked_field=pan_masked_field,
             notes=notes,
+            stage=stage,
         )
     except DuplicateCardFileError as exc:
         raise HTTPException(409, str(exc))
@@ -4849,6 +5244,7 @@ async def upload_card_settlement(
         'file_id': result.file_id,
         'scheme': result.scheme,
         'role': result.role,
+        'stage': result.stage,
         'record_count': result.record_count,
         'total_amount': result.total_amount,
         'currency': result.currency,
@@ -4959,6 +5355,7 @@ def list_card_match_groups(
                 'currencies': g.currencies,
                 'pan_last4_set': g.pan_last4_set,
                 'schemes': g.schemes,
+                'stages': g.stages,
             })
         # Header counts come from the unfiltered total so the UI can
         # show "X matched / Y mismatched" without a second roundtrip.
@@ -4971,6 +5368,7 @@ def list_card_match_groups(
                 'matched': sum(1 for g in all_groups if g.status == 'matched'),
                 'mismatched': sum(1 for g in all_groups if g.status == 'mismatched'),
                 'unmatched': sum(1 for g in all_groups if g.status == 'unmatched'),
+                'incomplete': sum(1 for g in all_groups if g.status == 'incomplete'),
             },
         }
     finally:

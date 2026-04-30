@@ -302,6 +302,16 @@
   </div>
 </div>
 
+<div id="session-lock-banner" style="display:none;align-items:center;gap:10px;background:#fef3c7;border:1px solid #f59e0b;border-radius:6px;padding:10px 16px;margin-bottom:12px;font-size:var(--t-small)">
+  <span style="font-size:18px">🔒</span>
+  <div>
+    <strong>Session locked — read only.</strong>
+    <span class="lock-by" style="margin-left:6px;color:var(--c-text-muted)"></span>
+    This session was locked when its reconciliation certificate was signed. No further decisions can be recorded.
+  </div>
+</div>
+<div id="balance-validation-badge" style="margin-bottom:8px"></div>
+
 <div class="stats-strip">
   <div class="stat-tile"><div class="label">Opening balance</div><div class="value" id="ss-open">—</div><div class="sub" id="ss-open-date">—</div></div>
   <div class="stat-tile"><div class="label">Closing balance</div><div class="value" id="ss-close">—</div><div class="sub" id="ss-close-date">—</div></div>
@@ -577,6 +587,30 @@ async function refreshSession() {
     rpDiff.classList.toggle('err', Math.abs(diff) >= 0.01);
   }
   setStyle('rp-check', 'display', Math.abs(diff) < 0.01 ? 'inline' : 'none');
+
+  // Balance validation badge (1C)
+  const bvEl = document.getElementById('balance-validation-badge');
+  if (bvEl) {
+    if (s.balance_valid === 1) {
+      bvEl.innerHTML = '<span class="badge badge-ok" title="SWIFT statement balances reconcile">Balances ✓</span>';
+    } else if (s.balance_valid === 0) {
+      const delta = s.balance_delta != null ? ` Δ ${fmtAmount(Math.abs(s.balance_delta))}` : '';
+      bvEl.innerHTML = `<span class="badge badge-danger" title="Statement balance does not reconcile">Balance delta${delta}</span>`;
+    } else {
+      bvEl.innerHTML = '<span class="badge badge-neutral" title="No SWIFT balance data in file">No balance data</span>';
+    }
+  }
+
+  // Lock banner (1B)
+  const lockBanner = document.getElementById('session-lock-banner');
+  if (lockBanner) {
+    if (s.locked_at) {
+      lockBanner.style.display = 'flex';
+      lockBanner.querySelector('.lock-by').textContent = `Locked by ${s.locked_by} on ${fmtDate(s.locked_at)}`;
+    } else {
+      lockBanner.style.display = 'none';
+    }
+  }
 }
 
 async function loadQueue() {
@@ -676,6 +710,41 @@ function renderQueueCard() {
       <div class="notes-strip" id="notes-strip">
         <div class="empty">Loading notes…</div>
       </div>
+      ${a.split_group_id ? `
+      <div class="actions-bar" style="background:var(--c-bg-sub);border-radius:6px;margin-bottom:4px">
+        <span class="muted" style="font-size:var(--t-small)">Split group <code>${esc(a.split_group_id)}</code></span>
+        <div class="group">
+          <button class="btn btn-danger-soft" onclick="splitGroupDecision('${esc(a.split_group_id)}', 'reject')">Reject all in group</button>
+          <button class="btn btn-success" onclick="splitGroupDecision('${esc(a.split_group_id)}', 'confirm')">Confirm all in group</button>
+        </div>
+      </div>` : ''}
+      ${(() => {
+        const role = window.me ? window.me.role : null;
+        const isManager = role === 'admin' || role === 'internal_control';
+        if (a.status === 'pending_approval') {
+          if (isManager) {
+            return `
+      <div class="actions-bar">
+        <button class="btn btn-danger-soft" onclick="approveAssignment(${a.assignment_id}, 'rejected')">Reject</button>
+        <span class="hint"><span class="badge" style="background:#fef3c7;color:#92400e">Awaiting your approval</span> · <strong>${index + 1} of ${queue.length}</strong></span>
+        <div class="group">
+          <button class="btn btn-ghost" onclick="openNoteDialog()">Add note</button>
+          <button class="btn btn-default" onclick="skip()">Skip</button>
+          <button class="btn btn-success" onclick="approveAssignment(${a.assignment_id}, 'approved')">Approve</button>
+        </div>
+      </div>`;
+          } else {
+            return `
+      <div class="actions-bar">
+        <span class="hint" style="flex:1"><span class="badge" style="background:#fef3c7;color:#92400e">Awaiting approval by a manager</span></span>
+        <div class="group">
+          <button class="btn btn-ghost" onclick="openNoteDialog()">Add note</button>
+          <button class="btn btn-default" onclick="skip()">Skip</button>
+        </div>
+      </div>`;
+          }
+        }
+        return `
       <div class="actions-bar">
         <button class="btn btn-danger-soft" onclick="decide('reject')">Reject</button>
         <span class="hint"><kbd>C</kbd> confirm · <kbd>R</kbd> reject · <kbd>S</kbd>/<kbd>→</kbd> skip · <kbd>←</kbd> back · <kbd>N</kbd> note · <strong>${index + 1} of ${queue.length}</strong></span>
@@ -684,7 +753,8 @@ function renderQueueCard() {
           <button class="btn btn-default" onclick="skip()">Skip</button>
           <button class="btn btn-success" onclick="decide('confirm')">Confirm match</button>
         </div>
-      </div>
+      </div>`;
+      })()}
     </div>`;
   loadNotesForCurrent();
 }
@@ -780,14 +850,46 @@ async function decide(action) {
       body: JSON.stringify({ assignment_id: a.assignment_id, action }),
     });
     if (!r.ok) throw new Error((await r.json()).detail || 'Decision failed');
-    queue.splice(index, 1);
-    await refreshSession();
-    renderQueueCard();
+    const result = await r.json();
+    if (result.status === 'pending_approval') {
+      // Update the queued item in-place to reflect pending_approval state.
+      a.status = 'pending_approval';
+      await refreshSession();
+      renderQueueCard();
+    } else {
+      queue.splice(index, 1);
+      await refreshSession();
+      renderQueueCard();
+    }
     // If register is open, rerender it too.
     if (document.getElementById('tab-register').style.display !== 'none') loadRegister();
   } catch (err) {
     alert(err.message);
   }
+}
+
+async function approveAssignment(assignmentId, action) {
+  const note = action === 'rejected' ? (prompt('Reason for rejection (optional):') || '') : '';
+  const r = await fetch(`/sessions/${SESSION_ID}/assignments/${assignmentId}/approve`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, note }),
+  });
+  if (!r.ok) { alert((await r.json()).detail || 'Failed'); return; }
+  await loadQueue();
+  renderQueueCard();
+}
+
+async function splitGroupDecision(groupId, action) {
+  const r = await fetch(`/sessions/${SESSION_ID}/split-groups/${groupId}/decision`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action }),
+  });
+  if (!r.ok) { alert((await r.json()).detail || 'Failed'); return; }
+  await loadQueue();
+  index = 0;
+  renderQueueCard();
 }
 
 function skip() { index = Math.min(index + 1, queue.length); renderQueueCard(); }

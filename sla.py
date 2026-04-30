@@ -28,6 +28,15 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 
+def _get_escalation_config(channel: dict) -> str | None:
+    """Return escalation email from channel config_json, or None."""
+    try:
+        cfg = json.loads(channel.get('config_json') or '{}')
+        return cfg.get('escalation_email')
+    except (json.JSONDecodeError, AttributeError):
+        return None
+
+
 def run_check(conn, channel_id: int | None = None,
               dry_run: bool = False) -> dict:
     """Evaluate all active channels (or one specific channel) and dispatch.
@@ -61,6 +70,21 @@ def run_check(conn, channel_id: int | None = None,
             results[chd['id']] = {'sent': sent, 'items': len(items), 'error': err}
             _update_channel_run(conn, chd['id'],
                                 f'sent {sent} of {len(items)}; err={err or "none"}')
+            # Escalation: items aged past threshold * 2 that are unacknowledged.
+            escalation_email = _get_escalation_config(chd)
+            if escalation_email:
+                esc_items = _aged_items_for_escalation(
+                    conn, chd['threshold_days'], chd.get('access_area_filter'))
+                if esc_items:
+                    config = json.loads(chd['config_json']) if chd['config_json'] else {}
+                    esc_config = dict(config)
+                    esc_config['to_addrs'] = [escalation_email]
+                    esc_channel = dict(chd)
+                    esc_channel['name'] = chd['name'] + ' [ESCALATION]'
+                    esc_sent, esc_err = _dispatch_email(esc_config, esc_channel, esc_items)
+                    results[chd['id']]['escalation'] = {
+                        'sent': esc_sent, 'items': len(esc_items), 'error': esc_err,
+                    }
         except Exception as exc:
             results[chd['id']] = {'sent': 0, 'items': 0, 'error': str(exc)}
             _update_channel_run(conn, chd['id'], f'error: {exc}')
@@ -89,6 +113,7 @@ def _aged_items(conn, threshold_days: int,
             f"a.label AS account_label, a.access_area, a.currency "
             f"FROM open_items oi JOIN accounts a ON a.id = oi.account_id "
             f"WHERE oi.status='open' AND a.access_area IN ({placeholders}) "
+            f"AND (oi.snoozed_until IS NULL OR oi.snoozed_until < datetime('now')) "
             f"AND julianday('now') - julianday(oi.opened_at) >= ? "
             f"ORDER BY oi.opened_at LIMIT 500",
             (*areas, threshold_days),
@@ -100,9 +125,53 @@ def _aged_items(conn, threshold_days: int,
             "a.label AS account_label, a.access_area, a.currency "
             "FROM open_items oi JOIN accounts a ON a.id = oi.account_id "
             "WHERE oi.status='open' "
+            "AND (oi.snoozed_until IS NULL OR oi.snoozed_until < datetime('now')) "
             "AND julianday('now') - julianday(oi.opened_at) >= ? "
             "ORDER BY oi.opened_at LIMIT 500",
             (threshold_days,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def _aged_items_for_escalation(conn, threshold_days: int,
+                               access_area_filter: str | None) -> list[dict]:
+    """Open items older than threshold_days * 2 that have not been acknowledged.
+    Used to determine if an escalation alert is warranted."""
+    double_threshold = threshold_days * 2
+    areas = None
+    if access_area_filter:
+        try:
+            parsed = json.loads(access_area_filter)
+            if isinstance(parsed, list) and parsed:
+                areas = parsed
+        except Exception:
+            pass
+    if areas:
+        placeholders = ','.join('?' for _ in areas)
+        rows = conn.execute(
+            f"SELECT oi.id, oi.amount, oi.sign, oi.ref, oi.narration, "
+            f"oi.opened_at, oi.source_side, oi.functional_group, "
+            f"a.label AS account_label, a.access_area, a.currency "
+            f"FROM open_items oi JOIN accounts a ON a.id = oi.account_id "
+            f"WHERE oi.status='open' AND a.access_area IN ({placeholders}) "
+            f"AND (oi.snoozed_until IS NULL OR oi.snoozed_until < datetime('now')) "
+            f"AND oi.acknowledged_at IS NULL "
+            f"AND julianday('now') - julianday(oi.opened_at) >= ? "
+            f"ORDER BY oi.opened_at LIMIT 500",
+            (*areas, double_threshold),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT oi.id, oi.amount, oi.sign, oi.ref, oi.narration, "
+            "oi.opened_at, oi.source_side, oi.functional_group, "
+            "a.label AS account_label, a.access_area, a.currency "
+            "FROM open_items oi JOIN accounts a ON a.id = oi.account_id "
+            "WHERE oi.status='open' "
+            "AND (oi.snoozed_until IS NULL OR oi.snoozed_until < datetime('now')) "
+            "AND oi.acknowledged_at IS NULL "
+            "AND julianday('now') - julianday(oi.opened_at) >= ? "
+            "ORDER BY oi.opened_at LIMIT 500",
+            (double_threshold,),
         ).fetchall()
     return [dict(r) for r in rows]
 
@@ -216,7 +285,9 @@ def _dispatch_email(config: dict, channel: dict,
     )
 
     msg = MIMEMultipart('alternative')
-    msg['Subject'] = f"[Kilter] {total} aged reconciliation break(s)"
+    is_escalation = '[ESCALATION]' in (channel.get('name') or '')
+    subject_prefix = '[Kilter][ESCALATION]' if is_escalation else '[Kilter]'
+    msg['Subject'] = f"{subject_prefix} {total} aged reconciliation break(s)"
     msg['From']    = frm
     msg['To']      = ', '.join(tos)
     msg.attach(MIMEText(text, 'plain'))

@@ -337,6 +337,15 @@
           ${r.status === 'open' ? `
             <button class="btn btn-sm btn-default" data-clear="${r.id}">Clear</button>
             <button class="btn btn-sm btn-danger-soft" data-writeoff="${r.id}">Write off</button>
+            <select class="input" style="display:inline;width:auto;padding:2px 4px;font-size:var(--t-small)" onchange="snoozeItem(${r.id}, this.value)">
+              <option value="">Snooze…</option>
+              <option value="3">3 days</option>
+              <option value="7">7 days</option>
+              <option value="30">30 days</option>
+            </select>
+            <button class="btn btn-sm btn-default" onclick="acknowledgeItem(${r.id})">Acknowledge</button>
+            ${r.snoozed_until && new Date(r.snoozed_until) > new Date() ? '<span class="badge badge-warn">Snoozed</span>' : ''}
+            ${r.acknowledged_by ? '<span class="badge badge-info">Acknowledged</span>' : ''}
           ` : `<span class="muted">${esc(r.status)}</span>`}
         </td>
       </tr>`).join('');
@@ -406,5 +415,21 @@
   loadAccounts().then(() => { applyQueryFilters(); loadItems(); });
 
   document.body.dataset.nav = 'open-items';
+
+  async function snoozeItem(id, days) {
+    if (!days) return;
+    const r = await fetch(`/open-items/${id}/snooze`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({days: parseInt(days)})
+    });
+    if (!r.ok) { alert((await r.json()).detail || 'Failed'); return; }
+    loadItems();
+  }
+
+  async function acknowledgeItem(id) {
+    const r = await fetch(`/open-items/${id}/acknowledge`, { method: 'POST' });
+    if (!r.ok) { alert((await r.json()).detail || 'Failed'); return; }
+    loadItems();
+  }
 </script>
 {% endblock %}

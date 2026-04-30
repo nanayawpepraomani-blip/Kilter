@@ -637,6 +637,65 @@ CREATE TABLE IF NOT EXISTS job_runs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_job_runs_job ON job_runs(job_id, started_at DESC);
+
+-- MFA recovery codes — single-use backup codes issued at enrollment.
+-- code_hash is SHA-256(code). The plaintext is shown once and never stored.
+CREATE TABLE IF NOT EXISTS user_recovery_codes (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    username    TEXT NOT NULL REFERENCES users(username) ON DELETE CASCADE,
+    code_hash   TEXT NOT NULL,
+    created_at  TEXT NOT NULL,
+    used_at     TEXT             -- NULL until consumed; once set, code is dead
+);
+CREATE INDEX IF NOT EXISTS idx_recovery_codes_username ON user_recovery_codes(username);
+
+-- Approval requests — two-person gate for match decisions.
+-- Only created when KILTER_REQUIRE_APPROVAL=true. An ops user confirms
+-- (sets assignment to pending_approval), then an admin/internal_control
+-- approves or rejects, moving the assignment to confirmed/rejected.
+CREATE TABLE IF NOT EXISTS approval_requests (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    assignment_id   INTEGER NOT NULL REFERENCES assignments(id),
+    requested_by    TEXT NOT NULL,
+    requested_at    TEXT NOT NULL,
+    reviewed_by     TEXT,
+    reviewed_at     TEXT,
+    action          TEXT,   -- 'approved' | 'rejected'
+    note            TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_approval_assignment ON approval_requests(assignment_id);
+
+-- Auto-match rules — operator-defined rules for auto-confirming proposals.
+-- Evaluated in priority order (lower number = higher priority) at ingest tail.
+-- All non-null conditions must match for the rule to fire.
+CREATE TABLE IF NOT EXISTS auto_match_rules (
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    name                 TEXT NOT NULL,
+    description          TEXT,
+    priority             INTEGER NOT NULL DEFAULT 0,
+    active               INTEGER NOT NULL DEFAULT 1,
+    require_tier         TEXT,             -- '1'|'2'|'3'|'4' or NULL (any tier)
+    require_amount_exact INTEGER,          -- 1 = amount_diff must be 0.00
+    require_ref_match    INTEGER,          -- 1 = refs must overlap
+    max_amount_diff      REAL,             -- NULL = use session tolerance
+    require_same_date    INTEGER,          -- 1 = value_date must match exactly
+    action               TEXT NOT NULL DEFAULT 'confirm',
+    created_by           TEXT NOT NULL,
+    created_at           TEXT NOT NULL,
+    updated_at           TEXT
+);
+
+-- Immutability triggers — no DELETE or UPDATE on the audit trail.
+-- These fire even for the admin user at the SQL layer, so the only way to
+-- tamper with audit_log is direct filesystem access to kilter.db, which is
+-- already a "shell access" risk accepted in the threat model.
+CREATE TRIGGER IF NOT EXISTS audit_log_block_delete
+BEFORE DELETE ON audit_log
+BEGIN SELECT RAISE(ABORT, 'audit_log rows are immutable'); END;
+
+CREATE TRIGGER IF NOT EXISTS audit_log_block_update
+BEFORE UPDATE ON audit_log
+BEGIN SELECT RAISE(ABORT, 'audit_log rows are immutable'); END;
 """
 
 # The fixed taxonomy for break_category. Kept out of the DB so the UI and
@@ -670,7 +729,14 @@ FUNCTIONAL_GROUP_DEFAULT = 'PSC TROPS'
 ROLES = ('admin', 'ops', 'audit', 'internal_control')
 
 
-def get_conn() -> sqlite3.Connection:
+def get_conn():
+    """Return a database connection. Uses MySQL if DATABASE_URL is set, else SQLite."""
+    import os as _os_local
+    db_url = _os_local.environ.get('DATABASE_URL', '')
+    if db_url.startswith('mysql'):
+        from db_mysql import get_mysql_conn
+        return get_mysql_conn()
+    # SQLite default
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
@@ -1355,6 +1421,36 @@ def _migrate_add_session_account_columns(conn) -> None:
     _ensure_columns(conn, 'csv_format_profiles', [
         ('account_id',       'INTEGER'),
         ('filename_pattern', 'TEXT'),
+    ])
+    # Session lock — set when a reconciliation certificate is signed.
+    # Locked sessions reject all decision mutations (confirm/reject/manual).
+    _ensure_columns(conn, 'sessions', [
+        ('locked_at', 'TEXT'),
+        ('locked_by', 'TEXT'),
+    ])
+    # Balance validation — computed at ingest time from the SWIFT :60F:/:62F: fields.
+    # balance_valid=1 means matched txns explain the opening→closing delta exactly.
+    # balance_delta is (expected_closing - actual_closing); 0.0 on perfect match.
+    _ensure_columns(conn, 'sessions', [
+        ('balance_valid', 'INTEGER'),
+        ('balance_delta', 'REAL'),
+    ])
+    # SLA snooze/acknowledge columns on open_items.
+    _ensure_columns(conn, 'open_items', [
+        ('snoozed_until',   'TEXT'),
+        ('acknowledged_by', 'TEXT'),
+        ('acknowledged_at', 'TEXT'),
+        ('escalated_at',    'TEXT'),
+        ('escalated_to',    'TEXT'),
+    ])
+    # Cards engine stage tagging — auth | clearing | settlement | NULL.
+    _ensure_columns(conn, 'card_settlement_files', [
+        ('stage', 'TEXT'),
+    ])
+    # Assignment approval gate — pending_approval is the intermediate state
+    # when KILTER_REQUIRE_APPROVAL=true and an ops user confirms a match.
+    _ensure_columns(conn, 'assignments', [
+        ('approval_required', 'INTEGER NOT NULL DEFAULT 0'),
     ])
 
 

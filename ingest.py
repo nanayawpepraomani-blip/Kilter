@@ -169,6 +169,30 @@ def sha256_of(path: Path) -> str:
     return h.hexdigest()
 
 
+def _validate_statement_balance(
+    opening_amount, opening_sign,
+    closing_amount, closing_sign,
+    swift_txns: list,
+) -> dict | None:
+    """Return {valid, expected, actual, delta} if both balances are present,
+    else None. Credits increase the balance; debits decrease it.
+    delta = expected_closing - actual_closing; 0.0 is a perfect match."""
+    if opening_amount is None or closing_amount is None:
+        return None
+    try:
+        opening = float(opening_amount) * (1 if opening_sign == 'C' else -1)
+        net = 0.0
+        for t in swift_txns:
+            amt = float(t.get('amount') or 0)
+            net += amt if t.get('sign') == 'C' else -amt
+        expected = opening + net
+        actual = float(closing_amount) * (1 if closing_sign == 'C' else -1)
+        delta = round(expected - actual, 4)
+        return {'valid': abs(delta) < 0.01, 'expected': expected, 'actual': actual, 'delta': delta}
+    except (TypeError, ValueError):
+        return None
+
+
 def ingest_pair(swift_path: Path, flex_path: Path, user: str,
                 swift_filename: str | None = None,
                 flex_filename: str | None = None,
@@ -405,6 +429,27 @@ def ingest_pair(swift_path: Path, flex_path: Path, user: str,
         if account_match is not None:
             carried = carry_forward_match(conn, session_id, tol)
             seeded = seed_open_items_for_session(conn, session_id)
+
+        # Balance validation: verify that the SWIFT statement's opening +
+        # net txns = closing balance. Stored per-session so the review UI
+        # can show a green/red badge without re-computing on every load.
+        bv = _validate_statement_balance(
+            swift_meta.get('opening_balance_amount'),
+            swift_meta.get('opening_balance_sign'),
+            swift_meta.get('closing_balance_amount'),
+            swift_meta.get('closing_balance_sign'),
+            swift_txns,
+        )
+        if bv is not None:
+            conn.execute(
+                "UPDATE sessions SET balance_valid=?, balance_delta=? WHERE id=?",
+                (1 if bv['valid'] else 0, bv['delta'], session_id),
+            )
+
+        # Auto-match: run rule engine on pending assignments.
+        # Import lazily to avoid circular imports.
+        from auto_match_engine import apply_auto_rules
+        apply_auto_rules(conn, session_id, actor='system_auto')
 
         conn.commit()
 

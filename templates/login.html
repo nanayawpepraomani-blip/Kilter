@@ -99,9 +99,12 @@
         <input id="password" name="password" type="password" autocomplete="current-password">
       </div>
       <div class="field">
-        <label for="code">Authenticator code</label>
+        <label for="code">Authenticator code <span id="recovery-toggle" style="font-weight:400;font-size:11px;color:rgba(255,255,255,0.6);cursor:pointer;text-decoration:underline;float:right;margin-top:2px" onclick="toggleRecovery()">Lost your device?</span></label>
         <input id="code" name="code" type="text" inputmode="numeric" pattern="[0-9]{6}"
                maxlength="6" autocomplete="one-time-code" class="code" required placeholder="000000">
+        <div id="recovery-hint" style="display:none;font-size:11px;color:rgba(255,255,255,0.6);margin-top:4px">
+          Enter a recovery code (format: XXXX-XXXX-XXXX). Each code can only be used once.
+        </div>
       </div>
       <button type="submit" id="submit">Sign in</button>
       <div class="error" id="error"></div>
@@ -157,6 +160,31 @@
       document.getElementById('code').focus();
     }
   });
+
+  let recoveryMode = false;
+  function toggleRecovery() {
+    recoveryMode = !recoveryMode;
+    const codeInput = document.getElementById('code');
+    const hint = document.getElementById('recovery-hint');
+    const toggle = document.getElementById('recovery-toggle');
+    if (recoveryMode) {
+      codeInput.inputMode = 'text';
+      codeInput.pattern = '[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}';
+      codeInput.maxLength = 14;
+      codeInput.placeholder = 'XXXX-XXXX-XXXX';
+      hint.style.display = 'block';
+      toggle.textContent = 'Use authenticator code';
+    } else {
+      codeInput.inputMode = 'numeric';
+      codeInput.pattern = '[0-9]{6}';
+      codeInput.maxLength = 6;
+      codeInput.placeholder = '000000';
+      hint.style.display = 'none';
+      toggle.textContent = 'Lost your device?';
+    }
+    codeInput.value = '';
+    codeInput.focus();
+  }
 </script>
 </body>
 </html>
