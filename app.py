@@ -504,7 +504,7 @@ def login(payload: LoginPayload, request: Request):
             ldap_dn = result.user_dn
 
         used_recovery = False
-        if not verify_totp(row['totp_secret'], code):
+        if not verify_totp(row['totp_secret'], code, username=username):
             # Recovery codes are 14 chars with dashes (XXXX-XXXX-XXXX).
             # Accept them as a fallback when the TOTP code fails.
             if len(code.replace('-', '')) == 12 and consume_recovery_code(conn, username, code):
@@ -1079,19 +1079,25 @@ def update_user(target: str, payload: UserPatch, user: dict = Depends(require_ro
         if row is None:
             raise HTTPException(404, f"User '{target}' not found")
 
+        _PATCH_COLS = [
+            ('role',         'role=?',         lambda v: v),
+            ('display_name', 'display_name=?', lambda v: v),
+            ('active',       'active=?',       lambda v: 1 if v else 0),
+            ('auth_source',  'auth_source=?',  lambda v: v),
+        ]
         fields, params = [], []
-        if payload.role is not None:
-            fields.append("role=?"); params.append(payload.role)
-        if payload.display_name is not None:
-            fields.append("display_name=?"); params.append(payload.display_name)
-        if payload.active is not None:
-            fields.append("active=?"); params.append(1 if payload.active else 0)
-        if payload.auth_source is not None:
-            fields.append("auth_source=?"); params.append(payload.auth_source)
+        for attr, col_expr, transform in _PATCH_COLS:
+            val = getattr(payload, attr)
+            if val is not None:
+                fields.append(col_expr)
+                params.append(transform(val))
         if not fields:
             raise HTTPException(400, "Nothing to update")
         params.append(target)
-        conn.execute(f"UPDATE users SET {', '.join(fields)} WHERE username=?", params)
+        conn.execute(
+            "UPDATE users SET " + ", ".join(fields) + " WHERE username=?",
+            params,
+        )
 
         # Deactivation, role change, or auth-source flip → kill the user's
         # live sessions so the new restriction takes effect immediately.

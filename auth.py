@@ -32,6 +32,8 @@ from datetime import datetime, timedelta
 from io import BytesIO
 
 import pyotp
+import threading as _threading
+import time as _time
 import qrcode
 import qrcode.image.pil
 
@@ -46,6 +48,30 @@ import os as _os
 SESSION_IDLE_TIMEOUT = timedelta(minutes=int(_os.environ.get('KILTER_SESSION_IDLE_MINUTES', '30')))
 TOTP_WINDOW = 1  # accept current code ± 1 step (30s either side)
 
+# ---------------------------------------------------------------------------
+# TOTP replay cache — prevents the same code being accepted twice within its
+# validity window (current step ± TOTP_WINDOW × 30 s).  Keyed by
+# (username, code); entries expire after 90 s (3 × step size).
+# ---------------------------------------------------------------------------
+_REPLAY_CACHE: dict = {}
+_REPLAY_LOCK = _threading.Lock()
+_REPLAY_TTL = 90.0  # seconds
+
+
+def _check_and_mark_used(username: str, code: str) -> bool:
+    """Return True if code was already used (replay). Mark it used otherwise."""
+    key = (username, code)
+    now = _time.monotonic()
+    with _REPLAY_LOCK:
+        # Prune stale entries inline to keep memory bounded.
+        stale = [k for k, exp in _REPLAY_CACHE.items() if now >= exp]
+        for k in stale:
+            del _REPLAY_CACHE[k]
+        if key in _REPLAY_CACHE:
+            return True
+        _REPLAY_CACHE[key] = now + _REPLAY_TTL
+        return False
+
 
 # ---------------------------------------------------------------------------
 # TOTP helpers
@@ -56,13 +82,17 @@ def generate_totp_secret() -> str:
     return pyotp.random_base32()
 
 
-def verify_totp(secret: str, code: str) -> bool:
-    """Constant-time verification with clock-drift tolerance.
+def verify_totp(secret: str, code: str, username: str = '') -> bool:
+    """Constant-time verification with clock-drift tolerance and replay prevention.
 
     Accepts both plaintext (legacy rows) and Fernet-encrypted secrets. The
     DB schema has TOTP secrets encrypted at rest from go-live onward; the
     fallback exists so existing pre-encryption rows keep working until the
-    next enrollment / rotation re-writes them encrypted."""
+    next enrollment / rotation re-writes them encrypted.
+
+    Pass username so a valid code cannot be replayed within its validity window.
+    Without username the replay guard is skipped (acceptable only during enrollment
+    verification, where the code is consumed once and the token invalidated)."""
     if not secret or not code:
         return False
     code = code.replace(' ', '').strip()
@@ -71,7 +101,11 @@ def verify_totp(secret: str, code: str) -> bool:
     try:
         from secrets_vault import decrypt
         plaintext = decrypt(secret)
-        return pyotp.TOTP(plaintext).verify(code, valid_window=TOTP_WINDOW)
+        if not pyotp.TOTP(plaintext).verify(code, valid_window=TOTP_WINDOW):
+            return False
+        if username and _check_and_mark_used(username, code):
+            return False  # replay detected
+        return True
     except Exception:
         return False
 

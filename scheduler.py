@@ -41,6 +41,9 @@ from db import get_conn
 POLL_SECONDS = 30                 # how often the daemon wakes up
 RUN_HISTORY_KEEP = 20             # per-job; older runs are pruned
 
+import os as _os
+JOB_TIMEOUT_SECONDS = int(_os.environ.get('KILTER_JOB_TIMEOUT', '1800'))  # 30 min default
+
 _thread: threading.Thread | None = None
 _stop_event = threading.Event()
 
@@ -311,15 +314,27 @@ def _execute(conn, job: dict, actor: str = 'system_scheduler') -> dict:
 
     status, output = 'ok', ''
     t0 = time.monotonic()
-    try:
-        if handler is None:
-            status, output = 'error', f"unknown job_type '{job['job_type']}'"
+    if handler is None:
+        status, output = 'error', f"unknown job_type '{job['job_type']}'"
+    else:
+        result: list = [None, None]  # [status, output]
+
+        def _target() -> None:
+            try:
+                result[0], result[1] = 'ok', handler(conn, params) or 'ok'
+            except Exception as exc:
+                result[0] = 'error'
+                result[1] = f"{type(exc).__name__}: {exc}\n{traceback.format_exc()[-1500:]}"
+
+        worker = threading.Thread(target=_target, daemon=True)
+        worker.start()
+        worker.join(timeout=JOB_TIMEOUT_SECONDS)
+        if worker.is_alive():
+            status = 'timeout'
+            output = (f"Job exceeded {JOB_TIMEOUT_SECONDS}s timeout and was abandoned. "
+                      "The worker thread continues in the background but will not block future jobs.")
         else:
-            output = handler(conn, params) or 'ok'
-    except Exception as exc:
-        status = 'error'
-        tb = traceback.format_exc()
-        output = f"{type(exc).__name__}: {exc}\n{tb[-1500:]}"  # tail-truncate
+            status, output = result[0], result[1]
     duration_ms = int((time.monotonic() - t0) * 1000)
     ended_at = datetime.utcnow().isoformat()
 
