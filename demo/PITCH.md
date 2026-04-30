@@ -64,9 +64,11 @@ Four tiers, strongest first:
 | **3 · Amount + date** | No ref, but same amount on same day | Statement without a narrative |
 | **4 · Amount, date ±1 day** | Same amount, next-day booking | Weekend / cut-off timing |
 
-What ops still does: **decides** on tier 2-4. What the engine does: **proposes** and ranks. Nothing auto-matches without a human confirm.
+What ops still does: **decides** on tier 2-4. What the engine does: **proposes** and ranks.
 
-**Talk track (60 s):** "The engine isn't doing the ops team's job — it's doing the *searching* so ops can do the *deciding*. Tier 1 is the 'free' matches. Tier 2-4 is where judgement lives, and that's exactly the work we want humans on."
+**Auto-confirmation rules:** admins can define priority-ordered rules — "auto-confirm tier-1 matches where amount is exact and references overlap" — and the engine applies them silently at ingest. Ops only sees what the rules can't resolve. Rules are audited like every other action.
+
+**Talk track (60 s):** "The engine isn't doing the ops team's job — it's doing the *searching* so ops can do the *deciding*. Tier 1 is the 'free' matches. With auto-rules turned on, those tier-1 matches don't even reach the queue — they confirm themselves and the ops team opens to a smaller, harder set where judgement is genuinely needed."
 
 ---
 
@@ -94,18 +96,20 @@ What ops still does: **decides** on tier 2-4. What the engine does: **proposes**
 
 ---
 
-## Slide 7 — Roles & audit
+## Slide 7 — Roles, controls & audit
 
 **Four roles:**
 - `admin` — everything, including ingest and user management.
 - `ops` — reconcile, confirm/reject, export.
 - `audit` / `internal_control` — read-only access to the activity log and exports.
 
-**Everything is logged:**
-- Every login, every decision, every export, every scope change, every account registration.
-- Same `audit_log` table powers the Activity page and the CSV download auditors get.
+**Two-person approval gate (optional):** when enabled, an ops decision moves to `pending_approval` before confirming. A second user with `admin` or `internal_control` role approves or rejects. Self-approval is blocked by the system. Configurable per deployment — no code change required.
 
-**MFA:** TOTP, Microsoft Authenticator compatible. Enrollment via one-time token.
+**Session immutability:** once a month-end certificate is signed off, the underlying session locks. No one — not even an admin — can alter match decisions after sign-off without a fresh session.
+
+**Everything is logged, immutably:** every login, decision, approval, export, scope change, and account registration. The audit log table has database-level triggers blocking deletes and updates — immutable by construction, not by policy.
+
+**MFA:** TOTP, Microsoft Authenticator compatible. Enrollment via one-time token. Single-use recovery codes issued at enrollment — a lost phone doesn't lock users out permanently. Replay prevention: each code is accepted once within its 30-second window.
 
 ---
 
@@ -127,16 +131,15 @@ If you don't have pilot numbers yet, replace this slide with: **"Pilot plan: 1 c
 ## Slide 9 — What's built vs. what's next
 
 **Built and working today:**
-- **Nostro / GL stream:** intake (manual + auto-scan), 4-tier matching engine, review queue, xlsx export, daily breaks workbook, month-end certificate with maker/checker/approver workflow.
+- **Nostro / GL stream:** intake (manual + auto-scan), 4-tier matching engine with admin-configurable auto-confirmation rules, review queue, xlsx export, daily breaks workbook, month-end certificate with maker/checker sign-off, session locking after sign-off, statement opening/closing balance validation at ingest.
 - **Mobile-money stream:** five pre-seeded operator profiles (M-Pesa, Telcel Cash, MTN MoMo agent + B2W + W2B, Airtel Money), wallet-account intake, dedicated `/mobile-money` view.
-- **Cards stream:** PCI-safe ingest (`/cards/files`), N-way matching engine on `scheme_ref`, auth-clearing-settlement classifier, mismatched-first match groups view, CSV exports of records and match groups, switch settlement profile (Visa/Mastercard binary parsers stubbed).
-- **Platform:** MFA login (TOTP), four roles, immutable audit log, activity export, access-area scoping, discovered-accounts inbox, BYO format wizard with xlsx native support, 300 MB streaming uploads.
+- **Cards stream:** PCI-safe ingest (`/cards/files`), N-way matching engine on `scheme_ref`, auth/clearing/settlement stage tagging, `incomplete` status when required stages are missing, mismatched-first match groups view, CSV exports, switch settlement profile (Visa/Mastercard binary parsers stubbed pending scheme sample data).
+- **Platform:** TOTP MFA with recovery codes + replay prevention, two-person approval gate (optional), four roles, immutable audit log (DB-level triggers), activity export, access-area scoping, BYO format wizard, 300 MB streaming uploads, AD/LDAP integration, MySQL + SQLite database support, SLA escalation with snooze/acknowledge on open items.
 
 **Next (in priority order):**
-1. **Pilot** — 1 branch, 1 month, parallel-run against the existing tool. Add a wallet operator feed and / or a card switch file in week 3 to exercise multi-stream value.
-2. **Visa Base II + Mastercard IPM parsers** — calibrate against V.I.P. / PUF synthetic data when scheme bundles arrive (see CARDS_DESIGN.md for what unblocks this).
-3. **AD/LDAP password layer** — wire up service-account bind for users opting into AD-authenticated logins.
-4. **Cards 3-way classifier** — extend match groups to require all three stages (auth + clearing + settlement) for `matched` status, once the binary parsers ship.
+1. **Pilot** — 1 branch, 1 month, parallel-run against the existing tool. Extend to mobile money or cards in week 3.
+2. **Visa Base II + Mastercard IPM binary parsers** — pending V.I.P. / PUF synthetic sample data from scheme (see CARDS_DESIGN.md).
+3. **Audit-log SIEM export** — forward `audit_log` to Splunk / Sentinel / Elastic for banks that require centralised security monitoring.
 
 ---
 

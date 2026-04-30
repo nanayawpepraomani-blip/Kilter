@@ -63,9 +63,11 @@ Four tiers, strongest first. The engine **proposes**; the human **decides**.
 | **3 · Amount + date** | No ref, but same amount same day | Statement without a narrative |
 | **4 · Amount, date ±1 day** | Same amount, next-day booking | Weekend / cut-off timing |
 
-Nothing auto-matches without a human confirm. Tier 1 still needs one click — but it's *one* click, not a forensic exercise.
+**Auto-confirmation rules (optional):** admins define priority-ordered rules — e.g. "auto-confirm tier-1 matches where amount is exact" — and the engine applies them at ingest. Ops only reviews what the rules don't resolve. Rules are logged in the audit trail like every other decision.
 
-**Talk track (60 s):** "The engine isn't replacing the ops team. It's doing the *searching* — the part that burns hours — so the team can do the *deciding* — the part that actually needs judgement."
+**Two-person approval gate (optional):** when `KILTER_REQUIRE_APPROVAL=true`, an ops confirm creates a `pending_approval` item. A second user with `admin` or `internal_control` role must approve before the match is finalised. Self-approval is blocked by the system. Configurable without code changes.
+
+**Talk track (60 s):** "The engine does the searching. Auto-rules handle the open-and-shut cases. Ops handles the edge cases. If your internal controls require a second set of eyes on every confirm, the approval gate is one config flag — same UI, additional step."
 
 ---
 
@@ -174,11 +176,13 @@ add MoMo in week 3."
 - `ops` — reconcile, confirm/reject, export
 - `audit` / `internal_control` — read-only access to the activity log and exports
 
-**Every action is logged:** every login, every match decision, every export, every scope change, every account registration. Same `audit_log` table powers the Activity page and the CSV auditors download.
+**Every action is logged, immutably:** every login, match decision, approval, export, scope change, and account registration. The `audit_log` table has database-level triggers that block any DELETE or UPDATE — immutable by construction, not by policy. Session decisions lock permanently when a certificate is signed off.
 
-**MFA:** TOTP, compatible with Microsoft Authenticator / Google Authenticator / Authy. Enrollment via one-time token, no SMS dependency.
+**MFA:** TOTP, compatible with Microsoft Authenticator / Google Authenticator / Authy. Enrollment via one-time token, no SMS dependency. 8 single-use recovery codes issued at enrollment (so a lost phone doesn't lock a user out permanently). Replay prevention: each code is accepted once within its 30-second window.
 
-**Deployment:** **self-hosted on your infrastructure**. No nostro data leaves your perimeter. Windows or Linux, SQLite default (hundreds of millions of rows on one SSD), swap for Postgres if you need HA.
+**Two-person approval gate:** configurable — when enabled, every ops confirm requires a second authorisation from `admin` or `internal_control`. Self-approval blocked. Required by many banks' payment control frameworks; supported out of the box.
+
+**Deployment:** **self-hosted on your infrastructure**. No nostro data leaves your perimeter. Linux or Docker. SQLite for single-server pilots; **MySQL 8.0+** for production deployments with multiple concurrent operators, connection pooling, and native replication. Postgres also supported.
 
 ---
 
@@ -237,15 +241,19 @@ Low-risk, parallel-run, reversible. Here's the shape:
 |---|---|---|---|---|
 | Deployment | Cloud / hosted | Cloud-first | On-prem (often EoL) | **Self-hosted on your infra** |
 | Data residency | Theirs | Theirs | Yours | **Yours** |
-| Audit trail | Add-on module | Yes | Partial | **Default, immutable** |
+| Audit trail | Add-on module | Yes | Partial | **Default, immutable (DB-level triggers)** |
 | Modern SWIFT MX (camt.053/054) | Yes | Yes | **No** | **Yes** |
 | Mobile-money operator feeds | Custom add-on | Custom add-on | **No** | **Pre-seeded profiles for major operators** |
 | Card-scheme settlements | Separate product | Separate product | **No** | **Same platform, PCI-safe** |
 | PCI-DSS storage scope | Vendor-dependent | Vendor-dependent | **Out** | **Out (first6+last4 only, never full PAN)** |
+| Two-person approval gate | Add-on / config | Yes | **No** | **Built-in, one config flag** |
+| Auto-confirmation rules | Yes (complex config) | Yes | **No** | **Admin UI, no code changes** |
+| MFA recovery codes | Vendor-dependent | Vendor-dependent | **No** | **8 single-use codes, issued at enrollment** |
+| Database | Cloud / Oracle | Cloud / SQL Server | Local DB | **SQLite · MySQL 8+ · Postgres** |
 | Time-to-pilot | 3–6 months | 2–4 months | n/a | **~2 weeks from files-in-hand** |
 | Pricing shape | 6- / 7-figure annual | 6-figure annual | Maintenance only | **Per-account annual, mid-5 figures typical, all streams included** |
 
-We're not trying to be a like-for-like SmartStream replacement. We're the answer for a bank that wants **modern workflow + on-prem data residency + audit trail without an add-on SKU + one operator UI across nostro, mobile money, and cards instead of three separate tools.**
+We're not trying to be a like-for-like SmartStream replacement. We're the answer for a bank that wants **modern workflow + on-prem data residency + immutable audit trail + maker-checker controls + one operator UI across nostro, mobile money, and cards — without three separate tools, three separate contracts, and a 6-month implementation.**
 
 ---
 

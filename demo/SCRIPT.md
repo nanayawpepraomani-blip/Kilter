@@ -179,7 +179,7 @@ Do these in order. If any step fails, fix before presenting — don't improvise 
 ## Close (9:45 – 10:30)
 
 **Back to the Dashboard. Say:**
-> "That's the loop, three times over: ingest, review, export, audited — for nostro, mobile money, and cards. Self-hosted on your infrastructure, MFA by default, role-based, scoped to the way each team actually works. The cards module is PCI-scope-out by design — first six plus last four only, no SAD ever. What I'd like next is a green light to run a 1-branch, 1-month pilot in parallel with your existing nostro tool, with the option to extend into mobile money or a card switch in week 3. We measure the real numbers, and we come back with a go/no-go in six weeks."
+> "That's the loop, three times over: ingest, review, export, audited — for nostro, mobile money, and cards. Self-hosted on your infrastructure, TOTP MFA with recovery codes, role-based, scoped to the way each team actually works. The audit log is immutable at the database level — not policy, not configuration, triggers. Sessions lock after sign-off so no one retroactively changes a matched pair. If your internal controls need two sets of eyes on every confirm, the approval gate is one config flag away. The cards module is PCI-scope-out by design — first six plus last four only, no SAD ever. What I'd like next is a green light to run a 1-branch, 1-month pilot in parallel with your existing nostro tool, with the option to extend into mobile money or a card switch in week 3. We measure the real numbers, and we come back with a go/no-go in six weeks."
 
 **Pause. Invite questions.**
 

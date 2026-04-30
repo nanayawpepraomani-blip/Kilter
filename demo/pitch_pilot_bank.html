@@ -437,7 +437,8 @@
           </table>
           <div class="callout" style="margin-top: 10px; font-size: 0.78em">
             Tier 1 still needs one click &mdash; but it's <em>one</em> click, not a forensic exercise.
-            <br><span class="pill pill-soft" style="margin-top:6px">Nothing auto-matches without a human confirm</span>
+            <br><span class="pill pill-soft" style="margin-top:6px">Auto-confirmation rules: admin-defined, audit-logged, no code changes</span>
+            <br><span class="pill" style="margin-top:4px;background:var(--grad-primary);color:#fff">Two-person approval gate: one config flag, self-approval blocked</span>
           </div>
         </div>
       </div>
@@ -564,23 +565,23 @@
         </div>
         <div class="card">
           <div style="font-size: 1.5em; color: var(--primary-2); margin-bottom: 4px">&#128241;</div>
-          <h3 style="font-size: 0.9em">MFA by default</h3>
+          <h3 style="font-size: 0.9em">MFA + recovery codes</h3>
           <p style="font-size: 0.72em; margin: 0; color: var(--muted)">
-            TOTP &mdash; Microsoft Authenticator / Google Authenticator / Authy. No SMS.
+            TOTP (Microsoft / Google Authenticator). 8 single-use recovery codes. Replay prevention. No SMS.
           </p>
         </div>
         <div class="card">
           <div style="font-size: 1.5em; color: var(--primary-2); margin-bottom: 4px">&#127970;</div>
           <h3 style="font-size: 0.9em">Self-hosted</h3>
           <p style="font-size: 0.72em; margin: 0; color: var(--muted)">
-            Windows or Linux. SQLite or Postgres. <strong>No nostro data leaves your perimeter.</strong>
+            Linux / Docker. SQLite &rarr; MySQL 8+ &rarr; Postgres. <strong>No nostro data leaves your perimeter.</strong>
           </p>
         </div>
       </div>
 
-      <div class="callout" style="margin-top: 0.8em">
-        <strong>Auditor on site?</strong> Create a time-boxed read-only audit user, hand over the login,
-        let them walk the activity log themselves. Nothing to prepare, nothing to redact.
+      <div class="callout" style="margin-top: 0.6em; font-size: 0.82em">
+        <strong>Immutable audit trail:</strong> database-level triggers block any DELETE or UPDATE on <code>audit_log</code> &mdash; even for admins. Sessions lock permanently after certificate sign-off. &nbsp;|&nbsp;
+        <strong>Two-person approval gate</strong> built in: one config flag, self-approval blocked by the system.
       </div>
     </section>
 
