@@ -226,14 +226,14 @@
     <p><strong>Do:</strong></p>
     <ol>
       <li><strong>Click the picker.</strong> A panel opens with a search box and a checkbox list.</li>
-      <li><strong>Type "bank"</strong> in the search — point at BANK OF GHANA filtering in.</li>
-      <li><strong>Check BANK OF GHANA, click Apply.</strong> Page reloads.</li>
-      <li>Point at the top-right badge: now reads <em>Active area: BANK OF GHANA</em>.</li>
-      <li>Go to Sessions — only BoG sessions visible.</li>
-      <li>Go back to the picker, search "branch", check <strong>BRANCH 001 HOFF</strong> and <strong>BRANCH 002 TEMA</strong>, Apply.</li>
-      <li>Badge now reads <em>Active area: 2 areas</em> with a tooltip listing them.</li>
+      <li><strong>Type a partial area name</strong> in the search — point at matching areas filtering in.</li>
+      <li><strong>Tick one area, click Apply.</strong> Page reloads.</li>
+      <li>Point at the top-right badge: now reads the chosen area name.</li>
+      <li>Go to Sessions — only that area's sessions visible.</li>
+      <li>Go back to the picker, search a different keyword (e.g. "branch"), tick two more areas, Apply.</li>
+      <li>Badge now reads <em>Active area: 3 areas</em> with a tooltip listing them.</li>
     </ol>
-    <div class="say">For ops — most of you will pick one area when you log in and live there all day. For supervisors — you can pick several at once and see across your cluster. For leadership — leave it on All areas and you've got the whole bank. The picker is backed by the same 103 access areas Corona uses, so there's no new taxonomy to learn.</div>
+    <div class="say">For ops — most of you will pick one area when you log in and live there all day. For supervisors — you can pick several at once and see across your cluster. For leadership — leave it on All areas and you've got the whole bank. Areas are configurable per deployment — import from your existing taxonomy, or define your own at install time.</div>
     <div class="callout warn">
       Click Cancel / set back to All areas before moving on — scene 6 needs the unscoped view.
     </div>
@@ -257,7 +257,7 @@
   <section class="scene" id="close">
     <h3><span class="beat">9:00</span> Close <span style="color:var(--muted);font-weight:normal;font-size:13px">(1:00)</span></h3>
     <p><strong>Back to the Dashboard. Say:</strong></p>
-    <div class="say">That's the loop: ingest, review, export, audited. We built it on our stack, MFA by default, role-based, and scoped to the way each team actually works. What I'd like next is a green light to run a 1-branch, 1-month pilot in parallel with Corona — we measure the real numbers, and we come back with a go/no-go in six weeks.</div>
+    <div class="say">That's the loop: ingest, review, export, audited. Self-hosted on your infrastructure, MFA by default, role-based, and scoped to the way each team actually works. What I'd like next is a green light to run a 1-branch, 1-month pilot in parallel with your existing tool — we measure the real numbers, and we come back with a go/no-go in six weeks.</div>
     <p><strong>Pause. Invite questions.</strong></p>
   </section>
 

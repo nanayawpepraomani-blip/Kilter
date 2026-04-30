@@ -15,6 +15,7 @@ import pytest
 
 from recon_engine import (
     propose_candidates, resolve, normalize_ref, MIRROR_SIGN,
+    propose_many_to_many, Tolerance,
 )
 
 
@@ -151,3 +152,181 @@ def test_normalize_ref_strips_decoration():
     assert normalize_ref('00000123') == '123'
     assert normalize_ref('') == ''
     assert normalize_ref(None) == ''
+
+
+# ---------------------------------------------------------------------------
+# Tier 6 — true many-to-many matching (subsets on both sides).
+#
+# Pinned because false positives here are the single biggest reputational
+# risk in the engine. Loosening any guard (date band, sign mirror, pool cap)
+# silently lets coincidental sums into the queue and erodes operator trust.
+# ---------------------------------------------------------------------------
+
+def test_m2n_basic_2x2_match():
+    """Two SWIFT credits that aggregate to two Flex debits on the same day,
+    different refs (so tier-5 splits don't fire), summing to identical
+    totals — the canonical M:M case."""
+    swift = [
+        _swift(1, 'AAA', 100.00, value_date=20260420),
+        _swift(2, 'BBB', 200.00, value_date=20260420),
+    ]
+    flex = [
+        _flex(10, 'XXX', 120.00, value_date=20260420, narration='unrelated'),
+        _flex(11, 'YYY', 180.00, value_date=20260420, narration='unrelated'),
+    ]
+    out = propose_many_to_many(swift, flex, {1, 2}, {10, 11})
+    assert len(out) == 1
+    assert out[0].tier == 6
+    assert set(out[0].swift_rows) == {1, 2}
+    assert set(out[0].flex_rows) == {10, 11}
+    # 300.00 swift vs 300.00 flex
+    assert abs(out[0].amount_diff) < 0.01
+
+
+def test_m2n_does_not_match_when_signs_disagree():
+    """A subset must mirror its counterpart's sign on EVERY row. Mixing
+    a credit and a debit on the same side is NOT a real aggregation."""
+    swift = [
+        _swift(1, 'AAA', 100.00, sign='C', value_date=20260420),
+        _swift(2, 'BBB', 200.00, sign='D', value_date=20260420),  # debit, not credit
+    ]
+    flex = [
+        _flex(10, 'XXX', 120.00, type_='DR', value_date=20260420),
+        _flex(11, 'YYY', 180.00, type_='DR', value_date=20260420),
+    ]
+    out = propose_many_to_many(swift, flex, {1, 2}, {10, 11})
+    # 1 swift_C alone can't sum to flex 300; 2 alone can't either.
+    # No m=2 subset has uniform sign C, so no candidate.
+    assert out == []
+
+
+def test_m2n_respects_date_band():
+    """Two transactions outside the date_tol_days band should not group
+    even if their amounts sum correctly. Banks aggregate same-day or
+    next-day; not same-week."""
+    swift = [
+        _swift(1, 'AAA', 100.00, value_date=20260420),
+        _swift(2, 'BBB', 200.00, value_date=20260427),  # one week later
+    ]
+    flex = [
+        _flex(10, 'XXX', 150.00, value_date=20260420),
+        _flex(11, 'YYY', 150.00, value_date=20260427),
+    ]
+    out = propose_many_to_many(swift, flex, {1, 2}, {10, 11},
+                                tol=Tolerance(date_tol_days=1))
+    assert out == []
+
+
+def test_m2n_skips_sums_outside_tolerance():
+    """Aggregation that lands $1 off should NOT match — that's a real
+    break, not an aggregation. Tolerance applies to the SUMMED amount."""
+    swift = [
+        _swift(1, 'AAA', 100.00, value_date=20260420),
+        _swift(2, 'BBB', 200.00, value_date=20260420),
+    ]
+    flex = [
+        _flex(10, 'XXX', 120.00, value_date=20260420),
+        _flex(11, 'YYY', 181.00, value_date=20260420),  # 301 vs 300
+    ]
+    out = propose_many_to_many(swift, flex, {1, 2}, {10, 11},
+                                tol=Tolerance(amount_tol_abs=0.01))
+    assert out == []
+
+
+def test_m2n_tolerance_pct_allows_close_aggregate():
+    """With a 1% tolerance, a 0.5% deviation on the aggregate sum should
+    match. The tolerance API is the same as 1:1 — same gate, just on
+    the summed amount."""
+    swift = [
+        _swift(1, 'AAA', 100.00, value_date=20260420),
+        _swift(2, 'BBB', 200.00, value_date=20260420),
+    ]
+    flex = [
+        _flex(10, 'XXX', 120.00, value_date=20260420),
+        _flex(11, 'YYY', 181.50, value_date=20260420),  # 301.50 vs 300, 0.5%
+    ]
+    out = propose_many_to_many(swift, flex, {1, 2}, {10, 11},
+                                tol=Tolerance(amount_tol_pct=1.0))
+    assert len(out) == 1
+    assert out[0].tier == 6
+
+
+def test_m2n_does_not_double_claim_rows():
+    """Once a row participates in a candidate, it must not appear in a
+    later candidate from the same pass — otherwise the UI would offer
+    overlapping decisions and a confirmed first match would silently
+    invalidate the second."""
+    # Three SWIFT credits, three flex debits — multiple potential subsets.
+    # The implementation must pick one and refuse to re-use rows.
+    swift = [
+        _swift(1, 'A', 100.00, value_date=20260420),
+        _swift(2, 'B', 200.00, value_date=20260420),
+        _swift(3, 'C', 300.00, value_date=20260420),
+    ]
+    flex = [
+        _flex(10, 'X', 150.00, value_date=20260420),
+        _flex(11, 'Y', 150.00, value_date=20260420),
+        _flex(12, 'Z', 300.00, value_date=20260420),
+    ]
+    out = propose_many_to_many(swift, flex, {1, 2, 3}, {10, 11, 12})
+    # Whatever subsets land, no row may appear twice across emitted candidates.
+    seen_swift = []
+    seen_flex = []
+    for c in out:
+        seen_swift.extend(c.swift_rows)
+        seen_flex.extend(c.flex_rows)
+    assert len(seen_swift) == len(set(seen_swift))
+    assert len(seen_flex) == len(set(seen_flex))
+
+
+def test_m2n_pool_cap_protects_against_blowup():
+    """If unmatched volume in a single date band exceeds the pool cap,
+    the function must refuse the bucket rather than try to enumerate
+    millions of subset pairs and lock the worker."""
+    # Build 25 SWIFT credits and 25 Flex debits all on the same date.
+    # POOL_CAP_M2N is 20 — with 25 we should bail out cleanly.
+    swift = [_swift(i, f'R{i}', 10.00 * (i + 1), value_date=20260420)
+             for i in range(25)]
+    flex = [_flex(100 + i, f'X{i}', 10.00 * (i + 1), value_date=20260420)
+            for i in range(25)]
+    out = propose_many_to_many(swift, flex,
+                                {s['_row_number'] for s in swift},
+                                {f['_row_number'] for f in flex})
+    # Either zero (refused the bucket) or a small handful — never an
+    # explosion. We pin the no-explosion property: empty.
+    assert out == []
+
+
+def test_m2n_does_not_confuse_currencies_via_sign():
+    """A SWIFT credit and a Flex CREDIT are both incoming-from-our-view; the
+    engine never matches same-direction. M:N must respect this."""
+    swift = [
+        _swift(1, 'A', 100.00, sign='C', value_date=20260420),
+        _swift(2, 'B', 200.00, sign='C', value_date=20260420),
+    ]
+    flex = [
+        _flex(10, 'X', 150.00, type_='CR', value_date=20260420),  # NOT mirror
+        _flex(11, 'Y', 150.00, type_='CR', value_date=20260420),
+    ]
+    out = propose_many_to_many(swift, flex, {1, 2}, {10, 11})
+    assert out == []
+
+
+def test_m2n_asymmetric_2x3_shape():
+    """2 SWIFT credits aggregate to 3 Flex debits — the asymmetric M:N
+    case. Sums must match within tolerance; subset on each side stays
+    within the date band."""
+    swift = [
+        _swift(1, 'A', 100.00, value_date=20260420),
+        _swift(2, 'B', 200.00, value_date=20260420),  # total 300
+    ]
+    flex = [
+        _flex(10, 'X', 80.00,  value_date=20260420),
+        _flex(11, 'Y', 100.00, value_date=20260420),
+        _flex(12, 'Z', 120.00, value_date=20260420),  # total 300
+    ]
+    out = propose_many_to_many(swift, flex, {1, 2}, {10, 11, 12})
+    assert len(out) == 1
+    assert len(out[0].swift_rows) == 2
+    assert len(out[0].flex_rows) == 3
+    assert out[0].tier == 6

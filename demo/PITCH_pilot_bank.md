@@ -9,37 +9,46 @@
 ## Slide 1 — Title
 
 > **Kilter**
-> Modern nostro + GL reconciliation.
-> Self-hosted · Audit-first · Format-agnostic (MT940/950, camt.053/054, any core GL extract).
+> Modern reconciliation across nostro, mobile money, and card-scheme settlements.
+> Self-hosted · Audit-first · Format-agnostic (MT940/950, camt.053/054, mobile-money operator CSV, card-switch settlement files, any core GL extract).
 >
 > *Presented by Kilter · For \[prospect bank] · \[meeting date]*
 
-**Talk track (20 s):** "Kilter is a nostro-and-GL reconciliation platform built for correspondent-banking treasuries. Thirty minutes from now you'll know whether it's worth running for one month on one of your accounts."
+**Talk track (20 s):** "Kilter is a reconciliation platform for banks and payments businesses. It started in nostro, but it's now three reconciliation streams in one: nostro, mobile money, and card scheme settlements. Thirty minutes from now you'll know whether it's worth running for one month on one of your accounts — your choice of stream."
 
 ---
 
-## Slide 2 — The problem every correspondent treasury has
+## Slide 2 — The problem every payments-active bank has
 
-Three pressures most banks are feeling at once:
+Four pressures most banks are feeling at once:
 
-- **Your reconciliation tool is aging.** Most banks still run Corona 7.9 or an equivalent late-90s product. No vendor support, no Windows 11 hardening, UI that assumes a 1024×768 screen.
-- **Month-end close is still manual.** Ops exports from your core, pulls SWIFT statements, eyeballs matches in Excel. Industry practitioners commonly report **40–80 hours per cycle** for a mid-size FX desk just to get the books to reconcile.
-- **Audit cannot trace decisions.** When finance asks *"who cleared this item on the 14th?"* the answer is a spreadsheet filename and a person's memory.
+- **Reconciliation tooling is fragmented.** Nostro runs on a 1990s-era product still common at mid-tier banks. Mobile-money runs on Excel. Card-switch settlements run on a third tool, often the switch vendor's. **Three teams, three tools, three audit trails.**
+- **Month-end close is still manual.** Ops exports from your core, pulls SWIFT statements, eyeballs matches in Excel. Industry practitioners commonly report **40–80 hours per cycle** per stream just to get the books to reconcile.
+- **Audit cannot trace decisions.** When finance asks *"who cleared this item on the 14th?"* the answer is a spreadsheet filename and a person's memory — and that's per stream, three times over.
+- **Cards put more of the bank in PCI scope every year.** Each tool that touches a settlement file with PAN data drags a new system into scope. The compliance bill compounds.
 
-**Talk track (45 s):** "We didn't invent these pressures — they're industry-wide. What we built is the answer that fits a bank that wants something modern but doesn't want to hand its nostro data to SmartStream's cloud."
+**Talk track (60 s):** "Most banks aren't reconciling one thing — they're reconciling three: nostro, mobile money, and cards. They're using three different tools, three audit trails, and three different teams. We compressed all three into one platform with one operator UI, one audit log, and a PCI-DSS-out-of-scope storage posture for the cards module so card recon doesn't pull more of your stack into compliance scope."
 
 ---
 
 ## Slide 3 — What Kilter is, in one sentence
 
-**Pairs SWIFT messages with core-banking GL transactions, proposes matches in tiers, lets ops confirm or reject — with every click logged.**
+**One platform that pairs the bank-side ledger against the counter-party stream — SWIFT, mobile-money operator, or card scheme — proposes matches in tiers, and lets ops confirm or reject with every click logged.**
 
-Four user-visible parts:
+Three reconciliation streams, one operator UI:
 
-1. **Intake** — drop SWIFT `.out` or `.xml` and the core-banking `.xlsx` into a folder. The scanner picks up, parses, routes.
+| Stream | What you drop in | Bank-side counterpart |
+|---|---|---|
+| **Nostro / GL** | MT940 / MT950 / camt.053 / camt.054 | Flexcube / T24 / Finacle GL extract |
+| **Mobile money** | Operator CSV (M-Pesa Paid In/Withdrawn, MTN MoMo B2W & W2B, Airtel Money, Telcel Cash) | Bank wallet account GL |
+| **Card scheme** | Visa / Mastercard / Verve / GhIPSS settlement file (TSV with pre-masked PAN) | Bank issuing or acquiring GL |
+
+Four user-visible parts (same for all three streams):
+
+1. **Intake** — drop the file or let the watched folder pick it up. SHA-256 dedup; one file is one session.
 2. **Review queue** — ranked candidates per unmatched transaction; confirm in one click, keyboard-friendly.
 3. **Scoped dashboard** — each user picks the access areas they work in (a branch, a cluster, or all).
-4. **Export + audit** — xlsx report for finance, immutable audit log for compliance.
+4. **Export + audit** — xlsx report for finance, immutable audit log for compliance, separate match-groups CSV for the cards stream.
 
 ---
 
@@ -62,18 +71,21 @@ Nothing auto-matches without a human confirm. Tier 1 still needs one click — b
 
 ## Slide 5 — Format support (why this plugs into your bank)
 
-**What you drop in:**
+**What you drop in — across all three streams:**
 
-| Source | Formats supported |
-|---|---|
-| Correspondent statements (SWIFT FIN) | MT940 end-of-day, MT950 statement |
-| Correspondent statements (SWIFT MX / ISO 20022) | camt.053 (EoD), camt.054 (intraday) |
-| Core-banking GL | Flexcube `.xlsx` export (direct Oracle pull optional) |
-| Other cores (T24, Finacle, Equation) | Extract to xlsx; mapping is a config file, not a rewrite |
+| Stream | Source | Formats supported |
+|---|---|---|
+| Nostro | Correspondent statements (SWIFT FIN) | MT940 end-of-day, MT950 statement |
+| Nostro | Correspondent statements (SWIFT MX / ISO 20022) | camt.053 (EoD), camt.054 (intraday) — including SWIFT Alliance Access envelopes |
+| Nostro | Core-banking GL | Flexcube `.xlsx` export (direct Oracle pull optional); T24 / Finacle / Equation via column-mapping wizard |
+| Mobile money | Operator B2W / W2B feed | M-Pesa Safaricom statement, MTN MoMo (agent + B2W + W2B), Airtel Money agent, Telcel Cash organisation statement (xlsx native) |
+| Cards | Issuer / acquirer settlement | Switch tab-separated reports with pre-masked PAN; GhIPSS / Cardlink / NIBSS Verve CSV |
+| Cards | Scheme clearing | Visa Base II + Mastercard IPM parsers stubbed pending V.I.P. / PUF synthetic samples (a deliberate cut — see CARDS_DESIGN.md) |
+| Any | Custom CSV / xlsx | BYO format profile machinery — column-mapping wizard, no code changes |
 
-**What comes out:** daily breaks workbook + month-end certificate in the format your ops team already recognises.
+**What comes out:** daily breaks workbook + month-end certificate (nostro), match-groups CSV with mismatched-first sort (cards), per-record drill-in CSV exports — all in formats your ops team already recognises.
 
-*\[FILL: if you've already run the parser against the prospect's own file samples, cite it here — "Parsed 7 of your camt.053 files on receipt, zero errors."]*
+*\[FILL: if you've already run the parser against the prospect's own file samples, cite it here — "Parsed 7 of your camt.053 files on receipt, zero errors. Card-switch settlement file ingested 2,000 rows in 1.4 s, all PCI-safe."]*
 
 ---
 
@@ -95,6 +107,63 @@ Nothing auto-matches without a human confirm. Tier 1 still needs one click — b
 - Top-bar picker on every page. Single area (most ops) or multi-select (regional supervisors).
 - Scope filters Dashboard / Cash accounts / Sessions — users only see work relevant to them.
 - Areas are configurable: branch codes, business lines, currency pools — whatever your bank's structure needs.
+
+---
+
+## Slide 7b — Cards module: PCI scope reduction by design
+
+The cards stream is built to keep your reconciliation system **out of
+PCI-DSS storage scope**. Three architectural commitments:
+
+1. **Full PAN never persists.** Loaders mask at the seam into
+   `pan_first6` + `pan_last4` only. The schema has no column that
+   could hold a full PAN — there's no path to insert one.
+2. **Sensitive Authentication Data is refused.** CVV, track data, PIN
+   blocks — DSS §3.2 — get rejected at ingest. Settlement files
+   shouldn't include them; this is defence in depth for the day a bank
+   ops team accidentally exports from the wrong system.
+3. **Free-text fields are scanned and redacted.** Merchant names and
+   notes get a Luhn-validated PAN sweep on the way in. Any embedded
+   full PAN becomes `first6***last4` before persistence.
+
+**Why this matters commercially:** every reconciliation tool in your
+stack that touches a settlement file with full-PAN data drags that
+system into PCI-DSS scope. Kilter doesn't. One less system in scope
+means a smaller compliance bill at your next QSA review.
+
+The N-way matching engine joins on `scheme_ref` (Visa TRR, Mastercard
+Banknet, switch RRN) across files — auth, clearing, settlement — and
+classifies each group as matched / mismatched / unmatched. Operator-set
+states (`disputed`, `written_off`) win over the engine's classification.
+
+---
+
+## Slide 7c — Mobile money: bank-to-wallet and wallet-to-bank
+
+Across Africa, mobile-money operator integrations have outgrown the
+Excel sheet. A typical mid-tier bank now reconciles:
+
+- **Bank-to-wallet (B2W)** — outbound pulls from the bank's settlement
+  account to wallet customers (salary disbursement, supplier payments).
+- **Wallet-to-bank (W2B)** — inbound pushes from wallet customers to
+  bank accounts (bill pay, top-ups).
+
+Both produce daily operator-side CSVs that need to reconcile to the
+bank's GL. Different formats per operator; some include FX columns,
+some don't; column counts shift between releases.
+
+**Kilter ships pre-seeded operator profiles:** M-Pesa Safaricom (two-
+column Paid In / Withdrawn shape), MTN MoMo (separate B2W and W2B
+profiles with `_extra` passthrough for the wide-format FX columns),
+Airtel Money (CR/DR column convention), Telcel Cash (two-column
+organisation-statement shape, xlsx native). Bind a profile to a wallet
+account in the BYO formats UI and start ingesting same day.
+
+**Talk track (45 s):** "If you're already reconciling MTN MoMo or
+Telcel Cash by hand or with a vendor add-on, the saving here is direct.
+Same matching engine, same audit trail, same operator UI as your nostro
+team is already using. The pilot extends naturally — start on nostro,
+add MoMo in week 3."
 
 ---
 
@@ -142,15 +211,17 @@ Why that matters: the parser is where every reconciliation pilot dies. SWIFT All
 
 Low-risk, parallel-run, reversible. Here's the shape:
 
-**Scope:** 1 nostro account · 1 currency · 1 month of daily statements.
-**Runs in parallel** with your existing tool — no workflow change, no migration risk.
+**Scope (week 1–2):** 1 nostro account · 1 currency · 1 month of daily statements.
+**Optional extension (week 3–4):** add a mobile-money operator feed *or* a card-switch settlement file to demonstrate multi-stream value on your data — same operator UI, same audit log, same pilot terms.
+**Runs in parallel** with your existing tool(s) — no workflow change, no migration risk.
 **Ops commitment:** one champion who works the review queue ~30 min/day during the pilot window.
-**Our commitment:** on-site setup, format validation against your actual files, weekly check-in, full audit log for your internal control / audit team.
+**Our commitment:** on-site setup, format validation against your actual files (including your mobile-money operator's CSV shape and your card switch's settlement format), weekly check-in, full audit log for your internal control / audit team.
 
 **What we measure together:**
-1. Tier 1 auto-match rate on *your* volume.
-2. Cycle-time delta on *your* close.
-3. Break ageing — how long items stay unmatched compared to today.
+1. Tier 1 auto-match rate on *your* volume (nostro stream).
+2. Match-group resolution rate (cards stream, if exercised).
+3. Cycle-time delta on *your* close, across all enabled streams.
+4. Break ageing — how long items stay unmatched compared to today.
 
 **Commercial:**
 
@@ -162,16 +233,19 @@ Low-risk, parallel-run, reversible. Here's the shape:
 
 ## Slide 11 — Why Kilter vs. the incumbents
 
-| | SmartStream TLM / IntelliMatch | Trintech Cadency | Corona 7.9 | **Kilter** |
+| | SmartStream TLM / IntelliMatch | Trintech Cadency | Legacy MT-only tool | **Kilter** |
 |---|---|---|---|---|
-| Deployment | Cloud / hosted | Cloud-first | On-prem (EoL) | **Self-hosted on your infra** |
+| Deployment | Cloud / hosted | Cloud-first | On-prem (often EoL) | **Self-hosted on your infra** |
 | Data residency | Theirs | Theirs | Yours | **Yours** |
 | Audit trail | Add-on module | Yes | Partial | **Default, immutable** |
 | Modern SWIFT MX (camt.053/054) | Yes | Yes | **No** | **Yes** |
+| Mobile-money operator feeds | Custom add-on | Custom add-on | **No** | **Pre-seeded profiles for major operators** |
+| Card-scheme settlements | Separate product | Separate product | **No** | **Same platform, PCI-safe** |
+| PCI-DSS storage scope | Vendor-dependent | Vendor-dependent | **Out** | **Out (first6+last4 only, never full PAN)** |
 | Time-to-pilot | 3–6 months | 2–4 months | n/a | **~2 weeks from files-in-hand** |
-| Pricing shape | 6- / 7-figure annual | 6-figure annual | Maintenance only | **Per-account annual, mid-5 figures typical** |
+| Pricing shape | 6- / 7-figure annual | 6-figure annual | Maintenance only | **Per-account annual, mid-5 figures typical, all streams included** |
 
-We're not trying to be a like-for-like SmartStream replacement. We're the answer for a treasury that wants **modern workflow + on-prem data residency + an audit trail that does not need an add-on SKU.**
+We're not trying to be a like-for-like SmartStream replacement. We're the answer for a bank that wants **modern workflow + on-prem data residency + audit trail without an add-on SKU + one operator UI across nostro, mobile money, and cards instead of three separate tools.**
 
 ---
 

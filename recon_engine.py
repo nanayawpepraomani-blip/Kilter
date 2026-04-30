@@ -436,3 +436,163 @@ def _find_split_subset(target: float, pool: list[dict], t: Tolerance,
             if t.amount_ok(total, target):
                 return list(combo)
     return None
+
+
+# ---------------------------------------------------------------------------
+# True many-to-many matching (tier 6) — subsets on BOTH sides.
+#
+# Use case: a bank aggregates 2-3 outgoing payments into one internal GL
+# entry while the counterparty bundles 2-3 of their own debits into a
+# single SWIFT credit. Neither tier 1-4 (1:1) nor tier 5 (1:N or N:1)
+# catches this; the engine has to test subsets on both sides.
+#
+# The combinatorics are unforgiving — C(20,3) * C(20,3) is 1.3M pairs.
+# So we gate aggressively before searching:
+#
+#   * Date band: every row in the candidate subset must fall within
+#     `tol.date_tol_days` of the subset's median value date. Banks
+#     aggregate same-day-or-next-day; we never match across a wide
+#     window.
+#   * Sign mirror: every SWIFT row must mirror every Flex row. No
+#     netting CR against DR within a subset.
+#   * Pool cap: if either side has more than POOL_CAP unmatched rows
+#     in a date band, refuse rather than blow up. The caller can run
+#     manual review on those.
+#   * Subset sizes 2..3 each side; (1,1) is tier 1-4, (1,N)/(N,1) is
+#     tier 5.
+#
+# Rationale for no ref gate (unlike tier 5): real M:M aggregations
+# usually have heterogeneous refs across the bundled rows, so a ref
+# gate is too strict. The date-band + sign-mirror + amount-sum gate is
+# stricter than it looks at first glance — it produces few false
+# positives in pilot data.
+# ---------------------------------------------------------------------------
+
+POOL_CAP_M2N = 20         # per side, per date band — guards against blowup
+MAX_SUBSET_M2N = 3        # max rows on either side
+
+
+def propose_many_to_many(swift_txns: list[dict], flex_txns: list[dict],
+                         unmatched_swift: set[int], unmatched_flex: set[int],
+                         tol: Tolerance | None = None) -> list[SplitCandidate]:
+    """True M:N matching. Returns SplitCandidate rows where BOTH
+    swift_rows and flex_rows have length >= 2. Caller should run after
+    propose_splits() so we don't overlap the 1:N / N:1 cases.
+
+    Algorithm:
+        1. Bucket unmatched txns by value-date band of width
+           `tol.date_tol_days`. (Bucketing on the integer YYYYMMDD value
+           date with overlap of `date_tol_days` either side.)
+        2. Within each bucket, separate by sign (mirror to find pairs).
+        3. For sizes (m, n) in {(2,2), (2,3), (3,2), (3,3)}:
+              For every m-subset of SWIFT rows in the bucket:
+                  target = sum(swift amounts)
+                  For every n-subset of Flex rows with mirror sign:
+                      if amount_ok(target, sum(flex amounts)):
+                          emit candidate
+        4. Skip candidates that would conflict with prior emissions
+           (same row claimed twice).
+    """
+    from itertools import combinations
+
+    t = tol or Tolerance()
+    out: list[SplitCandidate] = []
+
+    swift_by_row = {s['_row_number']: s for s in swift_txns}
+    flex_by_row  = {f['_row_number']: f for f in flex_txns}
+
+    swift_pool = [swift_by_row[r] for r in unmatched_swift if r in swift_by_row]
+    flex_pool  = [flex_by_row[r]  for r in unmatched_flex  if r in flex_by_row]
+
+    if not swift_pool or not flex_pool:
+        return out
+
+    # --- 1. Bucket by value-date band ---------------------------------
+    # We use the SWIFT-side date as the bucket anchor and pull every
+    # Flex row whose date falls within ±date_tol_days of any SWIFT row
+    # in the bucket. Buckets overlap deliberately — better duplicates
+    # than missed matches; conflict-resolution at emission time culls.
+    band = max(t.date_tol_days, 1)
+
+    # Index swift rows by their integer date.
+    by_date_swift: dict[int, list[dict]] = {}
+    for s in swift_pool:
+        d = int(s.get('value_date') or 0)
+        if not d:
+            continue
+        by_date_swift.setdefault(d, []).append(s)
+
+    # Track which (swift_row, flex_row) pairs we've already claimed so
+    # the same physical row can't appear in two emitted candidates.
+    claimed_swift: set[int] = set()
+    claimed_flex: set[int] = set()
+
+    # Walk distinct anchor dates — each defines a bucket.
+    for anchor_date in sorted(by_date_swift):
+        # Pull all swift rows within band of the anchor.
+        bucket_swift = [
+            s for s in swift_pool
+            if int(s.get('value_date') or 0) and
+               _days_between(int(s['value_date']), anchor_date) <= band
+        ]
+        bucket_flex = [
+            f for f in flex_pool
+            if int(f.get('value_date') or 0) and
+               _days_between(int(f['value_date']), anchor_date) <= band
+        ]
+        if len(bucket_swift) < 2 or len(bucket_flex) < 2:
+            continue
+        # Pool cap — too many means we can't safely enumerate.
+        if len(bucket_swift) > POOL_CAP_M2N or len(bucket_flex) > POOL_CAP_M2N:
+            continue
+
+        # 2. Split bucket by sign so we only consider mirror-sign pairs.
+        for sign in ('C', 'D'):
+            target_type = MIRROR_SIGN[sign]
+            s_side = [s for s in bucket_swift if s.get('sign') == sign
+                      and s['_row_number'] not in claimed_swift]
+            f_side = [f for f in bucket_flex if f.get('type') == target_type
+                      and f['_row_number'] not in claimed_flex]
+            if len(s_side) < 2 or len(f_side) < 2:
+                continue
+
+            # 3. Subset sweep — outer loop over swift sizes, inner over flex.
+            for m in range(2, MAX_SUBSET_M2N + 1):
+                if len(s_side) < m:
+                    break
+                for s_combo in combinations(s_side, m):
+                    if any(s['_row_number'] in claimed_swift for s in s_combo):
+                        continue
+                    target = sum(s['amount'] for s in s_combo)
+                    for n in range(2, MAX_SUBSET_M2N + 1):
+                        if len(f_side) < n:
+                            break
+                        for f_combo in combinations(f_side, n):
+                            if any(f['_row_number'] in claimed_flex for f in f_combo):
+                                continue
+                            total = sum(f['amount'] for f in f_combo)
+                            if not t.amount_ok(total, target):
+                                continue
+                            s_rows = tuple(s['_row_number'] for s in s_combo)
+                            f_rows = tuple(f['_row_number'] for f in f_combo)
+                            out.append(SplitCandidate(
+                                swift_rows=s_rows,
+                                flex_rows=f_rows,
+                                tier=6,
+                                reason=(f"{m}:{n} aggregate match in date band "
+                                        f"around {anchor_date}; "
+                                        f"SWIFT {len(s_rows)} rows summing "
+                                        f"{target:.2f} <-> Flex {len(f_rows)} rows "
+                                        f"summing {total:.2f}; sign mirror"),
+                                amount_diff=total - target,
+                            ))
+                            claimed_swift.update(s_rows)
+                            claimed_flex.update(f_rows)
+                            # Move on once one m,n hit lands so we don't
+                            # over-emit on the same swift subset.
+                            break
+                        else:
+                            continue
+                        break
+
+    return out

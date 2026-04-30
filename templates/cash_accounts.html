@@ -11,6 +11,11 @@
   <button class="btn btn-primary" onclick="document.getElementById('new-account').open = true">+ New cash account</button>
 </div>
 
+<!-- Summary strip — one chip per access area + a Total chip. Populated
+     by renderSummary(). Each section chip is an in-page anchor that
+     scrolls to its matching section header in the registry below. -->
+<div class="summary-strip" id="summary-strip"></div>
+
 <div class="card">
   <div class="card-head">
     <h2>Registry</h2>
@@ -26,6 +31,16 @@
   <div class="card" style="margin-top:8px">
     <div class="card-body">
       <form id="new-form" class="form-grid">
+        <div class="field" style="grid-column:1/-1"><label>Account type</label>
+          <select class="input" name="account_type" id="new-type" onchange="onTypeChange()">
+            <option value="cash_nostro">Cash / nostro account (correspondent banking)</option>
+            <option value="mobile_wallet">Mobile-money wallet</option>
+          </select>
+          <span class="hint" style="font-size:var(--t-small);color:var(--c-text-muted)">
+            Mobile wallets reuse the same recon engine; the wallet-specific
+            fields below let the BYO loader route statements correctly.
+          </span>
+        </div>
         <div class="field"><label>Access area</label>
           <select class="input" name="access_area" id="new-access-area">
             <option value="">(none)</option>
@@ -48,8 +63,28 @@
           </select>
           <span class="hint" style="font-size:var(--t-small);color:var(--c-text-muted)">Manage list in <a href="/currencies-admin">Currencies</a></span>
         </div>
-        <div class="field"><label>SWIFT account (Their side)</label><input class="input" name="swift_account" placeholder="e.g. 0120730006000" required></div>
-        <div class="field"><label>Flexcube GL (Our side)</label><input class="input" name="flex_ac_no" placeholder="e.g. 4441001259366" required></div>
+        <div class="field"><label><span id="new-swift-label">SWIFT account (Their side)</span></label><input class="input" name="swift_account" id="new-swift" placeholder="e.g. 0120730006000" required></div>
+        <div class="field"><label><span id="new-flex-label">Flexcube GL (Our side)</span></label><input class="input" name="flex_ac_no" id="new-flex" placeholder="e.g. 4441001259366" required></div>
+
+        <!-- Mobile-money-only fields. Hidden until account_type=mobile_wallet. -->
+        <div class="field mm-only" style="display:none"><label>Provider *</label>
+          <select class="input" name="provider" id="new-provider">
+            <option value="">(select)</option>
+            <option value="mpesa">M-Pesa</option>
+            <option value="mtn_momo">MTN MoMo</option>
+            <option value="airtel_money">Airtel Money</option>
+            <option value="orange_money">Orange Money</option>
+            <option value="tigo_pesa">Tigo Pesa</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div class="field mm-only" style="display:none"><label>MSISDN <span class="muted">(subscriber phone)</span></label>
+          <input class="input" name="msisdn" placeholder="e.g. 233241234567">
+        </div>
+        <div class="field mm-only" style="display:none"><label>Short code <span class="muted">(paybill / till)</span></label>
+          <input class="input" name="short_code" placeholder="e.g. 174379">
+        </div>
+
         <div class="field" style="grid-column:1/-1"><label>Notes</label><input class="input" name="notes"></div>
         <div style="grid-column:1/-1">
           <button type="submit" class="btn btn-primary">Register</button>
@@ -215,11 +250,77 @@ function render() {
     (groups[key] = groups[key] || []).push(a);
   }
 
+  // Map a free-text access area onto one of the section-head accent
+  // modifiers defined in base.html. Anything unrecognised falls
+  // through to the default muted stripe — fine, just no colour.
+  function sectionAccent(area) {
+    const a = (area || '').toLowerCase();
+    if (a.includes('nostro')) return 'section-head--nostro';
+    if (a.includes('treasury')) return 'section-head--treasury';
+    if (a.includes('psc')) return 'section-head--psc';
+    if (a.includes('bog') || a.includes('bank of ghana') || a.includes('central bank')) return 'section-head--bog';
+    if (a.includes('branch')) return 'section-head--branch';
+    if (a.includes('affiliate') || a.includes('subsid')) return 'section-head--affiliates';
+    return '';
+  }
+
+  // bankAvatar renders a 30px round badge with two-letter initials
+  // from BIC (or shortname fallback). Colour is picked from an 8-tone
+  // palette via a tiny string-hash so the same bank lands on the
+  // same hue every render — visual consistency across sessions.
+  function bankAvatar(bic, fallback) {
+    const src = (bic || fallback || '?').replace(/\s+/g, '').toUpperCase();
+    const initials = src.slice(0, 2) || '·';
+    let hash = 0;
+    for (let i = 0; i < src.length; i++) {
+      hash = ((hash << 5) - hash + src.charCodeAt(i)) | 0;
+    }
+    const c = ((Math.abs(hash) % 8) + 1);
+    return `<span class="bank-avatar bank-avatar--c${c}" aria-hidden="true">${esc(initials)}</span>`;
+  }
+
+  // Same accent mapping used by section-head, reused on the summary
+  // strip so the chip dot matches its corresponding section.
+  function chipAccent(area) {
+    const a = (area || '').toLowerCase();
+    if (a.includes('nostro')) return 'primary';
+    if (a.includes('treasury')) return 'success';
+    if (a.includes('psc')) return 'warn';
+    if (a.includes('bog') || a.includes('bank of ghana') || a.includes('central bank')) return 'violet';
+    if (a.includes('branch')) return 'cyan';
+    if (a.includes('affiliate') || a.includes('subsid')) return 'pink';
+    return '';
+  }
+
+  // areaSlug turns a free-text access area into a stable DOM id so
+  // the summary-strip chips can link to the matching section.
+  const areaSlug = (a) => 'sec-' + (a || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+  // Render the summary strip — one chip per area, sorted by count
+  // descending, plus a Total chip at the end.
+  const summaryHost = document.getElementById('summary-strip');
+  if (summaryHost) {
+    const totalCount = Object.values(groups).reduce((s, arr) => s + arr.length, 0);
+    const sortedAreas = Object.keys(groups).sort((a, b) => groups[b].length - groups[a].length);
+    summaryHost.innerHTML = [
+      ...sortedAreas.map(a => `
+        <a class="chip" href="#${areaSlug(a)}">
+          <span class="chip-dot ${chipAccent(a)}"></span>
+          <span class="chip-num">${groups[a].length}</span>
+          <span class="chip-label">${esc(a)}</span>
+        </a>`),
+      `<span class="chip chip-total">
+        <span class="chip-num">${totalCount}</span>
+        <span class="chip-label">total</span>
+      </span>`,
+    ].join('');
+  }
+
   tree.innerHTML = Object.keys(groups).sort().map(area => `
-    <div style="border-bottom:1px solid var(--c-border)">
-      <div style="padding:10px 20px;background:var(--c-surface-2);font-size:var(--t-small);font-weight:600;color:var(--c-text-muted);letter-spacing:0.3px;text-transform:uppercase;">
-        ${esc(area)}
-        <span style="float:right;color:var(--c-text-subtle);font-weight:500;text-transform:none;letter-spacing:0">${groups[area].length}</span>
+    <div id="${areaSlug(area)}">
+      <div class="section-head ${sectionAccent(area)}">
+        <span class="section-head__title">${esc(area)}</span>
+        <span class="section-head__count">${groups[area].length}</span>
       </div>
       <table class="table" style="border-radius:0">
         <thead>
@@ -236,7 +337,12 @@ function render() {
         <tbody>
           ${groups[area].sort((a,b) => (a.shortname || a.label).localeCompare(b.shortname || b.label)).map(a => `
             <tr>
-              <td><strong>${esc(a.shortname || '')}</strong></td>
+              <td>
+                <span class="acct-cell">
+                  ${bankAvatar(a.bic, a.shortname)}
+                  <span class="acct-cell__name">${esc(a.shortname || '')}</span>
+                </span>
+              </td>
               <td>${esc(a.label)}${a.notes ? `<br><span class="muted" style="font-size:var(--t-small)">${esc(a.notes)}</span>` : ''}</td>
               <td class="muted"><code>${esc(a.bic || '')}</code></td>
               <td class="muted"><code>${esc(a.swift_account)}</code></td>
@@ -306,12 +412,42 @@ document.getElementById('edit-form').addEventListener('submit', async (e) => {
   }
 });
 
+function onTypeChange() {
+  const type = document.getElementById('new-type').value;
+  const isMM = type === 'mobile_wallet';
+  // Relabel the SWIFT/Flex fields for mobile money so the form makes
+  // semantic sense — there's no SWIFT account or Flexcube GL when the
+  // counterparty is a wallet operator. We reuse the same DB columns
+  // but the labels and placeholders adapt.
+  document.getElementById('new-swift-label').textContent =
+    isMM ? 'Operator wallet ID (Their side)' : 'SWIFT account (Their side)';
+  document.getElementById('new-flex-label').textContent =
+    isMM ? 'Internal GL account (Our side)' : 'Flexcube GL (Our side)';
+  document.getElementById('new-swift').placeholder =
+    isMM ? 'e.g. mpesa-paybill-174379' : 'e.g. 0120730006000';
+  document.getElementById('new-flex').placeholder =
+    isMM ? 'e.g. 5550010012345' : 'e.g. 4441001259366';
+  document.querySelectorAll('.mm-only').forEach(el => {
+    el.style.display = isMM ? '' : 'none';
+  });
+  document.getElementById('new-provider').required = isMM;
+}
+
 document.getElementById('new-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const fd = new FormData(e.target);
   const payload = Object.fromEntries(fd.entries());
   payload.currency = (payload.currency || '').toUpperCase();
   for (const k of ['bic', 'notes', 'shortname', 'access_area']) if (!payload[k]) payload[k] = null;
+  // Mobile-money-only fields: drop them from the payload when this is a
+  // cash_nostro account, otherwise null-empty strings so the server's
+  // strict validation accepts them as 'unset'.
+  if (payload.account_type !== 'mobile_wallet') {
+    delete payload.provider; delete payload.msisdn; delete payload.short_code;
+  } else {
+    for (const k of ['provider', 'msisdn', 'short_code'])
+      if (!payload[k]) payload[k] = null;
+  }
   const status = document.getElementById('new-status');
   try {
     const r = await fetch('/accounts', {
@@ -321,6 +457,7 @@ document.getElementById('new-form').addEventListener('submit', async (e) => {
     });
     if (!r.ok) throw new Error((await r.json()).detail || 'Failed');
     e.target.reset();
+    onTypeChange();   // reset visibility of mm fields after the form clears
     status.className = 'status success';
     status.textContent = 'Registered.';
     document.getElementById('new-account').open = false;

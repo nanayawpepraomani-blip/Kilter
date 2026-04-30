@@ -33,7 +33,7 @@
       <table class="table" id="users-table">
         <thead>
           <tr>
-            <th>Username</th><th>Name</th><th>Role</th><th>Status</th>
+            <th>Username</th><th>Name</th><th>Role</th><th>Auth</th><th>Status</th>
             <th>Last seen</th><th>Created</th><th></th>
           </tr>
         </thead>
@@ -55,6 +55,12 @@
               <option value="admin">Admin / IT</option>
               <option value="audit">Audit</option>
               <option value="internal_control">Internal control</option>
+            </select>
+          </div>
+          <div class="field"><label>Authentication</label>
+            <select class="input" name="auth_source">
+              <option value="local">Local (TOTP only)</option>
+              <option value="ldap">AD / LDAP (password + TOTP)</option>
             </select>
           </div>
           <div class="field" style="align-self:end">
@@ -98,7 +104,7 @@ async function load() {
   document.getElementById('user-count').textContent = users.length;
   const tbody = document.querySelector('#users-table tbody');
   if (users.length === 0) {
-    tbody.innerHTML = '<tr class="empty-row"><td colspan="7">No users yet.</td></tr>';
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="8">No users yet.</td></tr>';
     return;
   }
   tbody.innerHTML = users.map(u => `
@@ -106,6 +112,7 @@ async function load() {
       <td><strong>${esc(u.username)}</strong></td>
       <td>${esc(u.display_name || '')}</td>
       <td><span class="badge ${ROLE_BADGE[u.role] || 'badge-neutral'}">${esc(ROLE_LABEL[u.role] || u.role)}</span></td>
+      <td>${authBadge(u)}</td>
       <td>${u.active
         ? '<span class="badge badge-success">Active</span>'
         : '<span class="badge badge-danger">Deactivated</span>'}</td>
@@ -113,9 +120,40 @@ async function load() {
       <td class="muted">${fmtDateTime(u.created_at)}</td>
       <td>
         ${roleSelector(u)}
+        ${authSelector(u)}
         ${toggleButton(u)}
       </td>
     </tr>`).join('');
+}
+
+function authBadge(u) {
+  const src = u.auth_source || 'local';
+  if (src === 'ldap') {
+    const dn = u.ldap_dn ? ` title="Last bound DN: ${esc(u.ldap_dn)}"` : '';
+    return `<span class="badge badge-info"${dn}>AD / LDAP</span>`;
+  }
+  return '<span class="badge badge-neutral">Local</span>';
+}
+
+function authSelector(u) {
+  const src = u.auth_source || 'local';
+  return `
+    <select onchange="changeAuth('${esc(u.username)}', this.value)" style="font-size:var(--t-small);padding:2px 6px;margin-left:4px">
+      <option value="local" ${src === 'local' ? 'selected' : ''}>Local</option>
+      <option value="ldap"  ${src === 'ldap'  ? 'selected' : ''}>LDAP</option>
+    </select>`;
+}
+
+async function changeAuth(username, auth_source) {
+  const r = await fetch('/users/' + encodeURIComponent(username), {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ auth_source }),
+  });
+  if (!r.ok) {
+    const j = await r.json().catch(() => ({}));
+    alert(j.detail || 'Update failed');
+  }
+  load();
 }
 
 function roleSelector(u) {

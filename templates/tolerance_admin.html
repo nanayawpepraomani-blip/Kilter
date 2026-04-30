@@ -16,9 +16,9 @@
     <table class="table" id="tol-table">
       <thead>
         <tr><th>Account</th><th>Currency</th><th class="num">Amount abs</th><th class="num">Amount %</th>
-            <th class="num">Date ± days</th><th class="num">Min ref len</th><th>Updated</th><th></th></tr>
+            <th class="num">Date ± days</th><th class="num">Min ref len</th><th class="num" title="Basis points after FX conversion">FX bps</th><th>Updated</th><th></th></tr>
       </thead>
-      <tbody id="tol-body"><tr class="empty-row"><td colspan="8">Loading…</td></tr></tbody>
+      <tbody id="tol-body"><tr class="empty-row"><td colspan="9">Loading…</td></tr></tbody>
     </table>
   </div>
 </div>
@@ -92,6 +92,7 @@
         <td class="num">${t.amount_tol_pct}%</td>
         <td class="num">${t.date_tol_days}</td>
         <td class="num">${t.min_ref_len}</td>
+        <td class="num">${t.fx_tol_bps || 0}</td>
         <td>${t.is_default ? '<span class="muted">default</span>' : fmtDateTime(t.updated_at)}</td>
         <td><a href="/accounts/${a.id}/status-page" class="btn btn-sm btn-default">Edit</a></td>
       </tr>`).join('');

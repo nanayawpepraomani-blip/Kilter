@@ -1,0 +1,79 @@
+# Kilter — single-node compose stack for pilot deployments.
+#
+# Usage (first run):
+#   1. Copy .env.example -> .env and set KILTER_SECRET_KEY (see DEPLOY.md).
+#   2. docker compose up -d --build
+#   3. docker compose logs -f
+#   4. Open http://localhost:8000  → enroll the bootstrap admin via the
+#      one-time link printed in the logs.
+#
+# Persistent state is stored in named volumes:
+#   - kilter-data      → the SQLite database file (/data/kilter.db)
+#   - kilter-messages  → the SWIFT/Flex intake spool the scheduler polls
+#   - kilter-uploads   → user-uploaded statement files
+#   - kilter-exports   → generated reconciliation reports
+#
+# Back these volumes up the same way you'd back up any other production
+# database (filesystem snapshot or copy-while-paused). Nothing else in the
+# container needs to be backed up.
+
+services:
+  kilter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: kilter:latest
+    container_name: kilter
+    restart: unless-stopped
+
+    # Read .env from the project root. KILTER_SECRET_KEY MUST be set there
+    # before first start; without it, the container will mint a key on
+    # disk that won't survive the next image rebuild.
+    env_file:
+      - .env
+
+    environment:
+      KILTER_DB_PATH: /data/kilter.db
+      # Bind to all interfaces inside the container so Docker can reach it.
+      # Restrict external access via the `ports:` mapping or a reverse proxy.
+      UVICORN_WORKERS: "1"
+      TZ: ${TZ:-UTC}
+
+    volumes:
+      - kilter-data:/data
+      - kilter-messages:/app/messages
+      - kilter-uploads:/app/uploads
+      - kilter-exports:/app/exports
+
+    ports:
+      # Default: only accept connections from localhost on the host. Front
+      # this with nginx / Caddy / Traefik for TLS in production.
+      - "127.0.0.1:8000:8000"
+
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/healthz"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+    # Hardening: drop all caps, disallow privilege escalation, read-only
+    # rootfs (writable state lives on the volumes above + tmpfs for /tmp).
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+volumes:
+  kilter-data:
+  kilter-messages:
+  kilter-uploads:
+  kilter-exports:

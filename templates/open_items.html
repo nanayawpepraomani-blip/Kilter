@@ -10,6 +10,13 @@
   </div>
 </div>
 
+<!-- Summary strip — counts split by ageing bucket. Each chip is a
+     clickable filter shortcut that sets min_age_days + re-runs the
+     query so the operator can drill from "5 over 30 days" straight
+     into the filtered list. Populated by renderSummary() after items
+     load; uses the same row data as the Items table below. -->
+<div class="summary-strip" id="summary-strip"></div>
+
 <div class="card">
   <div class="card-head">
     <h2>Filters</h2>
@@ -197,6 +204,63 @@
       state.accounts.map(a => `<option value="${a.id}">${esc(a.shortname || a.label)} (${esc(a.currency)})</option>`).join('');
   }
 
+  // renderSummary builds the page-level chip strip — total +
+  // ageing-bucket counts. Each bucket chip is a clickable filter
+  // shortcut: click "31–90 days" → set min_age_days=31 and re-query.
+  // Counts are computed off the visible rows so they always match
+  // whatever filter the operator currently has applied.
+  function renderSummary(rows) {
+    const host = document.getElementById('summary-strip');
+    if (!host) return;
+    if (!rows || !rows.length) { host.innerHTML = ''; return; }
+    const buckets = { '0-7': 0, '8-30': 0, '31-90': 0, '90+': 0 };
+    for (const r of rows) {
+      const k = r.age_bucket || '0-7';
+      if (buckets[k] != null) buckets[k]++;
+    }
+    const chips = [
+      { key: '',   tone: 'success', label: '0–7 days',   n: buckets['0-7']  },
+      { key: '8',  tone: 'warn',    label: '8–30 days',  n: buckets['8-30'] },
+      { key: '31', tone: 'warn',    label: '31–90 days', n: buckets['31-90']},
+      { key: '90', tone: 'danger',  label: '90+ days',   n: buckets['90+']  },
+    ];
+    host.innerHTML = [
+      `<span class="chip chip-total">
+        <span class="chip-num">${rows.length}</span>
+        <span class="chip-label">open items</span>
+      </span>`,
+      ...chips.map(c => `
+        <a class="chip" href="#" data-min="${c.key}">
+          <span class="chip-dot ${c.tone}"></span>
+          <span class="chip-num">${c.n}</span>
+          <span class="chip-label">${c.label}</span>
+        </a>`),
+    ].join('');
+    host.querySelectorAll('a.chip').forEach(el => {
+      el.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        document.getElementById('f-age').value = el.dataset.min || '';
+        loadItems();
+        const u = new URL(location.href);
+        if (el.dataset.min) u.searchParams.set('min_age_days', el.dataset.min);
+        else u.searchParams.delete('min_age_days');
+        history.replaceState(null, '', u);
+      });
+    });
+  }
+
+  // signPill renders the DR/CR side of a break in colour — DR red
+  // (the bank owes / outflow), CR green (inflow) — so the operator
+  // can scan a tall list of breaks and immediately see the balance
+  // of debits vs credits without reading each row.
+  function signPill(sign) {
+    if (!sign) return '';
+    const s = String(sign).trim().toUpperCase();
+    if (s === 'DR' || s === 'D') return '<span class="sign-dr">DR</span>';
+    if (s === 'CR' || s === 'C') return '<span class="sign-cr">CR</span>';
+    return esc(sign);
+  }
+
   function agingBadge(days, bucket) {
     const cls = bucket === '0-7' ? 'badge-neutral'
                : bucket === '8-30' ? 'badge-info'
@@ -251,6 +315,7 @@
     }
     const rows = await r.json();
     count.textContent = `${rows.length} row${rows.length === 1 ? '' : 's'}`;
+    renderSummary(rows);
     if (!rows.length) {
       body.innerHTML = '<tr class="empty-row"><td colspan="9">No items match these filters</td></tr>';
       return;
@@ -261,7 +326,7 @@
         <td><span class="badge ${r.source_side === 'swift' ? 'badge-info' : 'badge-neutral'}">${esc(r.source_side)}</span></td>
         <td>${fmtDate(r.value_date)}</td>
         <td class="num">${fmtAmount(r.amount)}</td>
-        <td>${esc(r.sign || '')}</td>
+        <td>${signPill(r.sign)}</td>
         <td style="max-width:320px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${esc(r.narration || '')}">
           <strong>${esc(r.ref || '')}</strong> ${esc(r.narration || '')}
         </td>
@@ -318,7 +383,27 @@
   };
 
   document.getElementById('f-apply').onclick = loadItems;
-  loadAccounts().then(loadItems);
+
+  // Deeplink: lift filter values out of the query string so dashboard
+  // tiles + risk-callout buttons land on a pre-filtered list. Done in
+  // sequence with loadAccounts so the f-account <select> is populated
+  // before we try to set its value.
+  function applyQueryFilters() {
+    const qs = new URLSearchParams(location.search);
+    const map = {
+      account_id: 'f-account',
+      status: 'f-status',
+      category: 'f-category',
+      min_age_days: 'f-age',
+    };
+    for (const [k, id] of Object.entries(map)) {
+      const v = qs.get(k);
+      if (v == null) continue;
+      const el = document.getElementById(id);
+      if (el) el.value = v;
+    }
+  }
+  loadAccounts().then(() => { applyQueryFilters(); loadItems(); });
 
   document.body.dataset.nav = 'open-items';
 </script>

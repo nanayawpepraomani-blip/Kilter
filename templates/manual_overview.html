@@ -15,13 +15,26 @@
     <li>Who uses it (roles)</li>
     <li>Key concepts</li>
     <li>A day in the life</li>
-    <li>How it fits beside Corona</li>
+    <li>How it fits beside the legacy reconciliation tool</li>
     <li>Quick start — your first reconciliation</li>
   </ol>
 </div>
 {% endblock %}
 
 {% block content %}
+
+<!-- Hero shot — first thing a new starter sees in the manual. Drops
+     the dashboard front-and-centre so the rest of the doc has a
+     visual anchor to refer back to. Filename + capture instructions
+     in static/screenshots/README.md. -->
+<figure style="margin: 0 0 28px 0">
+  <img src="/static/screenshots/dashboard-light.png"
+       alt="Kilter dashboard — KPI tiles, match-activity chart, ageing histogram, recent sessions"
+       style="width: 100%; max-width: 100%; height: auto; border-radius: 10px; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12), 0 0 0 1px var(--c-border)">
+  <figcaption style="margin-top: 8px; font-size: var(--t-small); color: var(--c-text-subtle); text-align: center; letter-spacing: 0.02em">
+    The dashboard is what every operator lands on after login.
+  </figcaption>
+</figure>
 
 <h2 id="what">1. What Kilter does</h2>
 
@@ -103,14 +116,14 @@
 </table>
 
 <div class="callout tip">
-  <strong>The pitch line.</strong> Corona's reconciliation is session-bound and requires a human to trigger every step. Kilter's ledger outlives sessions and its scheduler runs unattended — once provisioned, the ops team walks in to a reconciled ledger and a ready-to-send report.
+  <strong>The pitch line.</strong> Most legacy reconciliation tools are session-bound and require a human to trigger every step. Kilter's ledger outlives sessions and its scheduler runs unattended — once provisioned, the ops team walks in to a reconciled ledger and a ready-to-send report.
 </div>
 
-<h2 id="vs-corona">5. How it fits beside Corona</h2>
+<h2 id="vs-corona">5. How it fits beside the legacy reconciliation tool</h2>
 
-<p>Kilter is not a Corona plugin — it's a parallel service that reads the same SWIFT feed and the same core-banking data, and produces the daily breaks workbook and month-end certificates your ops team already recognise. The format is the same; the workflow is automated.</p>
+<p>Kilter is not a plugin to your existing tool — it's a parallel service that reads the same SWIFT feed and the same core-banking data, and produces the daily breaks workbook and month-end certificates your ops team already recognise. The format is the same; the workflow is automated.</p>
 
-<p>During the transition you may run both in parallel for a period: Kilter in production for the accounts you've registered, Corona as a fallback. The two systems don't talk to each other — Kilter's data is self-contained in its SQLite ledger and can be exported wholesale if ever needed.</p>
+<p>During the transition you may run both in parallel for a period: Kilter in production for the accounts you've registered, the legacy tool as a fallback. The two systems don't talk to each other — Kilter's data is self-contained in its SQLite ledger and can be exported wholesale if ever needed.</p>
 
 <h2 id="quickstart">6. Quick start — your first reconciliation</h2>
 

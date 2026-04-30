@@ -72,11 +72,11 @@
 
 <h2 id="areas">3. Access areas</h2>
 
-<p>Access areas group cash accounts by organisational unit — NOSTRO, AFFILIATES, BANK OF GHANA, branch codes, etc. They mirror Corona's access-area taxonomy.</p>
+<p>Access areas group cash accounts by organisational unit — NOSTRO, AFFILIATES, regulator accounts, branch codes, etc. The taxonomy is configurable per deployment.</p>
 
 <p>Every cash account belongs to zero or one access area. The topbar <span class="path">Active area</span> picker lets each user scope all list views (sessions, open items, stats) to one or more areas. Users without a scope see everything.</p>
 
-<p>Access areas are seeded from the Corona 7.9 list on first run. Add new ones via the Cash accounts admin UI as they become relevant — don't bulk-delete, because historic sessions reference them.</p>
+<p>An out-of-the-box list of common access areas is seeded on first run. Replace it with your own taxonomy at install time, or add new areas via the Cash accounts admin UI as they become relevant — don't bulk-delete existing ones, because historic sessions reference them.</p>
 
 <h2 id="cash">4. Cash account registry</h2>
 
@@ -117,7 +117,7 @@
 
 <h2 id="currencies">6. Currencies registry</h2>
 
-<p><span class="path">Currencies</span> manages the ISO 4217 code list that feeds the currency picker on cash-account forms. Seeded with 24 codes matching Corona's picker (AED / AUD / BEF / CAD / CHF / CNY / DEM / DKK / DZD / EUR / FRF / GBP / GHS / GMD / ITL / JPY / NGN / NLG / SLL / USD / USN / XAF / XOF / ZAR).</p>
+<p><span class="path">Currencies</span> manages the ISO 4217 code list that feeds the currency picker on cash-account forms. Seeded with the major and regional African currencies most pilots ask for (AED / AUD / CAD / CHF / CNY / DKK / EUR / GBP / GHS / JPY / KES / NGN / USD / XAF / XOF / ZAR / etc.).</p>
 
 <p>Deactivating a code hides it from the picker but doesn't affect accounts that already reference it.</p>
 

@@ -123,8 +123,20 @@
     html[data-theme="dark"] .table th {
       background: var(--c-surface-2); color: var(--c-text-muted);
     }
-    html[data-theme="dark"] .table tbody tr:hover td { background: var(--c-surface-2); }
+    /* Dark-mode zebra + hover. Zebra uses a subtle elevated tint; hover
+       lifts further with a primary cast so the focused row pops without
+       blowing out contrast. */
+    html[data-theme="dark"] .table tbody tr:nth-child(even) td {
+      background: rgba(148, 163, 184, 0.04);
+    }
+    html[data-theme="dark"] .table tbody tr:hover td {
+      background: rgba(59, 130, 246, 0.10);
+    }
     html[data-theme="dark"] .table td { border-bottom-color: var(--c-border); }
+    html[data-theme="dark"] .section-head { background: var(--c-surface-2); }
+    html[data-theme="dark"] .section-head__count {
+      background: var(--c-bg); border-color: var(--c-border-strong);
+    }
     html[data-theme="dark"] .badge-neutral {
       background: var(--c-bg-sub); color: var(--c-text-muted);
     }
@@ -216,9 +228,16 @@
     /* ------------------------- Layout ------------------------- */
     .app { display: grid; grid-template-columns: var(--sidebar-w) 1fr; min-height: 100vh; }
     .sidebar {
-      background: var(--c-sidebar-bg); color: var(--c-sidebar-text);
+      /* Subtle vertical gradient — same dark navy as before, but with
+         a barely-perceptible warm fade at the top + cool fade at the
+         bottom. Reads as "more depth" without being a different colour. */
+      background:
+        radial-gradient(120% 60% at 50% 0%, rgba(37, 99, 235, 0.10) 0%, transparent 60%),
+        linear-gradient(180deg, var(--c-sidebar-bg) 0%, #0a121f 100%);
+      color: var(--c-sidebar-text);
       display: flex; flex-direction: column;
       position: sticky; top: 0; height: 100vh;
+      border-right: 1px solid rgba(255, 255, 255, 0.04);
     }
     .sidebar .brand {
       display: flex; align-items: center; gap: 10px;
@@ -226,10 +245,12 @@
       color: white; font-weight: 700; letter-spacing: 0.3px;
     }
     .sidebar .brand-mark {
-      width: 28px; height: 28px; border-radius: 6px;
+      width: 28px; height: 28px; border-radius: 7px;
       background: linear-gradient(135deg, #2563eb 0%, #0891b2 100%);
       display: flex; align-items: center; justify-content: center;
       color: white; font-weight: 800; font-size: 13px;
+      box-shadow: 0 4px 10px rgba(37, 99, 235, 0.3),
+                  inset 0 1px 0 rgba(255, 255, 255, 0.2);
     }
     .sidebar nav {
       padding: 12px 10px; flex: 1 1 0; min-height: 0;
@@ -240,17 +261,100 @@
     .sidebar nav::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 3px; }
     .sidebar nav::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.18); }
     .sidebar nav a {
-      display: flex; align-items: center; gap: 10px;
-      padding: 8px 12px; border-radius: 6px;
+      display: flex; align-items: center; gap: 11px;
+      padding: 8px 12px; border-radius: 8px;
       color: var(--c-sidebar-text); font-size: var(--t-body); font-weight: 500;
-      text-decoration: none; opacity: 0.82;
-      transition: background 120ms ease, color 120ms ease, opacity 120ms ease, box-shadow 120ms ease;
+      text-decoration: none; opacity: 0.78;
+      transition: background 140ms ease, color 140ms ease,
+                  opacity 140ms ease, transform 140ms ease;
+      position: relative;
     }
-    .sidebar nav a:hover { background: var(--c-sidebar-hover-bg); color: white; opacity: 1; }
-    .sidebar nav a.active { background: var(--c-sidebar-active-bg); color: white; opacity: 1; box-shadow: inset 3px 0 0 var(--c-primary); }
+    .sidebar nav a:hover {
+      background: var(--c-sidebar-hover-bg);
+      color: white; opacity: 1;
+    }
+    /* Sidebar nav-link icon. 18×18 SVG, 1.7px effective stroke (downsized
+       from the 2px sprite source). Opacity tied to link state — muted by
+       default, full at hover/active so the icon brightens with the row. */
+    .sidebar nav a .i {
+      width: 18px; height: 18px; flex-shrink: 0;
+      stroke-width: 1.8; opacity: 0.78;
+      transition: opacity 140ms ease, color 140ms ease;
+    }
+    .sidebar nav a:hover .i,
+    .sidebar nav a.active .i { opacity: 1; }
+    .sidebar nav a .t { flex: 1 1 auto; min-width: 0; }
+    /* Active item: pill-style background with a left accent bar.
+       Slightly lifted feel via subtle box-shadow; the inset shadow
+       is the accent bar (rendered as a 3px inset on the left edge). */
+    .sidebar nav a.active {
+      background: linear-gradient(90deg,
+        rgba(37, 99, 235, 0.28) 0%,
+        rgba(37, 99, 235, 0.10) 100%);
+      color: white; opacity: 1;
+      box-shadow:
+        inset 3px 0 0 var(--c-primary),
+        0 1px 2px rgba(0, 0, 0, 0.25);
+    }
+    .sidebar nav a.active::after {
+      content: ''; position: absolute; right: 12px; top: 50%;
+      transform: translateY(-50%);
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--c-primary); opacity: 0.85;
+      box-shadow: 0 0 8px rgba(37, 99, 235, 0.6);
+    }
+    /* Active row hides the right-side dot when a numeric badge is shown,
+       so they don't fight for the same slot. JS adds .has-badge to the
+       <a> when its badge is non-zero (see refreshNavBadges below). */
+    .sidebar nav a.active.has-badge::after { display: none; }
+
+    /* Group label — section header for the sidebar. The first label
+       ("Workspace") sits flush at the top; every subsequent label gets
+       a hairline divider so the rail visually segments. */
     .sidebar nav .group-label {
-      padding: 14px 12px 6px; font-size: 11px; letter-spacing: 0.6px;
-      text-transform: uppercase; color: var(--c-sidebar-muted); font-weight: 600;
+      padding: 16px 12px 6px;
+      font-size: 10px; letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--c-sidebar-muted); font-weight: 700;
+    }
+    .sidebar nav .group-label:not(:first-child) {
+      margin-top: 6px;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    /* Navigation count badge. Sits right-aligned inside an <a>, drawing
+       the eye to nav items that have pending work without forcing the
+       operator to open the page. Scoped variants (warn/danger) override
+       the default neutral grey. */
+    .sidebar nav a .nav-badge {
+      margin-left: auto; flex-shrink: 0;
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 22px; height: 18px; padding: 0 7px;
+      border-radius: 999px;
+      font-size: 11px; font-weight: 700; letter-spacing: 0.02em;
+      font-variant-numeric: tabular-nums;
+      background: rgba(255, 255, 255, 0.10);
+      color: rgba(255, 255, 255, 0.92);
+    }
+    .sidebar nav a .nav-badge--warn {
+      background: rgba(245, 158, 11, 0.20); color: #fbbf24;
+    }
+    .sidebar nav a .nav-badge--danger {
+      background: rgba(239, 68, 68, 0.20); color: #fca5a5;
+    }
+    /* When the row is active or hovered, the badge gets a touch more
+       contrast so it doesn't fade into the highlighted background. */
+    .sidebar nav a:hover .nav-badge,
+    .sidebar nav a.active .nav-badge {
+      background: rgba(255, 255, 255, 0.18); color: white;
+    }
+    .sidebar nav a:hover .nav-badge--warn,
+    .sidebar nav a.active .nav-badge--warn {
+      background: rgba(245, 158, 11, 0.30); color: #fde68a;
+    }
+    .sidebar nav a:hover .nav-badge--danger,
+    .sidebar nav a.active .nav-badge--danger {
+      background: rgba(239, 68, 68, 0.30); color: #fecaca;
     }
     .sidebar .foot {
       padding: 14px 16px; border-top: 1px solid rgba(255,255,255,0.06);
@@ -475,9 +579,27 @@
     .risk-callout .body { flex: 1; color: var(--c-text); font-size: var(--t-small); }
 
     .content { padding: 28px 32px 64px; }
-    .page-head { margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
-    .page-head h1 { margin: 0; font-size: var(--t-1); font-weight: 700; letter-spacing: -0.3px; }
-    .page-head .subtitle { color: var(--c-text-muted); margin-top: 4px; font-size: var(--t-body); }
+    .page-head {
+      position: relative;
+      margin-bottom: 24px; padding-left: 14px;
+      display: flex; justify-content: space-between; align-items: flex-end;
+      gap: 16px; flex-wrap: wrap;
+    }
+    /* Subtle vertical accent bar — same gradient as the .stat-kpi
+       top-stripe so the page header reads as part of the same family. */
+    .page-head::before {
+      content: ''; position: absolute; left: 0; top: 4px; bottom: 8px;
+      width: 4px; border-radius: 2px;
+      background: linear-gradient(180deg, var(--c-primary) 0%, #0891b2 100%);
+      box-shadow: 0 2px 8px rgba(37, 99, 235, 0.18);
+    }
+    .page-head h1 {
+      margin: 0; font-size: var(--t-1); font-weight: 700;
+      letter-spacing: -0.5px; line-height: 1.1;
+    }
+    .page-head .subtitle {
+      color: var(--c-text-muted); margin-top: 4px; font-size: var(--t-body);
+    }
 
     /* ------------------------- Card / Section ------------------------- */
     .card {
@@ -547,21 +669,232 @@
     .form-grid.span-full { grid-column: 1 / -1; }
 
     /* ------------------------- Table ------------------------- */
+    /* G — Tighter density. Header padding reduced from 10/14 to 8/14
+       and body cells from 12/14 to 9/14 — a ~25% trim that still leaves
+       generous touch targets but stops every list page from feeling
+       like an HTML 4 spreadsheet. */
     .table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: var(--t-body); }
     .table th {
       text-align: left; font-weight: 600; color: var(--c-text-muted);
-      background: #f9fafc; padding: 10px 14px;
+      background: #f9fafc; padding: 8px 14px;
       border-bottom: 1px solid var(--c-border);
       font-size: var(--t-small);
+      letter-spacing: 0.02em; text-transform: uppercase;
     }
     .table td {
-      padding: 12px 14px; border-bottom: 1px solid #f0f2f5;
+      padding: 9px 14px; border-bottom: 1px solid #f0f2f5;
       vertical-align: middle;
     }
-    .table tbody tr:hover td { background: #fafbfc; }
-    .table .num { font-variant-numeric: tabular-nums; text-align: right; }
+    /* G — Numeric cells right-align with tabular-nums and stronger weight
+       so amounts read as a tidy column instead of a ragged list. */
+    .table .num {
+      font-variant-numeric: tabular-nums; text-align: right;
+      font-weight: 600;
+    }
     .table .muted { color: var(--c-text-muted); }
     .table .empty-row td { text-align: center; color: var(--c-text-subtle); padding: 28px; font-style: italic; }
+
+    /* D — Zebra striping + brighter row hover. Even rows get a hairline
+       background tint so the eye can track horizontally on wide tables;
+       hover lifts the row to a primary-tinted band so the focused row
+       reads unambiguously without redrawing borders. Disabled inside
+       cards that opt-out via .table-flat. */
+    .table tbody tr:nth-child(even) td { background: var(--c-table-zebra, #fbfcfe); }
+    .table tbody tr:hover td {
+      background: var(--c-table-hover, #eef4fc);
+      transition: background 80ms ease;
+    }
+    .table.table-flat tbody tr:nth-child(even) td { background: transparent; }
+
+    /* G — Cell-level hooks for amount typography. .amt makes the
+       integer portion bold + the decimals dim so 1,234.56 reads as
+       "1,234" with subordinate cents. Use on rendered amounts. */
+    .table .amt { font-variant-numeric: tabular-nums; text-align: right; }
+    .table .amt .dec { color: var(--c-text-subtle); font-weight: 500; }
+    .table .amt .int { font-weight: 700; }
+    /* Greyed-out zero-count rule — when a cell only contains the
+       literal "0" we mute it so non-zeros draw the eye. Apply via
+       .num.zero or use the .num-zero helper class on the <td>. */
+    .table .num.zero, .table td.num-zero { color: var(--c-text-subtle); font-weight: 500; }
+
+    /* A — Signal helpers for sign/state cells.
+       .sign-dr renders "DR" with red weight; .sign-cr renders "CR/C"
+       in green. .count-pending / .count-confirmed / .count-rejected
+       turn the raw integer into a pill so a dense status grid like the
+       sessions table is immediately scannable. Use on a wrapping
+       span inside the <td>. */
+    .sign-dr, .sign-cr {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 28px; padding: 2px 8px; border-radius: 6px;
+      font-weight: 700; font-size: var(--t-micro);
+      letter-spacing: 0.04em;
+    }
+    .sign-dr { background: var(--c-danger-soft); color: var(--c-danger); }
+    .sign-cr { background: var(--c-success-soft); color: #047857; }
+
+    .count-pill {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 1px 8px; min-width: 28px; justify-content: center;
+      border-radius: 999px;
+      font-variant-numeric: tabular-nums; font-weight: 700;
+      font-size: var(--t-small);
+    }
+    .count-pill.zero { background: transparent; color: var(--c-text-subtle); font-weight: 500; }
+    .count-pending   { background: var(--c-warn-soft);    color: var(--c-warn); }
+    .count-confirmed { background: var(--c-success-soft); color: #047857; }
+    .count-rejected  { background: var(--c-danger-soft);  color: var(--c-danger); }
+
+    /* C — Section headers used on stacked-list pages (cash accounts,
+       open items by area, etc.). The accent stripe + count pill turn
+       a flat group label into something the eye picks out immediately.
+       Use as: .section-head + .section-head__title + .section-head__count
+       inside a .section-head--<accent> modifier for the colour. */
+    .section-head {
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 20px;
+      background: var(--c-surface-2);
+      border-top: 1px solid var(--c-border);
+      border-bottom: 1px solid var(--c-border);
+      position: relative;
+    }
+    .section-head::before {
+      content: ''; position: absolute; top: 0; bottom: 0; left: 0;
+      width: 3px;
+      background: var(--c-text-subtle);
+    }
+    .section-head__title {
+      font-size: var(--t-small); font-weight: 700;
+      color: var(--c-text);
+      letter-spacing: 0.06em; text-transform: uppercase;
+    }
+    .section-head__count {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 22px; height: 22px; padding: 0 8px;
+      border-radius: 999px; background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      font-size: var(--t-micro); font-weight: 700;
+      color: var(--c-text-muted);
+      font-variant-numeric: tabular-nums;
+    }
+    .section-head__hint {
+      margin-left: auto; font-size: var(--t-micro);
+      color: var(--c-text-subtle); font-weight: 500;
+    }
+    /* Accent variants — the left stripe is what the eye actually sees,
+       so each section type gets its own hue. Names map to the typical
+       cash-accounts groupings + a generic muted fallback. */
+    .section-head--nostro::before    { background: linear-gradient(180deg, var(--c-primary), #60a5fa); }
+    .section-head--treasury::before  { background: linear-gradient(180deg, var(--c-success), #34d399); }
+    .section-head--psc::before       { background: linear-gradient(180deg, var(--c-warn), #fbbf24); }
+    .section-head--bog::before       { background: linear-gradient(180deg, #8b5cf6, #c4b5fd); }
+    .section-head--branch::before    { background: linear-gradient(180deg, #06b6d4, #67e8f9); }
+    .section-head--affiliates::before{ background: linear-gradient(180deg, #ec4899, #f9a8d4); }
+
+    /* B — Bank avatar. A round 30px badge sitting in front of an
+       account row's shortname. Two-letter initials drawn from BIC
+       (or shortname fallback) on a deterministic colour from a small
+       palette. Eight tones, picked by hash of the initials so the
+       same bank always lands on the same colour across sessions. */
+    .bank-avatar {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 30px; height: 30px; border-radius: 50%;
+      font-weight: 700; font-size: 11px;
+      letter-spacing: 0.04em;
+      flex-shrink: 0;
+      text-transform: uppercase;
+      background: var(--c-bg-sub); color: var(--c-text-muted);
+      box-shadow: inset 0 0 0 1px rgba(0,0,0,0.04);
+    }
+    .bank-avatar--c1 { background: #dbeafe; color: #1e40af; }  /* blue */
+    .bank-avatar--c2 { background: #d1fae5; color: #047857; }  /* green */
+    .bank-avatar--c3 { background: #fef3c7; color: #92400e; }  /* amber */
+    .bank-avatar--c4 { background: #fce7f3; color: #9d174d; }  /* pink */
+    .bank-avatar--c5 { background: #ede9fe; color: #5b21b6; }  /* violet */
+    .bank-avatar--c6 { background: #cffafe; color: #155e75; }  /* cyan */
+    .bank-avatar--c7 { background: #ffedd5; color: #9a3412; }  /* orange */
+    .bank-avatar--c8 { background: #fee2e2; color: #991b1b; }  /* red */
+    /* Cell layout for "avatar + label" — used in the Shortname column. */
+    .acct-cell {
+      display: inline-flex; align-items: center; gap: 10px;
+    }
+    .acct-cell__name { font-weight: 700; }
+
+    /* E — Icon glyph inside a count-pill. Sits before the number,
+       slightly smaller, low opacity so it reads as a pictogram and
+       doesn't compete with the count itself. Same shape as the
+       column-header icon below. */
+    .count-pill__icon {
+      font-size: 11px; line-height: 1; opacity: 0.85;
+      margin-right: 1px;
+    }
+    /* Column-header icon — small monochrome glyph that announces a
+       state column without consuming a separate row of pixels. */
+    .th-icon {
+      display: inline-block; margin-right: 4px;
+      font-size: 11px; opacity: 0.7;
+    }
+
+    /* F — Summary strip. A single row of pill-shaped chips that lives
+       directly under a page-head and gives the punchline (totals,
+       per-bucket counts) before the operator scrolls into the table.
+       Each chip carries a coloured dot + a number + a label. The .is-
+       link variant turns the chip into a clickable filter shortcut
+       (used on Cash accounts: click a section chip → scroll to it). */
+    .summary-strip {
+      display: flex; flex-wrap: wrap; gap: 8px;
+      margin-bottom: 18px;
+    }
+    .summary-strip .chip {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 7px 14px; border-radius: 999px;
+      background: var(--c-surface); border: 1px solid var(--c-border);
+      font-size: var(--t-small);
+      transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
+    }
+    .summary-strip a.chip { color: inherit; text-decoration: none; cursor: pointer; }
+    .summary-strip a.chip:hover {
+      border-color: var(--c-primary-soft);
+      background: var(--c-primary-soft);
+      transform: translateY(-1px);
+    }
+    .summary-strip a.chip:focus-visible {
+      outline: 2px solid var(--c-primary); outline-offset: 2px;
+    }
+    .summary-strip .chip-num {
+      font-variant-numeric: tabular-nums; font-weight: 700;
+      color: var(--c-text); font-size: var(--t-body);
+    }
+    .summary-strip .chip-label {
+      color: var(--c-text-muted); font-weight: 500;
+    }
+    .summary-strip .chip-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--c-text-subtle); flex-shrink: 0;
+    }
+    .summary-strip .chip-dot.primary { background: var(--c-primary); }
+    .summary-strip .chip-dot.success { background: var(--c-success); }
+    .summary-strip .chip-dot.warn    { background: var(--c-warn); }
+    .summary-strip .chip-dot.danger  { background: var(--c-danger); }
+    .summary-strip .chip-dot.violet  { background: #8b5cf6; }
+    .summary-strip .chip-dot.cyan    { background: #06b6d4; }
+    .summary-strip .chip-dot.pink    { background: #ec4899; }
+    /* Total chip — slightly stronger visual weight, no dot. */
+    .summary-strip .chip-total {
+      background: var(--c-text);
+      border-color: var(--c-text);
+      color: var(--c-surface);
+    }
+    .summary-strip .chip-total .chip-num,
+    .summary-strip .chip-total .chip-label { color: var(--c-surface); }
+    html[data-theme="dark"] .summary-strip .chip-total {
+      background: var(--c-surface);
+      border-color: var(--c-surface);
+      color: var(--c-text);
+    }
+    html[data-theme="dark"] .summary-strip .chip-total .chip-num,
+    html[data-theme="dark"] .summary-strip .chip-total .chip-label {
+      color: var(--c-text);
+    }
 
     /* ------------------------- Badges ------------------------- */
     .badge {
@@ -577,18 +910,171 @@
     .badge-neutral { background: #eef1f5; color: var(--c-text-muted); }
 
     /* ------------------------- Stats ------------------------- */
-    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px; }
+    /* Two-row stats grid: a top KPI row (operational health) and a
+       lower stats row (volume counters). Both use .stat as the base
+       tile; .stat-kpi adds the gradient top-stripe + inline-sparkline
+       slot for the top row. The accent class chooses the gradient hue. */
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
     .stat {
+      position: relative; overflow: hidden;
       background: var(--c-surface); border: 1px solid var(--c-border);
-      border-radius: var(--radius-lg); padding: 16px 18px;
+      border-radius: var(--radius-lg); padding: 18px 20px;
+      transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
     }
-    .stat .label { font-size: var(--t-small); color: var(--c-text-muted); font-weight: 500; }
-    .stat .value { font-size: var(--t-1); font-weight: 700; margin-top: 4px; letter-spacing: -0.5px; }
-    .stat .hint { font-size: var(--t-micro); color: var(--c-text-subtle); margin-top: 4px; }
+    .stat .label {
+      font-size: var(--t-small); color: var(--c-text-muted);
+      font-weight: 500; letter-spacing: 0.01em;
+    }
+    .stat .value {
+      font-size: var(--t-1); font-weight: 700; margin-top: 6px;
+      letter-spacing: -0.6px; line-height: 1.05;
+      font-variant-numeric: tabular-nums;
+      min-height: 1em;
+    }
+    /* Loading skeleton for KPI / stat values until JS replaces the
+       default em-dash. Avoids the "is this card broken?" perception
+       on slow fetches. JS removes the class after fetch resolves. */
+    .stat .value.loading {
+      color: transparent;
+      background: linear-gradient(90deg,
+        var(--c-bg-sub) 0%,
+        var(--c-border) 50%,
+        var(--c-bg-sub) 100%);
+      background-size: 200% 100%;
+      border-radius: 6px;
+      animation: stat-shimmer 1.4s linear infinite;
+      display: inline-block; min-width: 60px; height: 0.95em;
+    }
+    @keyframes stat-shimmer {
+      0%   { background-position: 100% 0; }
+      100% { background-position: -100% 0; }
+    }
+    .stat .hint {
+      font-size: var(--t-micro); color: var(--c-text-subtle); margin-top: 6px;
+      font-variant-numeric: tabular-nums;
+    }
     .stat.accent-primary .value { color: var(--c-primary); }
     .stat.accent-success .value { color: var(--c-success); }
     .stat.accent-warn    .value { color: var(--c-warn); }
     .stat.accent-danger  .value { color: var(--c-danger); }
+
+    /* F — Volume tiles. Larger value, glyph badge in the corner, and
+       a "delta" line that's filled in when we have comparable data
+       (e.g. Confirmed matches has a 14d window from /dashboard/trend).
+       Apply .stat-volume to upgrade. */
+    .stat-volume .value {
+      font-size: 36px;        /* +8 over the t-1 default for hero tiles */
+      font-weight: 800;
+      letter-spacing: -1px;
+      line-height: 1;
+    }
+    .stat-volume .stat-glyph {
+      position: absolute; top: 16px; right: 16px;
+      width: 36px; height: 36px; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; font-weight: 700; line-height: 1;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.15);
+    }
+    .stat-volume.accent-primary .stat-glyph { background: var(--c-primary-soft);   color: var(--c-primary); }
+    .stat-volume.accent-success .stat-glyph { background: var(--c-success-soft);   color: var(--c-success); }
+    .stat-volume.accent-warn    .stat-glyph { background: var(--c-warn-soft);      color: var(--c-warn); }
+    .stat-volume.accent-danger  .stat-glyph { background: var(--c-danger-soft);    color: var(--c-danger); }
+    .stat-volume:not(.accent-primary):not(.accent-success):not(.accent-warn):not(.accent-danger) .stat-glyph {
+      background: var(--c-bg-sub); color: var(--c-text-muted);
+    }
+    /* Micro-trend chip — small ↑/↓ + delta vs prior period. */
+    .stat-volume .delta {
+      display: inline-flex; align-items: center; gap: 4px;
+      margin-top: 8px; padding: 2px 8px; border-radius: 999px;
+      font-size: var(--t-micro); font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+    .stat-volume .delta.up   { background: var(--c-success-soft); color: var(--c-success); }
+    .stat-volume .delta.down { background: var(--c-danger-soft);  color: var(--c-danger); }
+    .stat-volume .delta.flat { background: var(--c-bg-sub);       color: var(--c-text-muted); }
+
+    /* KPI variant — top accent stripe runs full-width, optional
+       sparkline floats top-right. Apply .stat-kpi to upgrade. */
+    .stat-kpi::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0;
+      height: 4px;
+      background: linear-gradient(90deg, var(--c-text-subtle) 0%, var(--c-text-subtle) 100%);
+      opacity: 0.5;
+    }
+    .stat-kpi.accent-primary::before {
+      background: linear-gradient(90deg, var(--c-primary) 0%, #60a5fa 100%);
+      opacity: 1;
+    }
+    .stat-kpi.accent-success::before {
+      background: linear-gradient(90deg, var(--c-success) 0%, #34d399 100%);
+      opacity: 1;
+    }
+    .stat-kpi.accent-warn::before {
+      background: linear-gradient(90deg, var(--c-warn) 0%, #fbbf24 100%);
+      opacity: 1;
+    }
+    .stat-kpi.accent-danger::before {
+      background: linear-gradient(90deg, var(--c-danger) 0%, #fb7185 100%);
+      opacity: 1;
+    }
+    .stat-kpi .kpi-spark {
+      position: absolute; top: 14px; right: 14px;
+      width: 72px; height: 28px; opacity: 0.85;
+      pointer-events: none;
+    }
+    .stat-kpi .kpi-spark path { fill: none; stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
+    .stat-kpi .kpi-spark .area { stroke: none; opacity: 0.18; }
+
+    /* E — universal hover affordance for cards and stats. Subtle ring
+       + lift, no jarring shadow swell. Disabled in dark mode where the
+       bright shadow reads as a glow. */
+    .card, .stat {
+      transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+    }
+    .stat:hover {
+      border-color: var(--c-border-strong);
+      box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
+      transform: translateY(-1px);
+    }
+    .card:hover {
+      box-shadow: 0 4px 14px rgba(15, 23, 42, 0.05);
+    }
+    html[data-theme="dark"] .stat:hover,
+    html[data-theme="dark"] .card:hover {
+      border-color: var(--c-border-strong);
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+    }
+
+    /* Anchor-as-stat — turns a KPI / volume tile into a clickable
+       drill-in. Reset link defaults so the tile inherits surface colour
+       + reads as content, not a hyperlink, while still announcing as a
+       link to assistive tech. Hover reuses the .stat:hover ring; focus
+       gets a visible outline so keyboard users can see where they are. */
+    a.stat {
+      display: block; color: inherit; text-decoration: none; cursor: pointer;
+    }
+    a.stat:hover { border-color: var(--c-primary-soft); }
+    a.stat:focus-visible {
+      outline: 2px solid var(--c-primary);
+      outline-offset: 2px;
+    }
+    a.stat::after {
+      content: '→'; position: absolute; right: 14px; bottom: 12px;
+      color: var(--c-text-subtle); font-size: 14px; font-weight: 600;
+      opacity: 0; transform: translateX(-4px);
+      transition: opacity 160ms ease, transform 160ms ease, color 160ms ease;
+      pointer-events: none;
+    }
+    a.stat:hover::after, a.stat:focus-visible::after {
+      opacity: 1; transform: translateX(0); color: var(--c-primary);
+    }
+
+    /* G — typography polish. tabular-nums on numeric helpers, tighter
+       heading tracking. body line-height already set; this just sharpens
+       the high-density screens. */
+    h1, h2, h3 { letter-spacing: -0.3px; }
+    h1 { letter-spacing: -0.5px; }
+    .num, .table .num, code, kbd { font-variant-numeric: tabular-nums; }
 
     /* ------------------------- Status line ------------------------- */
     .status { margin-top: 10px; font-size: var(--t-small); color: var(--c-text-muted); }
@@ -613,19 +1099,34 @@
     /* ------------------------- Access-area picker (topbar) ------------------ */
     .scope-picker { position: relative; }
     .scope-trigger {
-      display: inline-flex; align-items: center; gap: 6px;
-      background: var(--c-surface); border: 1px solid var(--c-border-strong);
-      border-radius: 6px; padding: 5px 10px; font-size: var(--t-small);
+      display: inline-flex; align-items: center; gap: 8px;
+      background: linear-gradient(180deg, var(--c-surface) 0%, var(--c-bg-sub) 100%);
+      border: 1px solid var(--c-border-strong);
+      border-radius: 999px; padding: 6px 14px; font-size: var(--t-small);
       color: var(--c-text); cursor: pointer; font-family: inherit;
-      max-width: 240px; line-height: 1.2;
+      max-width: 260px; line-height: 1.2;
+      transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
     }
-    .scope-trigger:hover { background: #f4f6f9; }
+    .scope-trigger::before {
+      content: ''; width: 6px; height: 6px; border-radius: 50%;
+      background: var(--c-success); box-shadow: 0 0 0 2px rgba(5, 150, 105, 0.18);
+      flex-shrink: 0;
+    }
+    .scope-trigger:hover {
+      border-color: var(--c-primary);
+      box-shadow: 0 2px 6px rgba(37, 99, 235, 0.10);
+      transform: translateY(-1px);
+    }
     .scope-trigger .label { color: var(--c-text-muted); font-weight: 500; }
     .scope-trigger .value {
       font-weight: 600; overflow: hidden; text-overflow: ellipsis;
       white-space: nowrap; max-width: 140px;
     }
     .scope-trigger .caret { color: var(--c-text-subtle); font-size: 10px; }
+    html[data-theme="dark"] .scope-trigger {
+      background: linear-gradient(180deg, var(--c-surface) 0%, var(--c-bg-sub) 100%);
+    }
     .scope-panel {
       position: absolute; top: calc(100% + 6px); right: 0;
       width: 320px; max-height: 480px;
@@ -659,6 +1160,37 @@
   {% block head %}{% endblock %}
 </head>
 <body>
+  <!-- Sidebar icon sprite. Each <symbol> is referenced by a tiny
+       <svg><use href="#i-X"/></svg> in the nav links. Lucide-derived
+       paths, 24×24 viewBox, stroke-width 2, currentColor — so the
+       icons inherit text colour and dim/brighten with the link state. -->
+  <svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true">
+    <defs>
+      <symbol id="i-dashboard" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></symbol>
+      <symbol id="i-cash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" x2="21" y1="22" y2="22"/><line x1="6" x2="6" y1="18" y2="11"/><line x1="10" x2="10" y1="18" y2="11"/><line x1="14" x2="14" y1="18" y2="11"/><line x1="18" x2="18" y1="18" y2="11"/><polygon points="12 2 20 7 4 7"/></symbol>
+      <symbol id="i-sessions" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="10" x2="21" y1="6" y2="6"/><line x1="10" x2="21" y1="12" y2="12"/><line x1="10" x2="21" y1="18" y2="18"/><polyline points="3 6 4 7 6 5"/><polyline points="3 12 4 13 6 11"/><polyline points="3 18 4 19 6 17"/></symbol>
+      <symbol id="i-mobile" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><path d="M12 18h.01"/></symbol>
+      <symbol id="i-cards" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/></symbol>
+      <symbol id="i-inbox" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></symbol>
+      <symbol id="i-reports" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></symbol>
+      <symbol id="i-book" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></symbol>
+      <symbol id="i-scan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="3"/><path d="m16 16-1.9-1.9"/></symbol>
+      <symbol id="i-upload" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></symbol>
+      <symbol id="i-users" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+      <symbol id="i-compass" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/><circle cx="12" cy="12" r="10"/></symbol>
+      <symbol id="i-sliders" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/></symbol>
+      <symbol id="i-file-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="12" x2="12" y1="18" y2="12"/><line x1="9" x2="15" y1="15" y2="15"/></symbol>
+      <symbol id="i-coins" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M18.09 10.37A6 6 0 1 1 10.34 18"/><path d="M7 6h1v4"/><path d="m16.71 13.88.7.71-2.82 2.82"/></symbol>
+      <symbol id="i-bank" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></symbol>
+      <symbol id="i-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
+      <symbol id="i-badge-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z"/><path d="m9 12 2 2 4-4"/></symbol>
+      <symbol id="i-alarm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M5 3 2 6"/><path d="m22 6-3-3"/><path d="M6.38 18.7 4 21"/><path d="M17.64 18.67 20 21"/></symbol>
+      <symbol id="i-sparkles" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.287 1.288L3 12l5.8 1.9a2 2 0 0 1 1.288 1.287L12 21l1.9-5.8a2 2 0 0 1 1.287-1.288L21 12l-5.8-1.9a2 2 0 0 1-1.288-1.287Z"/><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/></symbol>
+      <symbol id="i-calendar-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 7.5V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h3.5"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h5"/><path d="M17.5 17.5 16 16.3V14"/><circle cx="16" cy="16" r="6"/></symbol>
+      <symbol id="i-activity" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.5.5 0 0 1-.96 0L9.24 2.18a.5.5 0 0 0-.96 0l-2.35 8.36A2 2 0 0 1 4 12H2"/></symbol>
+    </defs>
+  </svg>
+
   <div class="app">
     <aside class="sidebar">
       <div class="brand">
@@ -667,27 +1199,30 @@
       </div>
       <nav id="nav-root">
         <div class="group-label">Workspace</div>
-        <a href="/" data-nav="dashboard">Dashboard</a>
-        <a href="/cash-accounts" data-nav="cash-accounts">Cash accounts</a>
-        <a href="/sessions-list" data-nav="sessions">Sessions</a>
-        <a href="/open-items-view" data-nav="open-items">Open items</a>
-        <a href="/reports" data-nav="reports">Reports</a>
-        <a href="/manuals" data-nav="manuals">Manuals</a>
+        <a href="/" data-nav="dashboard"><svg class="i"><use href="#i-dashboard"/></svg><span class="t">Dashboard</span></a>
+        <a href="/cash-accounts" data-nav="cash-accounts"><svg class="i"><use href="#i-cash"/></svg><span class="t">Cash accounts</span></a>
+        <a href="/sessions-list" data-nav="sessions"><svg class="i"><use href="#i-sessions"/></svg><span class="t">Sessions</span><span id="nav-sessions-badge" class="nav-badge nav-badge--warn" style="display:none">0</span></a>
+        <a href="/mobile-money" data-nav="mobile-money"><svg class="i"><use href="#i-mobile"/></svg><span class="t">Mobile money</span></a>
+        <a href="/cards" data-nav="cards"><svg class="i"><use href="#i-cards"/></svg><span class="t">Cards</span><span id="nav-cards-badge" class="nav-badge nav-badge--danger" style="display:none">0</span></a>
+        <a href="/open-items-view" data-nav="open-items"><svg class="i"><use href="#i-inbox"/></svg><span class="t">Open items</span><span id="nav-open-badge" class="nav-badge" style="display:none">0</span></a>
+        <a href="/reports" data-nav="reports"><svg class="i"><use href="#i-reports"/></svg><span class="t">Reports</span></a>
+        <a href="/manuals" data-nav="manuals"><svg class="i"><use href="#i-book"/></svg><span class="t">Manuals</span></a>
         <div class="group-label admin-only" style="display:none">Intake</div>
-        <a href="/#scan" data-nav="scan" class="admin-only" style="display:none">Scan messages</a>
-        <a href="/#upload" data-nav="upload" class="admin-only" style="display:none">Manual upload</a>
+        <a href="/intake/scan"   data-nav="scan"   class="admin-only" style="display:none"><svg class="i"><use href="#i-scan"/></svg><span class="t">Scan messages</span></a>
+        <a href="/intake/upload" data-nav="upload" class="admin-only" style="display:none"><svg class="i"><use href="#i-upload"/></svg><span class="t">Manual upload</span></a>
         <div class="group-label admin-only" style="display:none">Admin</div>
-        <a href="/admin/users" data-nav="users" class="admin-only" style="display:none">Users</a>
-        <a href="/admin/discovered" data-nav="discovered" class="admin-only" style="display:none">Discovered accounts <span id="nav-discovered-badge" class="badge badge-warn" style="display:none;margin-left:6px;font-size:10px;padding:1px 6px">0</span></a>
-        <a href="/tolerance-admin" data-nav="tolerance" class="admin-only" style="display:none">Tolerance &amp; rules</a>
-        <a href="/currencies-admin" data-nav="currencies" class="admin-only" style="display:none">Currencies</a>
-        <a href="/banks-admin" data-nav="banks" class="admin-only" style="display:none">Banks</a>
-        <a href="/fx-admin" data-nav="fx" class="admin-only" style="display:none">Exchange rates</a>
-        <a href="/certificates-admin" data-nav="certs">Certificates</a>
-        <a href="/sla-admin" data-nav="sla" class="admin-only" style="display:none">SLA alerts</a>
-        <a href="/match-patterns" data-nav="patterns" class="admin-only" style="display:none">Match patterns</a>
-        <a href="/scheduler-admin" data-nav="scheduler" class="admin-only" style="display:none">Scheduler</a>
-        <a href="/admin/activity" data-nav="activity" class="audit-visible" style="display:none">Activity log</a>
+        <a href="/admin/users" data-nav="users" class="admin-only" style="display:none"><svg class="i"><use href="#i-users"/></svg><span class="t">Users</span></a>
+        <a href="/admin/discovered" data-nav="discovered" class="admin-only" style="display:none"><svg class="i"><use href="#i-compass"/></svg><span class="t">Discovered accounts</span><span id="nav-discovered-badge" class="nav-badge nav-badge--warn" style="display:none">0</span></a>
+        <a href="/tolerance-admin" data-nav="tolerance" class="admin-only" style="display:none"><svg class="i"><use href="#i-sliders"/></svg><span class="t">Tolerance &amp; rules</span></a>
+        <a href="/byo-formats" data-nav="byo-formats" class="admin-only" style="display:none"><svg class="i"><use href="#i-file-plus"/></svg><span class="t">BYO formats</span></a>
+        <a href="/currencies-admin" data-nav="currencies" class="admin-only" style="display:none"><svg class="i"><use href="#i-coins"/></svg><span class="t">Currencies</span></a>
+        <a href="/banks-admin" data-nav="banks" class="admin-only" style="display:none"><svg class="i"><use href="#i-bank"/></svg><span class="t">Banks</span></a>
+        <a href="/fx-admin" data-nav="fx" class="admin-only" style="display:none"><svg class="i"><use href="#i-refresh"/></svg><span class="t">Exchange rates</span></a>
+        <a href="/certificates-admin" data-nav="certs"><svg class="i"><use href="#i-badge-check"/></svg><span class="t">Certificates</span></a>
+        <a href="/sla-admin" data-nav="sla" class="admin-only" style="display:none"><svg class="i"><use href="#i-alarm"/></svg><span class="t">SLA alerts</span></a>
+        <a href="/match-patterns" data-nav="patterns" class="admin-only" style="display:none"><svg class="i"><use href="#i-sparkles"/></svg><span class="t">Match patterns</span></a>
+        <a href="/scheduler-admin" data-nav="scheduler" class="admin-only" style="display:none"><svg class="i"><use href="#i-calendar-clock"/></svg><span class="t">Scheduler</span></a>
+        <a href="/admin/activity" data-nav="activity" class="audit-visible" style="display:none"><svg class="i"><use href="#i-activity"/></svg><span class="t">Activity log</span></a>
       </nav>
       <div class="foot">
         <div class="u" id="user-display">—</div>
@@ -813,9 +1348,28 @@
   window.me = null;
   window.sessionToken = () => localStorage.getItem('kilter_token') || '';
 
+  // Self-heal: mirror the localStorage token into a cookie on every
+  // page load. Lets server-rendered routes (cert print, session review)
+  // authenticate via plain navigation. Idempotent — if the cookie is
+  // already present and matches, this is a no-op write.
+  (function syncTokenCookie() {
+    const tok = localStorage.getItem('kilter_token');
+    const exp = localStorage.getItem('kilter_token_expires');
+    if (!tok) return;
+    let maxAge = 8 * 3600;   // sane default if expiry parse fails
+    if (exp) {
+      const secs = Math.floor((new Date(exp).getTime() - Date.now()) / 1000);
+      if (secs > 0) maxAge = secs;
+    }
+    document.cookie = `kilter_token=${tok}; Max-Age=${maxAge}; Path=/; SameSite=Strict`;
+  })();
+
   function redirectToLogin() {
     localStorage.removeItem('kilter_token');
     localStorage.removeItem('kilter_token_expires');
+    // Clear the mirror cookie too so a stale token can't authenticate
+    // server-rendered pages after the localStorage copy is gone.
+    document.cookie = 'kilter_token=; Max-Age=0; Path=/; SameSite=Strict';
     const next = encodeURIComponent(window.location.pathname + window.location.search);
     window.location.href = `/login?next=${next}`;
   }
@@ -825,23 +1379,68 @@
     const canSeeAudit = role === 'admin' || role === 'audit' || role === 'internal_control';
     document.querySelectorAll('.admin-only').forEach(el => el.style.display = isAdmin ? '' : 'none');
     document.querySelectorAll('.audit-visible').forEach(el => el.style.display = canSeeAudit ? '' : 'none');
-    if (isAdmin) refreshDiscoveredBadge();
+    refreshNavBadges(isAdmin);
     document.dispatchEvent(new CustomEvent('me:loaded', { detail: { role, isAdmin, canSeeAudit } }));
   }
 
-  async function refreshDiscoveredBadge() {
-    try {
-      const r = await fetch('/discovered-accounts');
-      if (!r.ok) return;
-      const rows = await r.json();
-      const pending = rows.filter(d => d.status === 'pending').length;
-      const el = document.getElementById('nav-discovered-badge');
-      if (!el) return;
-      if (pending > 0) { el.textContent = pending; el.style.display = ''; }
-      else el.style.display = 'none';
-    } catch (e) { /* silent */ }
+  // Set or clear a single sidebar badge. Toggles .has-badge on the
+  // parent <a> so the active-row dot can step out of the way when a
+  // numeric badge takes its slot. Also supports null/0 to clear.
+  function _setNavBadge(badgeId, value, threshold = 1) {
+    const el = document.getElementById(badgeId);
+    if (!el) return;
+    const link = el.closest('a');
+    const n = Number(value);
+    if (Number.isFinite(n) && n >= threshold) {
+      el.textContent = n > 999 ? '999+' : String(n);
+      el.style.display = '';
+      if (link) link.classList.add('has-badge');
+    } else {
+      el.style.display = 'none';
+      if (link) link.classList.remove('has-badge');
+    }
   }
-  window.refreshDiscoveredBadge = refreshDiscoveredBadge;
+
+  // Refresh all live sidebar counts in one pass. Called once after
+  // /me resolves and again on demand (e.g. after a scan or a manual
+  // upload completes). Failures are silent — a stale or missing
+  // count just leaves the badge hidden, never blocks navigation.
+  async function refreshNavBadges(isAdmin = false) {
+    // Fan out the fetches in parallel; each lookup is a cheap aggregate.
+    // /stats and /dashboard/kpis are cached/scoped already so this is
+    // a modest add on top of the dashboard's own load.
+    const tasks = [
+      fetch('/stats').then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch('/dashboard/kpis').then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch('/cards/match/groups?limit=1000').then(r => r.ok ? r.json() : null).catch(() => null),
+    ];
+    if (isAdmin) {
+      tasks.push(fetch('/discovered-accounts').then(r => r.ok ? r.json() : null).catch(() => null));
+    } else {
+      tasks.push(Promise.resolve(null));
+    }
+    const [stats, kpis, cards, discovered] = await Promise.all(tasks);
+
+    // Sessions: open sessions = sessions with at least one pending decision.
+    _setNavBadge('nav-sessions-badge', stats?.open_sessions);
+    // Open items: total currently-open ledger items. Same number that
+    // drives the "Total open items" KPI on the dashboard.
+    _setNavBadge('nav-open-badge', kpis?.total_open_items);
+    // Cards: count of mismatched groups — the operator's actual queue.
+    if (Array.isArray(cards)) {
+      const mismatched = cards.filter(g => g.status === 'mismatched').length;
+      _setNavBadge('nav-cards-badge', mismatched);
+    }
+    // Discovered accounts: pending registrations needing an admin's eye.
+    if (Array.isArray(discovered)) {
+      const pending = discovered.filter(d => d.status === 'pending').length;
+      _setNavBadge('nav-discovered-badge', pending);
+    }
+  }
+  window.refreshNavBadges = refreshNavBadges;
+  // Back-compat shim — older inline callers (e.g. the discovered-accounts
+  // page after a register action) still call refreshDiscoveredBadge().
+  window.refreshDiscoveredBadge = () => refreshNavBadges(true);
 
   // Patch fetch so every request automatically carries X-Session-Token.
   // A 401 response means the session died; bounce to /login.
@@ -1090,11 +1689,16 @@
     { group: 'Navigate', label: 'Dashboard',          href: '/',                ico: '▣' },
     { group: 'Navigate', label: 'Cash accounts',      href: '/cash-accounts',   ico: '▤' },
     { group: 'Navigate', label: 'Sessions',           href: '/sessions-list',   ico: '⧉' },
+    { group: 'Navigate', label: 'Mobile money',       href: '/mobile-money',    ico: '☎' },
+    { group: 'Navigate', label: 'Cards',              href: '/cards',           ico: '▭' },
     { group: 'Navigate', label: 'Open items',         href: '/open-items-view', ico: '◉' },
     { group: 'Navigate', label: 'Reports',            href: '/reports',         ico: '◫' },
+    { group: 'Navigate', label: 'Scan messages',      href: '/intake/scan',     ico: '↧', admin: true },
+    { group: 'Navigate', label: 'Manual upload',      href: '/intake/upload',   ico: '⇪', admin: true },
     { group: 'Navigate', label: 'Users',              href: '/admin/users',     ico: '◊', admin: true },
     { group: 'Navigate', label: 'Discovered accounts',href: '/admin/discovered',ico: '?', admin: true },
     { group: 'Navigate', label: 'Tolerance & rules',  href: '/tolerance-admin', ico: '≡', admin: true },
+    { group: 'Navigate', label: 'BYO formats',        href: '/byo-formats',     ico: '⊞', admin: true },
     { group: 'Navigate', label: 'Currencies',         href: '/currencies-admin',ico: '¤', admin: true },
     { group: 'Navigate', label: 'Banks',              href: '/banks-admin',     ico: '◐', admin: true },
     { group: 'Navigate', label: 'Exchange rates',     href: '/fx-admin',        ico: '∑', admin: true },

@@ -45,7 +45,7 @@
           <select class="input" name="kind" id="kind-select" required>
             <option value="teams">Teams webhook</option>
             <option value="log">Log only (test)</option>
-            <option value="email">Email (SMTP — not yet implemented)</option>
+            <option value="email">Email (SMTP)</option>
           </select></div>
         <div class="field"><label>Threshold (days)</label>
           <input class="input" type="number" name="threshold_days" value="30" min="1"></div>
@@ -55,7 +55,7 @@
           <span class="hint" style="font-size:var(--t-small);color:var(--c-text-muted)">Create via Teams → channel → Connectors → Incoming Webhook.</span>
         </div>
 
-        <div id="email-config" style="display:none;grid-column:1/-1;display:none">
+        <div id="email-config" style="display:none;grid-column:1/-1">
           <div class="form-grid">
             <div class="field"><label>SMTP host *</label>
               <input class="input" name="smtp_host" placeholder="smtp.office365.com"></div>

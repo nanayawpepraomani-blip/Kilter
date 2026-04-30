@@ -10,9 +10,9 @@
   five hours a day, with one that runs itself in the background while the team
   focuses on the exceptions. This is Kilter.'">
   <div class="slide-inner">
-    <div class="eyebrow">Ecobank Ghana · Treasury &amp; PSC</div>
+    <div class="eyebrow">Bank reconciliation · Built for treasury &amp; payments</div>
     <h1>Kilter</h1>
-    <div class="sub">A reconciliation service built to retire the manual Corona workflow — and run itself the rest of the day.</div>
+    <div class="sub">A reconciliation service built to retire the manual end-of-day workflow — and run itself the rest of the day.</div>
     <div class="gradient-line"></div>
     <div class="meta">Stakeholder pitch · {{ generated_at }}</div>
   </div>
@@ -30,7 +30,7 @@
       <div class="card">
         <div class="icon">⏱</div>
         <h2 style="font-size:20px">Manual, every day</h2>
-        <p>Corona needs a human to trigger every step. Analysts spend hours doing work that a machine should do.</p>
+        <p>The incumbent tool needs a human to trigger every step. Analysts spend hours doing work that a machine should do.</p>
       </div>
       <div class="card">
         <div class="icon">🧱</div>
@@ -40,7 +40,7 @@
       <div class="card">
         <div class="icon">🗂</div>
         <h2 style="font-size:20px">Reports are spreadsheets</h2>
-        <p>The BoG daily breaks workbook is built by hand, with copy-paste tabs, every morning.</p>
+        <p>The regulator-facing daily breaks workbook is built by hand, with copy-paste tabs, every morning.</p>
       </div>
       <div class="card">
         <div class="icon">🕵</div>
@@ -96,33 +96,42 @@
 <!-- =========== 5. What Kilter is =========== -->
 <section class="slide" data-notes="
   30-second product elevator. Don't dwell — the differentiators are what sells,
-  not the description.">
+  not the description. Point at the dashboard screenshot when you say
+  'one screen, your whole reconciliation operation'.">
   <div class="slide-inner">
     <h3>What it is</h3>
     <h2>A reconciliation service that runs itself.</h2>
-    <p class="lead" style="margin-top: 30px">
-      Ingests your SWIFT and Flexcube feeds automatically.
-      Pairs transactions through five tiers of intelligent matching.
-      Carries unresolved items forward as a rolling ledger until they clear or are written off.
-      Produces the BoG workbook and month-end sign-off certificates on demand.
-      Every touch is audit-logged.
-    </p>
-    <div class="gradient-line"></div>
-    <p class="muted" style="font-size: 16px">Built in-house on Python and SQLite. Zero vendor lock-in. Auditable end to end.</p>
+    <div class="split-shot" style="margin-top: 30px">
+      <div>
+        <p class="lead" style="margin-top: 0">
+          Ingests your SWIFT and core-banking feeds automatically.
+          Pairs transactions through five tiers of intelligent matching.
+          Carries unresolved items forward as a rolling ledger until they clear or are written off.
+          Produces the regulator-facing breaks workbook and month-end sign-off certificates on demand.
+          Every touch is audit-logged.
+        </p>
+        <div class="gradient-line"></div>
+        <p class="muted" style="font-size: 16px">Built in-house on Python and SQLite. Zero vendor lock-in. Auditable end to end.</p>
+      </div>
+      <div class="shot-frame">
+        <img class="shot" src="/static/screenshots/dashboard-light.png"
+             alt="Kilter dashboard showing match rate, oldest break, SLA, open items, and recent sessions">
+      </div>
+    </div>
   </div>
 </section>
 
 <!-- =========== 6-10. The 5 differentiators =========== -->
 <section class="slide" data-notes="
   Start with the rolling ledger — this is the single biggest day-1 win.
-  An analyst who has lived with Corona will feel this in their bones.">
+  An analyst who has lived with the legacy tool will feel this in their bones.">
   <div class="slide-inner">
     <h3>Differentiator 1</h3>
     <h2>The ledger outlives the session.</h2>
     <p class="lead">Open items carry forward until they clear or are written off. Breaks don't disappear at end-of-session — they stay on the ledger, visible, aged, and assigned to a team.</p>
     <div class="cols-2" style="margin-top: 40px">
       <div class="card">
-        <h2 style="color: var(--danger); font-size: 20px">Corona today</h2>
+        <h2 style="color: var(--danger); font-size: 20px">Legacy tools today</h2>
         <ul style="font-size: 18px">
           <li>Break detected this session.</li>
           <li>Session closes; break list is lost.</li>
@@ -145,7 +154,7 @@
 
 <section class="slide" data-notes="
   Second differentiator. Pull up the Scheduler page later in the demo to
-  reinforce. 'Corona requires a person. Kilter doesn't.'">
+  reinforce. 'The legacy tool requires a person. Kilter doesn't.'">
   <div class="slide-inner">
     <h3>Differentiator 2</h3>
     <h2>It runs itself.</h2>
@@ -158,7 +167,11 @@
       <div><span class="badge badge-blue">07:30</span>&nbsp;&nbsp;<strong>SLA alerts</strong> — Teams + email fan-out.</div>
       <div><span class="badge badge-blue">23:00</span>&nbsp;&nbsp;<strong>Auto-close</strong> — stale sessions → rolling ledger.</div>
     </div>
-    <p style="margin-top: 30px; color: var(--ink)">Ops walks in at 08:00 to <strong>a reconciled ledger and a ready-to-send report.</strong></p>
+    <p style="margin-top: 24px; color: var(--ink)">Ops walks in at 08:00 to <strong>a reconciled ledger and a ready-to-send report.</strong></p>
+    <div class="shot-frame" style="margin-top: 24px; max-width: 760px">
+      <img class="shot" src="/static/screenshots/scheduler.png"
+           alt="Kilter scheduler page — daemon RUNNING, daily close + breaks report + intake scan + SLA alerts jobs all green">
+    </div>
   </div>
 </section>
 
@@ -219,9 +232,27 @@
   </div>
 </section>
 
+<!-- Engine in action — Tier-1 strict match on a real session -->
+<section class="slide" data-notes="
+  This is the slide where the audience sees the actual product.
+  Walk through it: the reconcile header (cleared / statement / difference),
+  the green Tier-1 STRICT MATCH banner, the SWIFT-vs-Flex side-by-side.
+  'This is what an analyst sees instead of an Excel grid.'">
+  <div class="slide-inner">
+    <h3>Engine in action</h3>
+    <h2>Reconcile, side by side.</h2>
+    <div class="shot-frame" style="margin-top: 24px">
+      <img class="shot" src="/static/screenshots/sessions-reconcile.png"
+           alt="Kilter session review — Tier-1 strict match between a SWIFT credit and a Flexcube debit on the same value date and reference">
+    </div>
+    <p class="muted shot-caption" style="text-align: center">Tier-1 strict match · MTB68957720 · GBP 3,033.74 · zero-keystroke confirm</p>
+  </div>
+</section>
+
 <section class="slide" data-notes="
   Fifth: UX. This one is short — the demo sells itself. Mention the command
-  palette specifically as a 'Corona has nothing like this' moment.">
+  palette specifically as a 'legacy tools have nothing like this' moment.
+  Point at the dark-mode screenshot when you mention 'dealing-room screen'.">
   <div class="slide-inner">
     <h3>Differentiator 5</h3>
     <h2>Built for speed.</h2>
@@ -229,7 +260,7 @@
     <div class="cols-2" style="margin-top: 40px">
       <div class="card">
         <h2 style="font-size: 22px">Command palette <kbd>Ctrl</kbd><kbd>K</kbd></h2>
-        <p>Jump to any page, account, or session in two keystrokes. Fuzzy search. Corona has nothing like this.</p>
+        <p>Jump to any page, account, or session in two keystrokes. Fuzzy search. Legacy tools have nothing like this.</p>
       </div>
       <div class="card">
         <h2 style="font-size: 22px">Keyboard review</h2>
@@ -244,25 +275,32 @@
         <p>Respects user preference. Presenter mode hides chrome and auto-refreshes for the dealing-room screen.</p>
       </div>
     </div>
+    <div class="shot-frame" style="margin-top: 30px; max-width: 880px">
+      <img class="shot" src="/static/screenshots/dashboard-dark.png"
+           alt="Kilter dashboard rendered in dark mode — same KPI tiles, same charts, no chrome difference">
+    </div>
+    <p class="muted shot-caption" style="text-align: center">Same dashboard, dark mode — operator preference, dealing-room friendly</p>
   </div>
 </section>
 
-<!-- =========== 11. Corona comparison =========== -->
+<!-- =========== 11. Legacy comparison =========== -->
 <section class="slide" data-notes="
   This is the <strong>killer slide</strong>. Go line by line. Let each row land.
   If they push back on any comparison, agree to verify and move on — don't
   get into a feature-by-feature argument.">
   <div class="slide-inner">
     <h3>Side by side</h3>
-    <h2>Kilter vs Corona at a glance.</h2>
+    <h2>Kilter vs the legacy reconciliation stack.</h2>
     <table class="vs-table" style="margin-top: 30px">
-      <thead><tr><th>Capability</th><th>Corona 7.9</th><th>Kilter</th></tr></thead>
+      <thead><tr><th>Capability</th><th>Legacy MT-only tool</th><th>Kilter</th></tr></thead>
       <tbody>
         <tr><td>Break carry-forward across sessions</td><td class="bad">✗ Session-bound</td><td class="good">✓ Rolling ledger</td></tr>
         <tr><td>Scheduled automation</td><td class="bad">✗ Human-triggered</td><td class="good">✓ In-process scheduler</td></tr>
         <tr><td>Split (1:N / N:1) matching</td><td class="bad">✗</td><td class="good">✓ Tier-5 auto + manual</td></tr>
         <tr><td>Reference normalisation</td><td class="bad">✗ Strict compare</td><td class="good">✓ Collapses formatting</td></tr>
         <tr><td>ISO 20022 (camt.053 / camt.054)</td><td class="bad">✗ MT-only</td><td class="good">✓ Parses both today</td></tr>
+        <tr><td>Mobile-money operator feeds</td><td class="bad">✗</td><td class="good">✓ M-Pesa, MTN MoMo, Airtel, Telcel pre-seeded</td></tr>
+        <tr><td>Card-scheme settlement files</td><td class="bad">✗</td><td class="good">✓ Switch + N-way match engine, PCI-safe</td></tr>
         <tr><td>FX-aware tolerance</td><td class="meh">~ Manual workaround</td><td class="good">✓ Basis-point rule</td></tr>
         <tr><td>Audit trail on every decision</td><td class="meh">~ Partial</td><td class="good">✓ Append-only log</td></tr>
         <tr><td>Maker-checker-approver certificates</td><td class="bad">✗</td><td class="good">✓ Role-enforced</td></tr>
@@ -278,9 +316,9 @@
 <!-- =========== 11b. ISO 20022 readiness =========== -->
 <section class="slide" data-notes="
   Strategic slide. Treasury + IT + Compliance all care about the ISO 20022
-  migration — SWIFT is retiring MT on the FIN network. Corona 7.9 does
-  not speak camt.053/054. Kilter already does. If the room brings up
-  ISO 20022 first, bump this slide earlier in the deck.">
+  migration — SWIFT is retiring MT on the FIN network. Most legacy MT-only
+  reconciliation tools don't speak camt.053/054. Kilter already does. If
+  the room brings up ISO 20022 first, bump this slide earlier in the deck.">
   <div class="slide-inner">
     <h3>Future-proof</h3>
     <h2>Already speaking ISO 20022.</h2>
@@ -306,14 +344,98 @@
     </div>
     <div class="cols-2" style="margin-top: 30px">
       <div class="card">
-        <h2 style="font-size: 20px; color: var(--danger)">Corona 7.9</h2>
-        <p>MT-only. Requires a vendor upgrade (with vendor licence fee) before the first correspondent flips.</p>
+        <h2 style="font-size: 20px; color: var(--danger)">Legacy MT-only tools</h2>
+        <p>MT-only. Require a vendor upgrade (with vendor licence fee) before the first correspondent flips.</p>
       </div>
       <div class="card">
         <h2 style="font-size: 20px; color: var(--success)">Kilter</h2>
         <p>Parses both formats side by side. No workflow change for ops. IBAN and proprietary account identifiers both supported. Zero cutover risk when a correspondent flips.</p>
       </div>
     </div>
+  </div>
+</section>
+
+<!-- =========== 11c. Multi-stream coverage =========== -->
+<section class="slide" data-notes="
+  This is the slide that turns Kilter from 'reconciliation tool replacement' into 'platform'.
+  Hit each stream by name. If the room is mixed (treasury + cards + payments),
+  watch for the cards or mobile-money person leaning forward — that's your
+  expansion conversation after the demo.">
+  <div class="slide-inner">
+    <h3>Platform, not point tool</h3>
+    <h2>Three reconciliation streams, one operator UI.</h2>
+    <p class="lead" style="margin-top: 24px">
+      A team trained on nostro can immediately work mobile money and cards.
+      Same review queue, same audit log, same role model, same deployment.
+    </p>
+    <div class="cols-3" style="margin-top: 36px">
+      <div class="card">
+        <h2 style="font-size: 20px; color: var(--brand-2)">Nostro / GL</h2>
+        <p><strong>SWIFT MT940 / 950, ISO 20022 camt.053 / 054</strong> against the core-banking GL extract. The original nostro/GL workstream — 4-tier matching, 75–85% tier-1 auto in typical pilot data.</p>
+      </div>
+      <div class="card">
+        <h2 style="font-size: 20px; color: var(--brand-2)">Mobile money</h2>
+        <p><strong>Operator B2W &amp; W2B feeds</strong> — M-Pesa Safaricom, MTN MoMo (agent + B2W + W2B), Airtel Money, Telcel Cash. Pre-seeded operator profiles; bind to a wallet account and ingest same day. xlsx native — no save-as-CSV step.</p>
+      </div>
+      <div class="card">
+        <h2 style="font-size: 20px; color: var(--brand-2)">Card scheme</h2>
+        <p><strong>Issuer / acquirer / switch settlement files</strong> — Visa, Mastercard, Verve, Cardlink (GhIPSS). N-way matching engine joins on scheme reference. PCI-DSS-out-of-scope storage by design.</p>
+      </div>
+    </div>
+    <p style="margin-top: 30px">
+      <strong>Commercial implication:</strong> mid-tier banks typically run two or three separate
+      tools for these streams. Kilter consolidates them into one licence at one mid-5-figure
+      annual cost — replacing a six-figure SmartStream / Trintech / vendor-cards bill.
+    </p>
+    <div class="cols-2" style="margin-top: 30px; gap: 20px">
+      <div class="shot-frame">
+        <img class="shot" src="/static/screenshots/cash-accounts-area-picker.png"
+             alt="Cash accounts page with the active-area picker open — Nostro / Treasury / Cash Mgt / Head Office / Subsidiaries">
+      </div>
+      <div class="shot-frame">
+        <img class="shot" src="/static/screenshots/mobile-money.png"
+             alt="Mobile money page — wallet-level reconciliation across M-Pesa, MTN MoMo, Airtel, Telcel">
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =========== 11d. Cards module — PCI posture =========== -->
+<section class="slide" data-notes="
+  CISO slide. Lead with the architectural commitment, not the marketing claim.
+  The 'no schema column for full PAN' line lands every time — it's a structural
+  guarantee, not a process control. If the audience is technical, walk through
+  the three commitments. If audience is commercial, skip to the bottom line.">
+  <div class="slide-inner">
+    <h3>Cards module</h3>
+    <h2>PCI-DSS-out-of-scope by design.</h2>
+    <p class="lead" style="margin-top: 24px">
+      Reconciling cards usually drags more of the bank's stack into PCI-DSS scope.
+      Kilter's architecture is the opposite — three structural commitments keep the
+      reconciliation system <em>out</em>:
+    </p>
+    <div class="cols-3" style="margin-top: 36px">
+      <div class="card">
+        <h2 style="font-size: 20px; color: var(--success)">1 · No full PAN, ever</h2>
+        <p>Loaders mask at the parser seam into <code>first6</code> + <code>last4</code> only. The schema has <strong>no column that could hold a full PAN</strong> — there's no path to insert one.</p>
+      </div>
+      <div class="card">
+        <h2 style="font-size: 20px; color: var(--success)">2 · Sensitive Authentication Data refused</h2>
+        <p>CVV, track data, PIN blocks (DSS §3.2) get rejected at ingest. Settlement files don't include them; this is defence-in-depth for the day a bank ops team accidentally exports from the wrong system.</p>
+      </div>
+      <div class="card">
+        <h2 style="font-size: 20px; color: var(--success)">3 · Free-text PAN-redacted</h2>
+        <p>Merchant names and notes get a Luhn-validated PAN sweep on ingest. Any embedded full PAN becomes <code>first6***last4</code> before persistence.</p>
+      </div>
+    </div>
+    <p style="margin-top: 30px">
+      <strong>Commercial bottom line:</strong> one less system in PCI scope means a smaller compliance bill at your next QSA review. The N-way match engine joins records on scheme reference (Visa TRR, Mastercard Banknet, switch RRN), classifies as matched / mismatched / unmatched, and surfaces mismatches first so an operator works the highest-leverage cases without scrolling.
+    </p>
+    <div class="shot-frame" style="margin-top: 24px; max-width: 880px">
+      <img class="shot" src="/static/screenshots/cards.png"
+           alt="Kilter cards module — PCI-DSS posture banner explaining first6 + last4 only, CVV / track / PIN refused at ingest">
+    </div>
+    <p class="muted shot-caption" style="text-align: center">PCI banner is the first thing the operator sees on the Cards page — every login</p>
   </div>
 </section>
 
@@ -346,7 +468,7 @@
       </div>
       <div class="card">
         <h2 style="font-size: 20px">🛡 Zero vendor lock-in</h2>
-        <p>The whole codebase is Ecobank property. Walk away any time, port to anything.</p>
+        <p>Self-hosted on your infrastructure. Source available under the licence agreed at sign-up. Walk away any time, port to anything.</p>
       </div>
     </div>
   </div>
@@ -366,7 +488,7 @@
         <ul>
           <li>TOTP MFA via Microsoft Authenticator on every login.</li>
           <li>Four roles: admin, ops, internal_control, audit.</li>
-          <li>Per-user access-area scoping (BoG / NOSTRO / AFFILIATES).</li>
+          <li>Per-user access-area scoping (by stream, region, or team).</li>
           <li>Session tokens expire; inactive sessions disconnect.</li>
         </ul>
       </div>
@@ -427,7 +549,7 @@
     <div style="margin-top: 40px; font-size: 18px;">
       <div style="display: grid; grid-template-columns: 140px 1fr; gap: 24px; margin-bottom: 20px; align-items: baseline">
         <div><span class="badge badge-blue">Week 1–2</span></div>
-        <div><strong>Pilot.</strong> Kilter runs in parallel with Corona on 5 accounts. Both systems produce the same figures. Sign-off on parity.</div>
+        <div><strong>Pilot.</strong> Kilter runs in parallel with the legacy tool on 5 accounts. Both systems produce the same figures. Sign-off on parity.</div>
       </div>
       <div style="display: grid; grid-template-columns: 140px 1fr; gap: 24px; margin-bottom: 20px; align-items: baseline">
         <div><span class="badge badge-blue">Week 3–4</span></div>
@@ -435,15 +557,15 @@
       </div>
       <div style="display: grid; grid-template-columns: 140px 1fr; gap: 24px; margin-bottom: 20px; align-items: baseline">
         <div><span class="badge badge-amber">Week 5–6</span></div>
-        <div><strong>Expand.</strong> Roll Kilter to 30 accounts (the full NOSTRO + AFFILIATES set). Corona stays in read-only for reference.</div>
+        <div><strong>Expand.</strong> Roll Kilter to the full account set (typical pilot scope: 25–40 accounts across nostro / affiliates / wallets). Legacy tool stays in read-only for reference.</div>
       </div>
       <div style="display: grid; grid-template-columns: 140px 1fr; gap: 24px; margin-bottom: 20px; align-items: baseline">
         <div><span class="badge badge-green">Week 7–8</span></div>
-        <div><strong>Cutover.</strong> Corona is archived. Kilter is the production reconciliation service.</div>
+        <div><strong>Cutover.</strong> The legacy tool is archived. Kilter is the production reconciliation service.</div>
       </div>
       <div style="display: grid; grid-template-columns: 140px 1fr; gap: 24px; align-items: baseline">
         <div><span class="badge badge-green">Month 3+</span></div>
-        <div><strong>Extend.</strong> Flexcube DB direct extract. Oracle integration. Additional correspondents.</div>
+        <div><strong>Extend.</strong> Direct core-banking DB extract (Flexcube / T24 / Finacle). Additional correspondents and operator profiles.</div>
       </div>
     </div>
   </div>
@@ -460,12 +582,12 @@
     <table class="vs-table" style="margin-top: 30px">
       <thead><tr><th>Risk</th><th>Mitigation</th></tr></thead>
       <tbody>
-        <tr><td>Engine miscounts during cutover</td><td>Parallel-run with Corona for 2 weeks. Figure-for-figure reconciliation before archiving Corona.</td></tr>
+        <tr><td>Engine miscounts during cutover</td><td>Parallel-run with the existing tool for 2 weeks. Figure-for-figure reconciliation before archiving the legacy stack.</td></tr>
         <tr><td>Single point of failure (one server)</td><td>SQLite is file-based — nightly atomic backup + tested recovery drill. HA is a phase-2 upgrade to PostgreSQL.</td></tr>
-        <tr><td>Ops resistance to change</td><td>Training curriculum + phased rollout + shadow period. Analysts work with the new UI before Corona is retired.</td></tr>
-        <tr><td>Audit confidence in new system</td><td>Read-only audit role for external review. Full CSV evidence export. Manual walkthrough with the BoG auditor during pilot.</td></tr>
+        <tr><td>Ops resistance to change</td><td>Training curriculum + phased rollout + shadow period. Analysts work with the new UI before the legacy tool is retired.</td></tr>
+        <tr><td>Audit confidence in new system</td><td>Read-only audit role for external review. Full CSV evidence export. Manual walkthrough with your internal and regulatory auditors during pilot.</td></tr>
         <tr><td>Schema changes break historic data</td><td>All migrations are additive. Historic assignments / certificates remain queryable after every upgrade.</td></tr>
-        <tr><td>Custom build = single maintainer</td><td>Documentation is in-app. Every module has a docstring. Source tree walks with Ecobank — not locked to one developer.</td></tr>
+        <tr><td>Custom build = single maintainer</td><td>Documentation is in-app. Every module has a docstring. Source tree walks with the bank — not locked to one developer.</td></tr>
       </tbody>
     </table>
   </div>
@@ -480,11 +602,11 @@
     <h2>Approve a 4-week pilot.</h2>
     <div style="font-size: 22px; margin-top: 50px; line-height: 1.9; color: var(--ink)">
       <p>1. <strong>Infrastructure</strong> — one Windows VM, 4 vCPU / 8 GB RAM / 100 GB SSD. Python 3.12. IT already has the spec sheet.</p>
-      <p>2. <strong>Access</strong> — read-only Oracle user for Flexcube. Teams channel webhook. SMTP relay credentials.</p>
+      <p>2. <strong>Access</strong> — read-only credentials on your core-banking GL extract source. Teams / Slack channel webhook. SMTP relay credentials.</p>
       <p>3. <strong>Team</strong> — two ops analysts for 4 weeks (can remain on their current workload; pilot is parallel).</p>
       <p>4. <strong>Decision date</strong> — by end of pilot week 4, go / no-go on full cutover.</p>
     </div>
-    <p style="margin-top: 40px; color: var(--ink); font-size: 20px">Nothing irreversible happens during the pilot. Corona stays in production. We learn what works.</p>
+    <p style="margin-top: 40px; color: var(--ink); font-size: 20px">Nothing irreversible happens during the pilot. Your existing tool stays in production. We learn what works.</p>
   </div>
 </section>
 

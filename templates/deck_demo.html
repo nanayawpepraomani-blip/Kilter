@@ -62,10 +62,14 @@
       </div>
       <div class="card">
         <h3 style="color: var(--success);margin-bottom:12px">What you're selling</h3>
-        <p>Corona's dashboard is a list of pending work. This dashboard tells a story — <strong>where are we vs last week</strong>, <strong>what's aging</strong>, <strong>which team owns what</strong>. One screen, one glance.</p>
+        <p>Most legacy reconciliation tools show a list of pending work. This dashboard tells a story — <strong>where are we vs last week</strong>, <strong>what's aging</strong>, <strong>which team owns what</strong>. One screen, one glance.</p>
       </div>
     </div>
-    <div style="background: var(--bg-card); padding: 14px 20px; border-radius: 8px; margin-top: 30px; font-size: 16px; color: var(--ink-muted); border-left: 3px solid var(--brand)">
+    <div class="shot-frame" style="margin-top: 28px; max-width: 880px">
+      <img class="shot" src="/static/screenshots/dashboard-light.png"
+           alt="Kilter dashboard — KPI tiles, match-activity sparkline, ageing histogram, recent sessions">
+    </div>
+    <div style="background: var(--bg-card); padding: 14px 20px; border-radius: 8px; margin-top: 22px; font-size: 16px; color: var(--ink-muted); border-left: 3px solid var(--brand)">
       <strong style="color: var(--ink)">Pro move:</strong> press <kbd>Ctrl</kbd>+<kbd>K</kbd> → "Presenter mode" for the big-screen moment.
     </div>
   </div>
@@ -101,6 +105,10 @@
         <p>"A hundred pending matches — not a hundred clicks. <strong>Space. Space. Space.</strong> When a weaker-tier match comes up, slow down, check the narration, make the call."</p>
       </div>
     </div>
+    <div class="shot-frame" style="margin-top: 28px; max-width: 880px">
+      <img class="shot" src="/static/screenshots/sessions-reconcile.png"
+           alt="Kilter session review — Tier-1 strict match, SWIFT credit vs Flexcube debit, value-date and reference both green">
+    </div>
   </div>
 </section>
 
@@ -108,7 +116,7 @@
 <section class="slide" data-notes="
   SHOW: switch to Split view tab. Click a SWIFT row. Click multiple Flex rows.
   Watch the amount-tie pill go green. Hit <kbd>M</kbd>.
-  1 minute. This is a visceral 'Corona can't do this' moment.<br>
+  1 minute. This is a visceral 'legacy tools can't do this' moment.<br>
   If there's no natural split in today's data, just demo the UI and say
   'here's what it looks like when you need it.'">
   <div class="slide-inner">
@@ -128,7 +136,7 @@
       </div>
       <div class="card">
         <h3 style="color: var(--success);margin-bottom:12px">The talking beat</h3>
-        <p>"In Corona this is a break. Analyst writes an email. It sits for a week until someone untangles it by hand. <strong>In Kilter: five seconds and four keystrokes.</strong>"</p>
+        <p>"In legacy tools this is a break. Analyst writes an email. It sits for a week until someone untangles it by hand. <strong>In Kilter: five seconds and four keystrokes.</strong>"</p>
       </div>
     </div>
   </div>
@@ -138,8 +146,8 @@
 <section class="slide" data-notes="
   SHOW: navigate to Open items. Filter by min age 30 days. Click 'History'
   on any row. Show the timeline drawer. 1.5 minutes.
-  Key talking point: 'Corona's break exists only until the session closes.
-  Kilter's break has a life story.'">
+  Key talking point: 'In legacy tools the break exists only until the session
+  closes. Kilter's break has a life story.'">
   <div class="slide-inner">
     <h3>Step 4 / 8 · Open items + history</h3>
     <h2>Every break has a life story.</h2>
@@ -167,10 +175,10 @@
 <section class="slide" data-notes="
   SHOW: back to Dashboard. Click 'Download xlsx' on the Daily breaks report card.
   Open the downloaded file. 45 seconds.
-  Scroll through the tabs: Summary, BOG USD/EUR/GBP, TREASURY, PSC TROPS, etc.
+  Scroll through the tabs to show the per-currency breaks layout.
   'This is the workbook ops builds by hand every morning. Now it's one click.'">
   <div class="slide-inner">
-    <h3>Step 5 / 8 · The BoG daily report</h3>
+    <h3>Step 5 / 8 · The daily breaks report</h3>
     <h2>Manual workbook → one click.</h2>
     <div class="cols-2" style="margin-top: 40px">
       <div>
@@ -179,14 +187,81 @@
           <li>Dashboard → Daily breaks report card</li>
           <li>Click <strong>Download xlsx</strong></li>
           <li>Open the file</li>
-          <li>Scroll through tabs: Summary · BOG USD / EUR / GBP · TREASURY · PSC TROPS · TRADE SWITCHES · CASH MGT · GRA · TPU</li>
+          <li>Tabs match your existing regulatory workbook (per-currency, per-team, summary)</li>
           <li>Same layout as the manual workbook today</li>
         </ul>
       </div>
       <div class="card">
         <h3 style="color: var(--success);margin-bottom:12px">The talking beat</h3>
-        <p>"Yesterday: an analyst spent 40 minutes copy-pasting from Corona exports into this workbook. Today: <strong>one click, identical output, with live figures.</strong>"</p>
+        <p>"Yesterday: an analyst spent 40 minutes copy-pasting from legacy exports into this workbook. Today: <strong>one click, identical output, with live figures.</strong>"</p>
       </div>
+    </div>
+  </div>
+</section>
+
+<!-- =========== Step 5b: Mobile money =========== -->
+<section class="slide" data-notes="
+  SHOW: sidebar → Mobile money. Click a provider tile (MTN MoMo, Telcel)
+  to filter the wallets table + sessions table. 45 seconds.
+  Talking beat: 'Same engine, same review queue, same audit log — different
+  format. Pre-seeded operator profiles for the major networks.'">
+  <div class="slide-inner">
+    <h3>Step 5b / 8 · Mobile money</h3>
+    <h2>Wallet-bank reconciliation, same operator UI.</h2>
+    <div class="cols-2" style="margin-top: 40px">
+      <div>
+        <h3 style="color: var(--brand-2)">SHOW →</h3>
+        <ul>
+          <li>Sidebar → <strong>Mobile money</strong></li>
+          <li>Provider tiles colour-coded per network (M-Pesa, MTN MoMo, Airtel, Telcel)</li>
+          <li>Click a tile to filter the wallet + sessions tables</li>
+          <li>Show the wallet count and currencies per provider</li>
+          <li>Click into a wallet's session — same review queue as nostro</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3 style="color: var(--success);margin-bottom:12px">The talking beat</h3>
+        <p>"If you've been reconciling MTN MoMo or Telcel Cash by hand or with a separate vendor add-on, the saving here is direct. <strong>Same engine, same audit log, same role model</strong> — just a different file format on the way in. Pre-seeded operator profiles ship with the install."</p>
+      </div>
+    </div>
+    <div class="shot-frame" style="margin-top: 24px; max-width: 880px">
+      <img class="shot" src="/static/screenshots/mobile-money.png"
+           alt="Mobile money page — wallet registration prompt + pre-seeded operator profiles for M-Pesa, MTN MoMo, Airtel, Telcel">
+    </div>
+  </div>
+</section>
+
+<!-- =========== Step 5c: Cards =========== -->
+<section class="slide" data-notes="
+  SHOW: sidebar → Cards. Tabs: Files · Matches.
+  - On Files tab, point at scheme tiles (Visa / Mastercard / Verve / GhIPSS).
+  - On Matches tab, click 'Mismatched' chip — show mismatched-first sort.
+  - Click 'Records →' on a group to open the drawer with PAN cell.
+  - Mention the PCI banner at the top of the page.
+  90 seconds. CISO will lean in here.">
+  <div class="slide-inner">
+    <h3>Step 5c / 8 · Cards</h3>
+    <h2>Scheme settlements, PCI scope reduced by design.</h2>
+    <div class="cols-2" style="margin-top: 40px">
+      <div>
+        <h3 style="color: var(--brand-2)">SHOW →</h3>
+        <ul>
+          <li>Sidebar → <strong>Cards</strong></li>
+          <li>PCI banner: <strong>first6 + last4 only, never full PAN; CVV / track / PIN refused</strong></li>
+          <li>Files tab: scheme tiles (Visa, Mastercard, Verve, Cardlink GhIPSS)</li>
+          <li>Matches tab: filter chips (All · <strong>Mismatched</strong> · Matched · Unmatched)</li>
+          <li>Click <strong>Records →</strong> on a mismatched group — drawer opens</li>
+          <li>Drawer: per-record breakdown across files, masked PAN cell, status pill</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3 style="color: var(--success);margin-bottom:12px">The talking beat</h3>
+        <p>"Cards is where most reconciliation tools either don't go or drag your bank deeper into PCI scope. Kilter does neither. <strong>The schema has no column that could hold a full PAN.</strong> Loaders mask at the parser seam. CVV and track-data fields are refused on ingest. The N-way match engine joins on scheme reference, classifies each group, and surfaces mismatches first — your operators investigate the highest-leverage cases without scrolling."</p>
+      </div>
+    </div>
+    <div class="shot-frame" style="margin-top: 24px; max-width: 880px">
+      <img class="shot" src="/static/screenshots/cards.png"
+           alt="Cards page — PCI-DSS posture banner: first6 + last4 only, never full PAN; CVV / track / PIN refused at ingest">
     </div>
   </div>
 </section>
@@ -214,7 +289,7 @@
       </div>
       <div class="card">
         <h3 style="color: var(--success);margin-bottom:12px">The talking beat</h3>
-        <p>"Corona has no equivalent. This is the regulator's <strong>'show me your sign-off trail'</strong> question, answered structurally — not by PDF-ing an email thread."</p>
+        <p>"Most legacy reconciliation stacks have no equivalent. This is the regulator's <strong>'show me your sign-off trail'</strong> question, answered structurally — not by PDF-ing an email thread."</p>
       </div>
     </div>
   </div>
@@ -244,9 +319,13 @@
       </div>
       <div class="card">
         <h3 style="color: var(--success);margin-bottom:12px">The talking beat</h3>
-        <p>"Corona requires a person for every pull, every scan, every report. <strong>Kilter's calendar runs the day.</strong> Ops investigates the exceptions; the machine does the rest."</p>
-        <p style="margin-top:12px;font-size:16px;color:var(--ink-muted)">If asked about formats: the scan job accepts MT940/950 <code>.out</code>, ISO 20022 camt.053/054 <code>.xml</code> and BoG's RTGS <code>.txt</code> side-by-side — no reconfiguration.</p>
+        <p>"Legacy tools require a person for every pull, every scan, every report. <strong>Kilter's calendar runs the day.</strong> Ops investigates the exceptions; the machine does the rest."</p>
+        <p style="margin-top:12px;font-size:16px;color:var(--ink-muted)">If asked about formats: the scan job accepts MT940/950 <code>.out</code>, ISO 20022 camt.053/054 <code>.xml</code>, and any BYO CSV / xlsx profile side-by-side — no reconfiguration.</p>
       </div>
+    </div>
+    <div class="shot-frame" style="margin-top: 24px; max-width: 880px">
+      <img class="shot" src="/static/screenshots/scheduler.png"
+           alt="Scheduler page — daemon RUNNING, daily-close + breaks-report + intake-scan + SLA-alerts jobs all green">
     </div>
   </div>
 </section>
@@ -288,7 +367,8 @@
     <h1 style="font-size: 72px">Five hours of<br>manual work,<br>now fifteen minutes.</h1>
     <p style="margin-top: 40px; font-size: 24px; color: var(--ink-muted)">
       Dashboard &middot; review queue &middot; split match &middot; break history &middot;
-      BoG report &middot; certificate &middot; scheduler &middot; audit log.
+      daily report &middot; <strong>mobile money</strong> &middot; <strong>cards</strong> &middot;
+      certificate &middot; scheduler &middot; audit log.
     </p>
     <div class="gradient-line" style="margin: 40px auto"></div>
     <p style="font-size: 18px; color: var(--ink-dim); margin-top: 20px">

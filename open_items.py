@@ -42,7 +42,7 @@ def load_tolerance(conn, account_id: int | None) -> Tolerance:
     if account_id is None:
         return Tolerance()
     row = conn.execute(
-        "SELECT amount_tol_abs, amount_tol_pct, date_tol_days, min_ref_len "
+        "SELECT amount_tol_abs, amount_tol_pct, date_tol_days, min_ref_len, fx_tol_bps "
         "FROM tolerance_rules WHERE account_id=?",
         (account_id,),
     ).fetchone()
@@ -53,6 +53,7 @@ def load_tolerance(conn, account_id: int | None) -> Tolerance:
         amount_tol_pct=row['amount_tol_pct'],
         date_tol_days=row['date_tol_days'],
         min_ref_len=row['min_ref_len'],
+        fx_tol_bps=row['fx_tol_bps'] or 0.0,
     )
 
 

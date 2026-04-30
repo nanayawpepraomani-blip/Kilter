@@ -1,0 +1,736 @@
+{% extends "base.html" %}
+{% block title %}Cards · Kilter{% endblock %}
+{% block crumbs %}<a href="/">Dashboard</a><span class="sep">/</span><span class="current">Cards</span>{% endblock %}
+
+{% block content %}
+<style>
+  .scheme-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 14px; margin-bottom: 22px;
+  }
+  .scheme-tile {
+    background: var(--c-surface); border: 1px solid var(--c-border);
+    border-radius: var(--radius-lg); padding: 16px 18px;
+    transition: border-color 120ms ease, box-shadow 120ms ease;
+    cursor: pointer;
+  }
+  .scheme-tile:hover {
+    border-color: var(--c-primary); box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  }
+  .scheme-name {
+    font-weight: 700; font-size: 1.02em; margin-bottom: 4px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .scheme-icon {
+    width: 28px; height: 28px; border-radius: 6px;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: white; font-weight: 800; font-size: 11px; letter-spacing: 0.04em;
+  }
+  /* Scheme cues — neutral hues, not the brands' marks. */
+  .scheme-icon.visa        { background: #1a1f71; }
+  .scheme-icon.mastercard  { background: #eb001b; }
+  .scheme-icon.verve       { background: #006e3c; }
+  .scheme-icon.gh_cardlink { background: #0050a0; }
+  .scheme-icon.other       { background: #6b7280; }
+  .scheme-stat {
+    display: flex; justify-content: space-between;
+    color: var(--c-text-muted); font-size: var(--t-small);
+    padding: 3px 0;
+  }
+  .scheme-stat .v { color: var(--c-text); font-weight: 600; }
+
+  .pan-cell {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: var(--t-small);
+    background: var(--c-bg-sub); padding: 1px 8px;
+    border-radius: 4px; color: var(--c-text-muted);
+    letter-spacing: 0.04em;
+  }
+  .pci-banner {
+    background: #eef6ff; border: 1px solid #bfdbfe; border-radius: 8px;
+    padding: 10px 14px; margin-bottom: 16px; font-size: var(--t-small);
+    color: #1e3a8a; display: flex; gap: 10px; align-items: center;
+  }
+  .pci-banner b { color: #1e40af; }
+
+  /* Tab strip switching between Files and Matches views. Same
+     visual idiom as /sessions-list "View by source" tabs. */
+  .tabs {
+    display: flex; gap: 0; border-bottom: 1px solid var(--c-border);
+    margin: 0 0 18px 0;
+  }
+  .tab {
+    background: none; border: none; padding: 10px 18px; cursor: pointer;
+    font-size: var(--t-base); color: var(--c-text-muted); font-weight: 500;
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+  }
+  .tab.active { color: var(--c-primary); border-bottom-color: var(--c-primary); font-weight: 600; }
+  .tab .tab-count { color: var(--c-text-muted); font-weight: 400; margin-left: 4px; }
+  .tab.active .tab-count { color: var(--c-primary); }
+
+  /* Status filter chips for the match-groups table. */
+  .chip-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .chip {
+    background: var(--c-bg-sub); border: 1px solid var(--c-border);
+    border-radius: 999px; padding: 4px 12px; font-size: var(--t-small);
+    cursor: pointer; user-select: none; transition: all 100ms ease;
+  }
+  .chip:hover { border-color: var(--c-primary); }
+  .chip.active { background: var(--c-primary-soft); border-color: var(--c-primary); color: var(--c-primary); font-weight: 600; }
+  .chip .n { font-weight: 600; margin-left: 4px; }
+
+  /* Match-status pills. Mismatched is the eye-catcher — operators
+     should land on it without scrolling. */
+  .pill {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 9px; border-radius: 999px;
+    font-size: 11px; font-weight: 600; letter-spacing: 0.02em;
+  }
+  .pill.matched     { background: #dcfce7; color: #166534; }
+  .pill.mismatched  { background: #fee2e2; color: #991b1b; }
+  .pill.unmatched   { background: #f3f4f6; color: #4b5563; }
+  .pill.disputed    { background: #fef3c7; color: #92400e; }
+  .pill.written_off { background: #e0e7ff; color: #3730a3; }
+
+  .ref-cell {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: var(--t-small);
+  }
+
+  /* Drill-in drawer — slides in from the right when an operator
+     clicks a match group. Doesn't block the rest of the page. */
+  .drawer-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.25);
+    z-index: 80;
+  }
+  .drawer {
+    position: fixed; top: 0; right: 0; bottom: 0; width: 720px; max-width: 100vw;
+    background: var(--c-surface); box-shadow: -4px 0 16px rgba(0,0,0,0.08);
+    z-index: 81; overflow-y: auto;
+  }
+  .drawer-head {
+    padding: 18px 22px; border-bottom: 1px solid var(--c-border);
+    display: flex; justify-content: space-between; align-items: center;
+    position: sticky; top: 0; background: var(--c-surface); z-index: 1;
+  }
+  .drawer-body { padding: 18px 22px; }
+  .drawer-meta-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px;
+    margin-bottom: 16px; font-size: var(--t-small);
+  }
+  .drawer-meta-grid .k { color: var(--c-text-muted); }
+  .drawer-meta-grid .v { font-weight: 600; }
+</style>
+
+<div class="page-head">
+  <div>
+    <h1>Cards</h1>
+    <div class="subtitle">Card-scheme settlement reconciliation. Issuer / acquirer / switch settlement files ingest as PCI-safe records — only first 6 + last 4 of each PAN ever persist.</div>
+  </div>
+  <div>
+    <button class="btn btn-primary admin-only" id="btn-upload" style="display:none">Upload settlement file</button>
+    <a href="/byo-formats" class="btn btn-default admin-only" style="display:none;margin-left:8px">CSV profiles &rarr;</a>
+  </div>
+</div>
+
+<div class="pci-banner">
+  <span>🔒</span>
+  <div>
+    <b>PCI-DSS posture:</b> Kilter never stores full PAN. Settlement files
+    are masked at parser level into <code>first6</code> + <code>last4</code>;
+    CVV / track / PIN columns are refused. See
+    <a href="/manuals">CARDS_DESIGN.md</a> for the full scope-reduction rationale.
+  </div>
+</div>
+
+<div id="empty-state" class="card" style="display:none">
+  <div class="card-body" style="padding:32px;text-align:center">
+    <h2 style="margin:0 0 8px 0">No settlement files yet</h2>
+    <p class="muted" style="max-width:560px;margin:0 auto 14px">
+      Upload an issuer or acquirer settlement CSV to start. For binary
+      schemes (Visa Base II, Mastercard IPM) the parsers are stubbed
+      pending scheme-published synthetic test data — see
+      <a href="/manuals">docs/CARDS_DESIGN.md</a>.
+    </p>
+    <button class="btn btn-primary admin-only" onclick="document.getElementById('btn-upload').click()" style="display:none">Upload settlement file</button>
+  </div>
+</div>
+
+<div id="scheme-grid" class="scheme-grid"></div>
+
+<!-- Tab strip — Files vs Matches. Both views read the same dataset
+     but answer different operator questions: "what came in" vs
+     "what reconciles." -->
+<div class="tabs" id="tabs" style="display:none">
+  <button class="tab active" data-tab="files">Files <span class="tab-count" id="tab-files-count"></span></button>
+  <button class="tab" data-tab="matches">Matches <span class="tab-count" id="tab-matches-count"></span></button>
+</div>
+
+<!-- Files panel -->
+<div id="panel-files">
+  <div class="card">
+    <div class="card-head">
+      <h2>Settlement files</h2>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span class="hint" id="files-count">0 files</span>
+        <a class="btn btn-default btn-sm" href="/cards/files/export" download>Export CSV</a>
+      </div>
+    </div>
+    <div class="card-body tight">
+      <table class="table" id="files-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Scheme</th>
+            <th>Role</th>
+            <th>Settlement date</th>
+            <th>Filename</th>
+            <th class="num">Records</th>
+            <th class="num">Total</th>
+            <th>Currency</th>
+            <th>Ingested</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody><tr class="empty-row"><td colspan="10">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Matches panel -->
+<div id="panel-matches" style="display:none">
+  <div class="card">
+    <div class="card-head" style="flex-wrap:wrap;gap:12px">
+      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+        <h2 style="margin:0">Match groups</h2>
+        <div class="chip-row" id="match-chips">
+          <span class="chip active" data-status="">All<span class="n" id="chip-all">0</span></span>
+          <span class="chip" data-status="mismatched">Mismatched<span class="n" id="chip-mismatched">0</span></span>
+          <span class="chip" data-status="matched">Matched<span class="n" id="chip-matched">0</span></span>
+          <span class="chip" data-status="unmatched">Unmatched<span class="n" id="chip-unmatched">0</span></span>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-default btn-sm" id="btn-refresh-matches">Refresh</button>
+        <button class="btn btn-default btn-sm" id="btn-export-matches">Export CSV</button>
+        <button class="btn btn-primary btn-sm admin-only" id="btn-recompute" style="display:none">Recompute &amp; persist</button>
+      </div>
+    </div>
+    <div class="card-body" style="padding:0 16px 6px;font-size:var(--t-small);color:var(--c-text-muted)">
+      Records grouped by <code>scheme_ref</code> across all settlement files.
+      <b>Mismatched</b> = ≥2 files contribute but settlement amounts disagree
+      (likely fee or FX gap). <b>Matched</b> = ≥2 files agree within tolerance.
+      <b>Unmatched</b> = only one file has this reference yet — the other
+      stage(s) haven't been ingested.
+      <span class="admin-only" style="display:none">Recompute writes the
+      status into <code>card_settlement_records.recon_status</code>; operator-
+      set <code>disputed</code> / <code>written_off</code> stays untouched.</span>
+    </div>
+    <div class="card-body tight">
+      <table class="table" id="matches-table">
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>Scheme ref</th>
+            <th>Schemes</th>
+            <th class="num">Records</th>
+            <th class="num">Files</th>
+            <th class="num">Min</th>
+            <th class="num">Max</th>
+            <th class="num">Spread</th>
+            <th>Currency</th>
+            <th>Last 4</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody><tr class="empty-row"><td colspan="11">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Drill-in drawer — opens when an operator clicks a match group. -->
+<div id="drawer-backdrop" class="drawer-backdrop" style="display:none" onclick="closeDrawer()"></div>
+<div id="drawer" class="drawer" style="display:none">
+  <div class="drawer-head">
+    <div>
+      <div class="muted" style="font-size:var(--t-small)">Match group</div>
+      <h2 style="margin:2px 0 0 0;font-family:ui-monospace,monospace" id="drawer-ref">—</h2>
+    </div>
+    <button class="btn btn-ghost btn-sm" onclick="closeDrawer()">✕</button>
+  </div>
+  <div class="drawer-body" id="drawer-body">Loading…</div>
+</div>
+
+<!-- Upload modal — admin only. -->
+<div id="upload-modal" class="modal" style="display:none">
+  <div class="modal-card" style="max-width:560px">
+    <div class="modal-head">
+      <h2>Upload settlement file</h2>
+      <button class="btn btn-ghost btn-sm" onclick="closeUpload()">✕</button>
+    </div>
+    <form id="upload-form" class="modal-body" onsubmit="return submitUpload(event)">
+      <div class="form-row">
+        <label>Scheme</label>
+        <select name="scheme" required>
+          <option value="visa">Visa</option>
+          <option value="mastercard">Mastercard</option>
+          <option value="verve">Verve</option>
+          <option value="gh_cardlink">Cardlink (GhIPSS)</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label>Role</label>
+        <select name="role" required>
+          <option value="issuer">Issuer</option>
+          <option value="acquirer">Acquirer</option>
+          <option value="switch">Switch</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label>Settlement date <span class="muted">(YYYY-MM-DD, optional if file has its own)</span></label>
+        <input type="date" name="settlement_date">
+      </div>
+      <div class="form-row">
+        <label>Currency <span class="muted">(ISO 4217, fallback)</span></label>
+        <input type="text" name="currency" maxlength="3" placeholder="GHS" style="text-transform:uppercase">
+      </div>
+      <div class="form-row">
+        <label>CSV profile</label>
+        <select name="profile_id" id="upload-profile" required>
+          <option value="">Loading…</option>
+        </select>
+        <div class="muted" style="font-size:var(--t-small);margin-top:4px">
+          The profile defines column mapping for the issuer's CSV format. Define new ones in <a href="/byo-formats">BYO formats</a>.
+        </div>
+      </div>
+      <div class="form-row">
+        <label>File</label>
+        <input type="file" name="file" accept=".csv,.txt,.out,.dat" required>
+      </div>
+      <div class="form-row">
+        <label>Notes <span class="muted">(optional)</span></label>
+        <input type="text" name="notes" maxlength="200">
+      </div>
+      <div id="upload-error" class="error-banner" style="display:none"></div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-default" onclick="closeUpload()">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="upload-submit">Upload</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.body.dataset.nav = 'cards';
+
+const SCHEME_LABELS = {
+  visa: 'Visa', mastercard: 'Mastercard', verve: 'Verve',
+  gh_cardlink: 'Cardlink (GhIPSS)', other: 'Other',
+};
+
+let allFiles = [];
+let currentScheme = '';
+
+let allMatches = [];
+let currentMatchStatus = '';   // '' = all, 'matched' / 'mismatched' / 'unmatched'
+let currentTab = 'files';
+
+async function load() {
+  const r = await fetch('/cards/files');
+  if (!r.ok) {
+    document.querySelector('#files-table tbody').innerHTML =
+      '<tr class="empty-row"><td colspan="10">Failed to load.</td></tr>';
+    return;
+  }
+  allFiles = await r.json();
+
+  if (allFiles.length === 0) {
+    document.getElementById('empty-state').style.display = '';
+    document.getElementById('scheme-grid').style.display = 'none';
+    document.getElementById('tabs').style.display = 'none';
+    document.getElementById('panel-files').style.display = 'none';
+    document.getElementById('panel-matches').style.display = 'none';
+    return;
+  }
+  document.getElementById('empty-state').style.display = 'none';
+  document.getElementById('tabs').style.display = '';
+  document.getElementById('tab-files-count').textContent = `(${allFiles.length})`;
+
+  renderSchemeTiles();
+  renderFiles();
+  // Eagerly fetch matches so the chip counts reflect reality even on
+  // the Files tab. Cheap — server computes this on-demand from records.
+  loadMatches();
+}
+
+function renderSchemeTiles() {
+  const host = document.getElementById('scheme-grid');
+  const buckets = new Map();
+  for (const f of allFiles) {
+    const key = f.scheme || 'other';
+    const b = buckets.get(key) || {
+      key, label: SCHEME_LABELS[key] || key,
+      files: 0, records: 0, total: 0, currencies: new Set(),
+    };
+    b.files += 1;
+    b.records += (f.record_count || 0);
+    b.total += (f.total_amount || 0);
+    if (f.currency) b.currencies.add(f.currency);
+    buckets.set(key, b);
+  }
+  const tiles = [...buckets.values()].sort((a, b) => b.records - a.records);
+  host.innerHTML = tiles.map(b => {
+    const isActive = currentScheme === b.key;
+    return `
+      <div class="scheme-tile" data-scheme="${esc(b.key)}"
+           style="${isActive ? 'border-color:var(--c-primary);box-shadow:0 0 0 2px var(--c-primary-soft)' : ''}">
+        <div class="scheme-name">
+          <span class="scheme-icon ${esc(b.key)}">${esc((SCHEME_LABELS[b.key] || b.key).slice(0, 4).toUpperCase())}</span>
+          ${esc(b.label)}
+        </div>
+        <div class="scheme-stat"><span>Files</span><span class="v">${b.files}</span></div>
+        <div class="scheme-stat"><span>Records</span><span class="v">${b.records.toLocaleString()}</span></div>
+        <div class="scheme-stat"><span>Currencies</span><span class="v">${[...b.currencies].sort().join(', ') || '—'}</span></div>
+      </div>`;
+  }).join('');
+  host.querySelectorAll('.scheme-tile').forEach(el => {
+    el.addEventListener('click', () => {
+      const k = el.dataset.scheme;
+      currentScheme = (currentScheme === k) ? '' : k;
+      renderSchemeTiles();
+      renderFiles();
+    });
+  });
+}
+
+function renderFiles() {
+  const files = currentScheme
+    ? allFiles.filter(f => (f.scheme || 'other') === currentScheme)
+    : allFiles;
+  document.getElementById('files-count').textContent =
+    `${files.length} file${files.length === 1 ? '' : 's'}`
+    + (currentScheme ? ` · ${SCHEME_LABELS[currentScheme] || currentScheme}` : '');
+
+  const tbody = document.querySelector('#files-table tbody');
+  if (files.length === 0) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="10">No files in this scope.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = files.map(f => `
+    <tr>
+      <td>#${f.id}</td>
+      <td><span class="scheme-icon ${esc(f.scheme || 'other')}" style="width:18px;height:18px;font-size:8px;letter-spacing:0;display:inline-flex;margin-right:4px">${esc((SCHEME_LABELS[f.scheme] || f.scheme || 'other').slice(0, 3).toUpperCase())}</span>${esc(SCHEME_LABELS[f.scheme] || f.scheme || '—')}</td>
+      <td>${esc(f.role || '')}</td>
+      <td>${esc(f.settlement_date || f.processing_date || '—')}</td>
+      <td class="muted">${esc(f.original_filename || '')}</td>
+      <td class="num">${(f.record_count || 0).toLocaleString()}</td>
+      <td class="num">${fmtAmount(f.total_amount || 0)}</td>
+      <td>${esc(f.currency || '—')}</td>
+      <td class="muted">${fmtDateTime(f.ingested_at)}<br><span style="font-size:11px">${esc(f.ingested_by || '')}</span></td>
+      <td style="white-space:nowrap">
+        <a href="/cards/files/${f.id}" class="btn btn-default btn-sm" onclick="return openFile(event, ${f.id})">Records &rarr;</a>
+        <a href="/cards/files/${f.id}/records/export" class="btn btn-default btn-sm" download style="margin-left:4px">CSV</a>
+      </td>
+    </tr>`).join('');
+}
+
+function fmtAmount(n) {
+  return Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// ---------------- Upload modal ----------------
+
+document.getElementById('btn-upload').addEventListener('click', openUpload);
+
+async function openUpload() {
+  const r = await fetch('/csv-profiles');
+  const sel = document.getElementById('upload-profile');
+  if (r.ok) {
+    const profiles = await r.json();
+    sel.innerHTML = profiles.length === 0
+      ? '<option value="">No profiles defined — create one in BYO formats</option>'
+      : '<option value="">Choose a profile…</option>'
+        + profiles.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+  }
+  document.getElementById('upload-error').style.display = 'none';
+  document.getElementById('upload-modal').style.display = '';
+}
+
+function closeUpload() {
+  document.getElementById('upload-modal').style.display = 'none';
+}
+
+async function submitUpload(ev) {
+  ev.preventDefault();
+  const form = document.getElementById('upload-form');
+  const submit = document.getElementById('upload-submit');
+  const errEl = document.getElementById('upload-error');
+  const fd = new FormData(form);
+  // Empty currency / settlement_date should not be sent as ''.
+  for (const k of ['currency', 'settlement_date', 'notes']) {
+    if (!fd.get(k)) fd.delete(k);
+  }
+  submit.disabled = true; submit.textContent = 'Uploading…';
+  errEl.style.display = 'none';
+  try {
+    const r = await fetch('/cards/files', { method: 'POST', body: fd });
+    if (!r.ok) {
+      const detail = (await r.json().catch(() => ({}))).detail || `HTTP ${r.status}`;
+      errEl.textContent = detail; errEl.style.display = '';
+      submit.disabled = false; submit.textContent = 'Upload';
+      return false;
+    }
+    closeUpload();
+    await load();
+  } catch (exc) {
+    errEl.textContent = String(exc); errEl.style.display = '';
+  }
+  submit.disabled = false; submit.textContent = 'Upload';
+  return false;
+}
+
+function openFile(ev, fid) {
+  ev.preventDefault();
+  // Lazy: fetch & render in a quick modal-less drawer.
+  fetch(`/cards/files/${fid}/records`)
+    .then(r => r.json())
+    .then(data => {
+      const rows = (data.records || []).map(r => `
+        <tr>
+          <td>${r.record_index}</td>
+          <td>${r.pan_first6 || r.pan_last4
+              ? `<span class="pan-cell">${esc(r.pan_first6 || '••••••')} •• ${esc(r.pan_last4 || '••••')}</span>`
+              : '<span class="muted">—</span>'}</td>
+          <td>${esc(r.scheme_ref || '')}</td>
+          <td>${esc(r.merchant_name || '—')}</td>
+          <td class="num">${fmtAmount(r.amount_settlement || 0)}</td>
+          <td>${esc(r.currency_settlement || '—')}</td>
+          <td>${esc(r.transaction_date || '—')}</td>
+          <td>${esc(r.recon_status || '')}</td>
+        </tr>`).join('');
+      const w = window.open('', '_blank', 'width=1100,height=700');
+      w.document.write(`
+        <html><head><title>Records · file #${fid}</title>
+        <style>
+          body { font: 13px ui-sans-serif, system-ui; padding: 20px; }
+          table { border-collapse: collapse; width: 100%; }
+          th, td { border-bottom: 1px solid #e5e7eb; padding: 6px 10px; text-align: left; font-size: 12px; }
+          th { background: #f9fafb; font-weight: 600; }
+          .num { text-align: right; }
+          .muted { color: #9ca3af; }
+          .pan-cell { font-family: monospace; background: #f3f4f6; padding: 1px 6px; border-radius: 3px; }
+          h1 { font-size: 18px; margin: 0 0 12px 0; }
+        </style></head><body>
+        <h1>File #${fid} · ${data.file?.original_filename || ''} · ${rows ? data.records.length : 0} of ${data.file?.record_count || 0} records</h1>
+        <table>
+          <thead><tr>
+            <th>#</th><th>PAN</th><th>Scheme ref</th><th>Merchant</th>
+            <th class="num">Amount</th><th>Ccy</th><th>Txn date</th><th>Status</th>
+          </tr></thead>
+          <tbody>${rows || '<tr><td colspan="8" class="muted">No records.</td></tr>'}</tbody>
+        </table></body></html>`);
+      w.document.close();
+    });
+  return false;
+}
+
+// ---------------- Tab handling ----------------
+
+document.querySelectorAll('#tabs .tab').forEach(btn => {
+  btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+});
+
+function switchTab(name) {
+  currentTab = name;
+  document.querySelectorAll('#tabs .tab').forEach(b => {
+    b.classList.toggle('active', b.dataset.tab === name);
+  });
+  document.getElementById('panel-files').style.display   = name === 'files'   ? '' : 'none';
+  document.getElementById('panel-matches').style.display = name === 'matches' ? '' : 'none';
+}
+
+// ---------------- Matches: load, render, drill-in, recompute ----------------
+
+async function loadMatches() {
+  const r = await fetch('/cards/match/groups');
+  if (!r.ok) {
+    document.querySelector('#matches-table tbody').innerHTML =
+      '<tr class="empty-row"><td colspan="11">Failed to load.</td></tr>';
+    return;
+  }
+  const data = await r.json();
+  allMatches = data.groups || [];
+  // Counts come from the server's UNFILTERED total — chip badges
+  // show the population, not the current-view subset.
+  document.getElementById('chip-all').textContent          = data.total_groups;
+  document.getElementById('chip-mismatched').textContent   = data.counts.mismatched;
+  document.getElementById('chip-matched').textContent      = data.counts.matched;
+  document.getElementById('chip-unmatched').textContent    = data.counts.unmatched;
+  document.getElementById('tab-matches-count').textContent = `(${data.total_groups})`;
+  renderMatches();
+}
+
+document.getElementById('match-chips').addEventListener('click', ev => {
+  const chip = ev.target.closest('.chip');
+  if (!chip) return;
+  document.querySelectorAll('#match-chips .chip').forEach(c =>
+    c.classList.toggle('active', c === chip));
+  currentMatchStatus = chip.dataset.status || '';
+  renderMatches();
+});
+
+document.getElementById('btn-refresh-matches').addEventListener('click', loadMatches);
+
+// Export CSV — the link respects the current chip filter so operators
+// download exactly what they're looking at.
+document.getElementById('btn-export-matches').addEventListener('click', () => {
+  const params = new URLSearchParams();
+  if (currentMatchStatus) params.set('status', currentMatchStatus);
+  window.location.href = '/cards/match/groups/export' + (params.toString() ? '?' + params : '');
+});
+
+document.getElementById('btn-recompute').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-recompute');
+  btn.disabled = true; btn.textContent = 'Recomputing…';
+  try {
+    const r = await fetch('/cards/match/recompute', { method: 'POST' });
+    if (!r.ok) {
+      const detail = (await r.json().catch(() => ({}))).detail || `HTTP ${r.status}`;
+      alert('Recompute failed: ' + detail);
+    } else {
+      const result = await r.json();
+      // Refresh both views — record statuses changed.
+      await load();
+      switchTab('matches');
+      // Brief inline confirmation.
+      btn.textContent = `Updated ${result.records_updated} record${result.records_updated === 1 ? '' : 's'} ✓`;
+      setTimeout(() => { btn.textContent = 'Recompute & persist'; btn.disabled = false; }, 2000);
+      return;
+    }
+  } catch (exc) {
+    alert('Recompute failed: ' + exc);
+  }
+  btn.disabled = false; btn.textContent = 'Recompute & persist';
+});
+
+function renderMatches() {
+  // Filter (chip) then sort: mismatched first (largest spread first),
+  // then matched, then unmatched. Within a status, alpha by scheme_ref.
+  // The server's compute_match_groups already sorts this way, but we
+  // re-sort client-side after chip filtering so the population stays
+  // intuitive even on a narrowed view.
+  const statusRank = { mismatched: 0, matched: 1, unmatched: 2 };
+  let groups = allMatches.slice();
+  if (currentMatchStatus) {
+    groups = groups.filter(g => g.status === currentMatchStatus);
+  }
+  groups.sort((a, b) => {
+    const rs = (statusRank[a.status] ?? 9) - (statusRank[b.status] ?? 9);
+    if (rs) return rs;
+    if (a.amount_spread !== b.amount_spread) return b.amount_spread - a.amount_spread;
+    return (a.scheme_ref || '').localeCompare(b.scheme_ref || '');
+  });
+
+  const tbody = document.querySelector('#matches-table tbody');
+  if (groups.length === 0) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="11">No groups in this scope.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = groups.map(g => `
+    <tr>
+      <td><span class="pill ${esc(g.status)}">${esc(g.status)}</span></td>
+      <td><span class="ref-cell">${esc(g.scheme_ref)}</span></td>
+      <td>${(g.schemes || []).map(s => esc(SCHEME_LABELS[s] || s)).join(', ') || '<span class="muted">—</span>'}</td>
+      <td class="num">${g.record_count}</td>
+      <td class="num">${g.file_count}</td>
+      <td class="num">${fmtAmount(g.amount_min)}</td>
+      <td class="num">${fmtAmount(g.amount_max)}</td>
+      <td class="num" style="${g.amount_spread > 0 ? 'color:#991b1b;font-weight:600' : ''}">${fmtAmount(g.amount_spread)}</td>
+      <td>${(g.currencies || []).join(', ') || '<span class="muted">—</span>'}</td>
+      <td>${(g.pan_last4_set || []).map(p => `<span class="pan-cell">••${esc(p)}</span>`).join(' ') || '<span class="muted">—</span>'}</td>
+      <td><button class="btn btn-default btn-sm" onclick="openDrawer('${encodeURIComponent(g.scheme_ref)}')">Records &rarr;</button></td>
+    </tr>`).join('');
+}
+
+// ---------------- Drill-in drawer ----------------
+
+async function openDrawer(refEncoded) {
+  const ref = decodeURIComponent(refEncoded);
+  document.getElementById('drawer-ref').textContent = ref;
+  document.getElementById('drawer-body').textContent = 'Loading…';
+  document.getElementById('drawer-backdrop').style.display = '';
+  document.getElementById('drawer').style.display = '';
+  try {
+    const r = await fetch(`/cards/match/groups/${encodeURIComponent(ref)}/records`);
+    if (!r.ok) {
+      document.getElementById('drawer-body').textContent = 'Failed to load records.';
+      return;
+    }
+    const data = await r.json();
+    renderDrawer(ref, data.records || []);
+  } catch (exc) {
+    document.getElementById('drawer-body').textContent = String(exc);
+  }
+}
+
+function closeDrawer() {
+  document.getElementById('drawer-backdrop').style.display = 'none';
+  document.getElementById('drawer').style.display = 'none';
+}
+document.addEventListener('keydown', ev => {
+  if (ev.key === 'Escape') closeDrawer();
+});
+
+function renderDrawer(ref, recs) {
+  if (!recs.length) {
+    document.getElementById('drawer-body').innerHTML = '<p class="muted">No records.</p>';
+    return;
+  }
+  // Quick group summary so an operator can see the picture without
+  // scanning every row: total amount, currencies, file/role mix.
+  const amts = recs.map(r => Number(r.amount_settlement || 0));
+  const total = amts.reduce((a, b) => a + b, 0);
+  const min = Math.min(...amts), max = Math.max(...amts);
+  const spread = max - min;
+  const fileSummary = [...new Set(recs.map(r => `#${r.file_id} (${r.role})`))].join(', ');
+  const ccys = [...new Set(recs.map(r => r.currency_settlement).filter(Boolean))];
+
+  const rows = recs.map(r => `
+    <tr>
+      <td><a href="/cards/files/${r.file_id}">#${r.file_id}</a><br><span class="muted" style="font-size:11px">${esc(r.role || '')}</span></td>
+      <td>${r.pan_first6 || r.pan_last4
+          ? `<span class="pan-cell">${esc(r.pan_first6 || '••••••')} •• ${esc(r.pan_last4 || '••••')}</span>`
+          : '<span class="muted">—</span>'}</td>
+      <td>${esc(r.merchant_name || '—')}<br><span class="muted" style="font-size:11px">${esc(r.merchant_id || '')}</span></td>
+      <td class="num">${fmtAmount(r.amount_settlement || 0)}</td>
+      <td>${esc(r.currency_settlement || '—')}</td>
+      <td>${esc(r.transaction_date || '—')}</td>
+      <td><span class="pill ${esc(r.recon_status || 'unmatched')}">${esc(r.recon_status || 'unmatched')}</span>${r.matched_by ? `<br><span class="muted" style="font-size:11px">by ${esc(r.matched_by)}</span>` : ''}</td>
+    </tr>`).join('');
+
+  document.getElementById('drawer-body').innerHTML = `
+    <div class="drawer-meta-grid">
+      <div class="k">Records</div><div class="v">${recs.length}</div>
+      <div class="k">Files</div><div class="v">${fileSummary}</div>
+      <div class="k">Currencies</div><div class="v">${ccys.join(', ') || '—'}</div>
+      <div class="k">Amount range</div><div class="v">${fmtAmount(min)} – ${fmtAmount(max)} (spread ${fmtAmount(spread)})</div>
+      <div class="k">Amount total</div><div class="v">${fmtAmount(total)}</div>
+    </div>
+    <table class="table tight">
+      <thead><tr>
+        <th>File</th><th>PAN</th><th>Merchant</th>
+        <th class="num">Amount</th><th>Ccy</th><th>Txn date</th><th>Status</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+// fetch is patched in base.html to add X-Session-Token automatically.
+load();
+</script>
+{% endblock %}

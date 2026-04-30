@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Scan messages · Kilter{% endblock %}
+{% block crumbs %}<a href="/">Dashboard</a><span class="sep">/</span><span class="current">Scan messages</span>{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Scan messages</h1>
+    <div class="subtitle">Sweep the watched folders <code>messages/swift/</code> and <code>messages/flexcube/</code>. Files pair by registered cash account, then run through the matching engine. Idempotent — re-running ignores anything already ingested by SHA-256.</div>
+  </div>
+</div>
+
+<!-- Scan-folder card (admin-only). -->
+<div class="card admin-only" id="scan" style="display:none">
+  <div class="card-head">
+    <h2>Scan now</h2>
+    <div class="hint">Click to sweep both intake folders. Results show below per file.</div>
+  </div>
+  <div class="card-body">
+    <button class="btn btn-primary" id="scan-btn" type="button">Scan now</button>
+    <div class="status" id="scan-status"></div>
+    <div id="scan-results" style="margin-top:14px"></div>
+  </div>
+</div>
+
+<!-- Audit / ops viewers can't trigger; tell them why the page looks empty. -->
+<div class="card non-admin-only" style="display:none">
+  <div class="card-body">
+    <p class="muted" style="margin:0">Scanning is admin-only. Ask an administrator to trigger the sweep;
+    the matching engine runs identically once a session lands.</p>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.body.dataset.nav = 'scan';
+
+document.addEventListener('me:loaded', (ev) => {
+  const isAdmin = ev.detail.role === 'admin';
+  document.querySelectorAll('.non-admin-only').forEach(el =>
+    el.style.display = isAdmin ? 'none' : '');
+});
+
+document.getElementById('scan-btn')?.addEventListener('click', async () => {
+  const btn = document.getElementById('scan-btn');
+  const status = document.getElementById('scan-status');
+  const results = document.getElementById('scan-results');
+  btn.disabled = true;
+  status.className = 'status';
+  status.textContent = 'Scanning...';
+  results.innerHTML = '';
+  try {
+    const r = await fetch('/scan', { method: 'POST' });
+    if (!r.ok) throw new Error((await r.json()).detail || 'Scan failed');
+    const j = await r.json();
+    const created = j.sessions_created.length;
+    const parts = Object.entries(j.counts).map(([k, v]) => `${v} ${k}`).join(' · ');
+    status.className = created > 0 ? 'status success' : 'status';
+    status.textContent = created > 0
+      ? `Created ${created} session${created === 1 ? '' : 's'}. ${parts}.`
+      : (j.outcomes.length === 0 ? 'Nothing new in the messages folder.' : parts);
+
+    if (j.outcomes.length > 0) {
+      const badgeClass = {
+        ingested: 'badge-success', duplicate: 'badge-danger',
+        unregistered: 'badge-warn', no_partner: 'badge-info',
+        mismatch: 'badge-danger', error: 'badge-danger',
+      };
+      results.innerHTML = `
+        <table class="table">
+          <thead><tr><th>File</th><th>Kind</th><th>Status</th><th>Reason</th><th></th></tr></thead>
+          <tbody>${j.outcomes.map(o => `
+            <tr>
+              <td><code>${esc(o.file)}</code></td>
+              <td class="muted">${esc(o.kind)}</td>
+              <td><span class="badge ${badgeClass[o.status] || 'badge-neutral'}">${esc(o.status)}</span></td>
+              <td class="muted">${esc(o.reason)}</td>
+              <td>${o.session_id ? `<a class="btn btn-default btn-sm" href="/sessions/${o.session_id}/review">Session ${o.session_id} &rarr;</a>` : ''}</td>
+            </tr>`).join('')}</tbody>
+        </table>`;
+    }
+  } catch (err) {
+    status.className = 'status error';
+    status.textContent = err.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
+</script>
+{% endblock %}

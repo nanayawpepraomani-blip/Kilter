@@ -3,12 +3,46 @@
 {% block crumbs %}<a href="/">Dashboard</a><span class="sep">/</span><span class="current">Sessions</span>{% endblock %}
 
 {% block content %}
+<style>
+  /* Reuse the same tab styling the review page uses so the look is
+     consistent across Kilter — underlined active tab, count pill on
+     the right. */
+  .tabs {
+    display: flex; gap: 0; border-bottom: 1px solid var(--c-border);
+    margin-bottom: 16px; flex-wrap: wrap;
+  }
+  .tabs .tab {
+    padding: 10px 18px; font-size: var(--t-body); color: var(--c-text-muted);
+    cursor: pointer; border-bottom: 2px solid transparent; font-weight: 500;
+    background: none; border-top: 0; border-left: 0; border-right: 0; font-family: inherit;
+  }
+  .tabs .tab:hover { color: var(--c-text); }
+  .tabs .tab.active { color: var(--c-primary); border-bottom-color: var(--c-primary); font-weight: 600; }
+  .tabs .tab .pill {
+    display: inline-block; margin-left: 6px; font-size: var(--t-micro);
+    background: #e5e7eb; color: var(--c-text-muted);
+    padding: 1px 7px; border-radius: 999px; font-weight: 600;
+  }
+  .tabs .tab.active .pill { background: var(--c-primary); color: white; }
+</style>
+
 <div class="page-head">
   <div>
     <h1>Sessions</h1>
     <div class="subtitle">Search the full history of reconciliation sessions across every cash account.</div>
   </div>
 </div>
+
+<!-- Summary strip — counts split by status. Each chip is a clickable
+     filter shortcut that updates the f-status select + re-applies
+     filters. Populated by renderSummary() once /sessions resolves. -->
+<div class="summary-strip" id="summary-strip"></div>
+
+<!-- Source tabs. Each represents a CSV format profile that ingested
+     sessions came in through, plus 'Flexcube xlsx' for the default
+     loader. Hidden when there's only one source — saves vertical
+     space until BYO profiles actually exist. -->
+<div id="source-tabs" class="tabs" style="display:none"></div>
 
 <div class="card">
   <div class="card-head">
@@ -63,11 +97,12 @@
           <th>Cash account</th>
           <th>Access area</th>
           <th>CCY</th>
+          <th>Source</th>
           <th>Statement</th>
           <th>Period</th>
-          <th class="num">Pending</th>
-          <th class="num">Confirmed</th>
-          <th class="num">Rejected</th>
+          <th class="num"><span class="th-icon" aria-hidden="true">⏱</span>Pending</th>
+          <th class="num"><span class="th-icon" aria-hidden="true">✓</span>Confirmed</th>
+          <th class="num"><span class="th-icon" aria-hidden="true">✗</span>Rejected</th>
           <th></th>
         </tr>
       </thead>
@@ -83,6 +118,24 @@ document.body.dataset.nav = 'sessions';
 
 let allSessions = [];
 let allAccounts = [];
+// Active source-tab filter: '' = all, 'default' = xlsx-loaded, or a
+// stringified profile id. Stays in sync with the rendered tab pills.
+let currentSource = '';
+
+// countPill renders a session-count cell as a coloured pill — pending
+// amber, confirmed green, rejected red — and mutes zeros so non-zero
+// rows draw the eye. The pictogram before the number reinforces the
+// state visually so a colour-blind user still gets the signal.
+// Variant must be one of pending|confirmed|rejected.
+const COUNT_ICONS = { pending: '⏱', confirmed: '✓', rejected: '✗' };
+function countPill(n, variant) {
+  const v = Number(n) || 0;
+  if (v === 0) return '<span class="count-pill zero">0</span>';
+  const ico = COUNT_ICONS[variant] || '';
+  return `<span class="count-pill count-${variant}">`
+       + (ico ? `<span class="count-pill__icon" aria-hidden="true">${ico}</span>` : '')
+       + `${v}</span>`;
+}
 
 async function load() {
   const [sessR, accR] = await Promise.all([fetch('/sessions'), fetch('/accounts')]);
@@ -99,7 +152,110 @@ async function load() {
   fillSelect('f-account', accts);
   fillSelect('f-ccy', ccys);
 
+  renderSummary();
+  renderSourceTabs();
   applyFilters();
+}
+
+// renderSummary builds the page-level chip strip. Three chips —
+// pending work, fully reviewed, clean balance — plus a Total chip.
+// Each chip is a clickable filter shortcut: clicking sets f-status
+// and re-runs the filter, so the operator can move from a high-level
+// count to a filtered list with one tap. Counts are derived from
+// the cached sessions array, not a separate fetch.
+function renderSummary() {
+  const host = document.getElementById('summary-strip');
+  if (!host) return;
+  let openCount = 0, doneCount = 0, cleanCount = 0;
+  for (const s of allSessions) {
+    const p = s.counts?.pending || 0;
+    if (p > 0) openCount++;
+    else doneCount++;
+    // 'clean' = zero pending and zero rejected (everything matched).
+    if (p === 0 && (s.counts?.rejected || 0) === 0) cleanCount++;
+  }
+  const total = allSessions.length;
+  host.innerHTML = `
+    <a class="chip" href="?status=open" data-status="open">
+      <span class="chip-dot warn"></span>
+      <span class="chip-num">${openCount}</span>
+      <span class="chip-label">with pending work</span>
+    </a>
+    <a class="chip" href="?status=done" data-status="done">
+      <span class="chip-dot success"></span>
+      <span class="chip-num">${doneCount}</span>
+      <span class="chip-label">fully reviewed</span>
+    </a>
+    <a class="chip" href="?status=clean" data-status="clean">
+      <span class="chip-dot primary"></span>
+      <span class="chip-num">${cleanCount}</span>
+      <span class="chip-label">clean</span>
+    </a>
+    <span class="chip chip-total">
+      <span class="chip-num">${total}</span>
+      <span class="chip-label">total sessions</span>
+    </span>`;
+  // Intercept clicks so we can update the filter state in place
+  // instead of doing a full page reload — feels instant, plus it
+  // keeps any other manually-set filter (search, area) in place.
+  host.querySelectorAll('a.chip').forEach(el => {
+    el.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      const v = el.dataset.status || '';
+      document.getElementById('f-status').value = v;
+      applyFilters();
+      // Mirror state in the URL so refresh / back keeps the filter.
+      const u = new URL(location.href);
+      if (v) u.searchParams.set('status', v); else u.searchParams.delete('status');
+      history.replaceState(null, '', u);
+    });
+  });
+}
+
+function renderSourceTabs() {
+  const host = document.getElementById('source-tabs');
+  // Build a count-by-source map. Default xlsx ingests share the
+  // 'default' bucket so they appear as one tab even though their
+  // flex_profile_id is NULL.
+  const buckets = new Map();
+  for (const s of allSessions) {
+    const key = s.flex_profile_id ? String(s.flex_profile_id) : 'default';
+    const label = s.flex_profile_id
+      ? (s.flex_profile_name || `Profile ${s.flex_profile_id}`)
+      : 'Flexcube xlsx';
+    const b = buckets.get(key) || { key, label, count: 0 };
+    b.count += 1;
+    buckets.set(key, b);
+  }
+
+  if (buckets.size < 2) {
+    // Only one source ⇒ tabs add no value. The Source column on each
+    // row still shows what loaded it, so no information is lost.
+    host.style.display = 'none';
+    host.innerHTML = '';
+    currentSource = '';
+    return;
+  }
+  host.style.display = '';
+
+  const tabs = [
+    { key: '', label: 'All sources', count: allSessions.length },
+    ...[...buckets.values()].sort((a, b) => b.count - a.count),
+  ];
+  host.innerHTML = tabs.map(t => {
+    const isActive = String(currentSource) === String(t.key);
+    return `<button class="tab ${isActive ? 'active' : ''}" data-source="${esc(t.key)}" type="button">
+      ${esc(t.label)}<span class="pill">${t.count}</span>
+    </button>`;
+  }).join('');
+
+  host.querySelectorAll('.tab').forEach(el => {
+    el.addEventListener('click', () => {
+      currentSource = el.dataset.source || '';
+      renderSourceTabs();
+      applyFilters();
+    });
+  });
 }
 
 function fillSelect(id, opts) {
@@ -123,6 +279,11 @@ function applyFilters() {
     if (area && s.account_access_area !== area) return false;
     if (acct && s.account_label !== acct) return false;
     if (ccy && (s.swift_currency || s.flex_currency) !== ccy) return false;
+    // Source-tab filter. 'default' matches NULL profile (xlsx); a numeric
+    // string matches the profile id. Empty = show everything.
+    if (currentSource === 'default' && s.flex_profile_id) return false;
+    if (currentSource && currentSource !== 'default'
+        && s.flex_profile_id !== +currentSource) return false;
     if (status === 'open'  && (s.counts?.pending || 0) === 0) return false;
     if (status === 'done'  && (s.counts?.pending || 0) > 0)   return false;
     if (status === 'clean' && (s.counts?.pending || 0) > 0)   return false;
@@ -132,6 +293,7 @@ function applyFilters() {
       const hay = [
         s.account_label, s.account_shortname, s.swift_filename, s.flex_filename,
         s.swift_statement_ref, s.swift_account, s.flex_ac_no,
+        s.flex_profile_name,
       ].filter(Boolean).join(' ').toLowerCase();
       if (!hay.includes(q)) return false;
     }
@@ -142,13 +304,16 @@ function applyFilters() {
 
   const tbody = document.querySelector('#sessions-table tbody');
   if (filtered.length === 0) {
-    tbody.innerHTML = '<tr class="empty-row"><td colspan="11">No sessions match the current filter.</td></tr>';
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="12">No sessions match the current filter.</td></tr>';
     return;
   }
   tbody.innerHTML = filtered.map(s => {
     const acctCell = s.account_label
       ? `<strong>${esc(s.account_shortname || s.account_label)}</strong>`
       : `<span class="badge badge-warn">Unregistered</span>`;
+    const sourceCell = s.flex_profile_id
+      ? `<span class="badge" style="background:#ede9fe;color:#4c1d95">${esc(s.flex_profile_name || ('Profile ' + s.flex_profile_id))}</span>`
+      : `<span class="muted">Flexcube xlsx</span>`;
     const period = (s.opening_balance_date && s.closing_balance_date)
       ? `${fmtDate(s.opening_balance_date)} → ${fmtDate(s.closing_balance_date)}`
       : (s.closing_balance_date ? fmtDate(s.closing_balance_date) : '—');
@@ -159,11 +324,12 @@ function applyFilters() {
         <td>${acctCell}</td>
         <td class="muted">${esc(s.account_access_area || '')}</td>
         <td>${esc(s.swift_currency || s.flex_currency || '')}</td>
+        <td>${sourceCell}</td>
         <td class="muted"><code style="font-size:var(--t-small)">${esc(s.swift_statement_ref || '')}</code></td>
         <td class="muted" style="font-size:var(--t-small)">${period}</td>
-        <td class="num">${s.counts?.pending ?? 0}</td>
-        <td class="num">${s.counts?.confirmed ?? 0}</td>
-        <td class="num">${s.counts?.rejected ?? 0}</td>
+        <td class="num">${countPill(s.counts?.pending, 'pending')}</td>
+        <td class="num">${countPill(s.counts?.confirmed, 'confirmed')}</td>
+        <td class="num">${countPill(s.counts?.rejected, 'rejected')}</td>
         <td><a class="btn btn-default btn-sm" href="/sessions/${s.id}/review">Open &rarr;</a></td>
       </tr>`;
   }).join('');
@@ -181,6 +347,32 @@ document.getElementById('f-clear').addEventListener('click', () => {
   applyFilters();
 });
 
-load();
+// Deeplink filters from query string — dashboard tiles like
+// "Pending decisions" land here with ?status=open. Set static fields
+// (status, q, dates) before load() so the initial applyFilters() call
+// inside load() sees them, and reset the fetched-option dropdowns
+// (area/account/ccy) after load() finishes — fillSelect preserves
+// current value but only if the matching <option> already exists,
+// which it doesn't until the lists come back from /sessions.
+function applyQueryFilters() {
+  const qs = new URLSearchParams(location.search);
+  const map = {
+    status: 'f-status',
+    area: 'f-area',
+    account: 'f-account',
+    ccy: 'f-ccy',
+    q: 'f-q',
+    from: 'f-from',
+    to: 'f-to',
+  };
+  for (const [k, id] of Object.entries(map)) {
+    const v = qs.get(k);
+    if (v == null) continue;
+    const el = document.getElementById(id);
+    if (el) el.value = v;
+  }
+}
+applyQueryFilters();
+load().then(() => { applyQueryFilters(); applyFilters(); });
 </script>
 {% endblock %}

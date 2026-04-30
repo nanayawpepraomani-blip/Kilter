@@ -1,0 +1,351 @@
+{% extends "base.html" %}
+{% block title %}BYO formats — Kilter{% endblock %}
+{% block crumbs %}<span class="current">BYO formats</span>{% endblock %}
+
+{% block content %}
+<style>
+  .wizard-step { margin-bottom: 16px; }
+  .wizard-step h3 {
+    font-size: 0.95em; margin: 0 0 8px 0;
+    display: flex; align-items: center; gap: 8px;
+    color: var(--c-text);
+  }
+  .wizard-step .num {
+    background: var(--c-primary); color: white;
+    width: 22px; height: 22px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 0.8em; font-weight: 700;
+  }
+  .preview-table {
+    width: 100%; font-size: 0.82em;
+    border-collapse: collapse;
+    background: var(--c-surface); border: 1px solid var(--c-border);
+    border-radius: 6px; overflow: hidden;
+  }
+  .preview-table th, .preview-table td {
+    padding: 6px 8px; text-align: left;
+    border-bottom: 1px solid var(--c-border);
+  }
+  .preview-table thead th {
+    background: var(--c-bg-sub); font-weight: 600;
+    color: var(--c-text-muted); position: sticky; top: 0;
+  }
+  .map-grid {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;
+    margin-top: 8px;
+  }
+  .map-row { display: grid; grid-template-columns: 130px 1fr; align-items: center; gap: 8px; }
+  .map-row label { font-size: 0.85em; color: var(--c-text-muted); }
+  .map-row.required label::after { content: ' *'; color: var(--c-danger); }
+</style>
+
+<div class="page-head">
+  <div>
+    <h1>BYO formats</h1>
+    <div class="subtitle">Define column mappings for non-standard CSV ledger extracts. Saved profiles appear in the upload page.</div>
+  </div>
+  <div>
+    <button id="add-btn" class="btn btn-primary admin-only">Add format</button>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head"><h2>Existing profiles</h2><span class="hint" id="prof-count">0</span></div>
+  <div class="card-body tight">
+    <table class="table" id="prof-table">
+      <thead>
+        <tr>
+          <th>Name</th><th>Bound account</th><th>Filename pattern</th>
+          <th>Currency</th><th>Delimiter</th><th>Sign</th>
+          <th>Created</th><th>By</th><th></th>
+        </tr>
+      </thead>
+      <tbody><tr class="empty-row"><td colspan="9">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<dialog id="wiz" style="border:1px solid var(--c-border);border-radius:var(--radius-lg);padding:0;max-width:920px;width:95%;max-height:90vh">
+  <form method="dialog" style="padding:24px;display:flex;flex-direction:column;gap:16px;max-height:88vh;overflow:auto">
+    <h2 style="margin:0">New CSV format profile</h2>
+
+    <div class="wizard-step">
+      <h3><span class="num">1</span>Upload a sample CSV or Excel file</h3>
+      <input id="w-file" type="file" accept=".csv,.txt,.xlsx" class="input">
+      <div class="muted" style="font-size:var(--t-small);margin-top:4px">
+        CSV, tab-separated, or Excel (.xlsx). For .xlsx the delimiter
+        field below is ignored — Kilter reads the first sheet directly.
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:10px">
+        <div class="field"><label>Delimiter</label>
+          <select id="w-delim" class="input">
+            <option value=",">Comma ,</option>
+            <option value=";">Semicolon ;</option>
+            <option value="\t">Tab</option>
+            <option value="|">Pipe |</option>
+          </select></div>
+        <div class="field"><label>Skip rows above header</label>
+          <input id="w-skip" type="number" min="0" max="20" value="0" class="input"></div>
+        <div class="field"><label>Header row (1-based)</label>
+          <input id="w-header" type="number" min="1" max="20" value="1" class="input"></div>
+      </div>
+      <div style="margin-top:8px">
+        <button type="button" class="btn btn-default btn-sm" onclick="preview()">Preview & auto-detect</button>
+        <span id="w-preview-status" class="status"></span>
+      </div>
+    </div>
+
+    <div id="w-preview-block" style="display:none">
+      <div class="wizard-step">
+        <h3><span class="num">2</span>First five rows</h3>
+        <div style="overflow-x:auto;max-height:200px"><table id="w-preview-table" class="preview-table"></table></div>
+      </div>
+
+      <div class="wizard-step">
+        <h3><span class="num">3</span>Map columns</h3>
+        <div class="map-grid" id="w-map">
+          <div class="map-row required"><label>Amount</label><select data-key="amount" class="input"></select></div>
+          <div class="map-row required"><label>Value date</label><select data-key="value_date" class="input"></select></div>
+          <div class="map-row"><label>Booking date</label><select data-key="booking_date" class="input"></select></div>
+          <div class="map-row"><label>Reference</label><select data-key="ref" class="input"></select></div>
+          <div class="map-row"><label>Narration</label><select data-key="narration" class="input"></select></div>
+          <div class="map-row"><label>Type (CR/DR)</label><select data-key="type" class="input"></select></div>
+          <div class="map-row"><label>Currency col</label><select data-key="currency" class="input"></select></div>
+          <div class="map-row"><label>Account no</label><select data-key="ac_no" class="input"></select></div>
+          <div class="map-row"><label>Branch</label><select data-key="ac_branch" class="input"></select></div>
+        </div>
+      </div>
+
+      <div class="wizard-step">
+        <h3><span class="num">4</span>Settings</h3>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
+          <div class="field"><label>Date format <span class="muted">(strptime)</span></label>
+            <input id="w-dfmt" class="input" value="%Y-%m-%d" placeholder="%Y-%m-%d"></div>
+          <div class="field"><label>Currency <span class="muted">(when no column)</span></label>
+            <input id="w-ccy" class="input" placeholder="e.g. GHS"></div>
+          <div class="field"><label>Sign convention</label>
+            <select id="w-sign" class="input" onchange="onSignConvChange()">
+              <option value="positive_credit">Positive = Credit</option>
+              <option value="cr_dr_column">Type column has CR/DR</option>
+              <option value="separate_column">Separate sign column</option>
+            </select></div>
+          <div class="field" id="w-signcol-wrap" style="display:none"><label>Sign column</label>
+            <select id="w-signcol" class="input"></select></div>
+        </div>
+      </div>
+
+      <div class="wizard-step">
+        <h3><span class="num">5</span>Account binding &amp; scan routing <span class="muted" style="font-weight:400">(both optional)</span></h3>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div class="field"><label>Bound account <span class="muted">(inherits currency &amp; ac_no)</span></label>
+            <select id="w-account" class="input">
+              <option value="">— none — (CSV must supply ac_no &amp; currency)</option>
+            </select></div>
+          <div class="field"><label>Filename pattern <span class="muted">(for scan intake)</span></label>
+            <input id="w-pattern" class="input" placeholder="e.g. acme_gl_*.csv"></div>
+        </div>
+        <div class="hint" style="margin-top:6px">
+          When a bound account is set, files using this profile inherit its
+          currency and account number, so the CSV doesn't need those columns.
+          When a filename pattern is set, the daily scan picks up matching
+          files from <code>messages/flexcube/</code> automatically.
+        </div>
+      </div>
+
+      <div class="wizard-step">
+        <h3><span class="num">6</span>Name &amp; save</h3>
+        <div style="display:grid;grid-template-columns:1fr;gap:12px">
+          <div class="field"><label>Profile name (unique)</label>
+            <input id="w-name" class="input" placeholder="e.g. Acme Bank GL extract"></div>
+        </div>
+      </div>
+
+      <div style="display:flex;justify-content:flex-end;gap:8px">
+        <button type="button" class="btn btn-default" onclick="closeWiz()">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="saveProfile()">Save profile</button>
+      </div>
+    </div>
+  </form>
+</dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.body.dataset.nav = 'byo-formats';
+
+let columns = [];
+
+async function load() {
+  // Fetch profiles + accounts in parallel so we can resolve account_id
+  // to a friendly label without a second round-trip per profile row.
+  const [profilesR, accountsR] = await Promise.all([
+    fetch('/csv-profiles'), fetch('/accounts'),
+  ]);
+  if (!profilesR.ok) return;
+  const profiles = await profilesR.json();
+  const accounts = accountsR.ok ? await accountsR.json() : [];
+  const acctById = {};
+  accounts.forEach(a => { acctById[a.id] = a; });
+
+  document.getElementById('prof-count').textContent = `${profiles.length} active`;
+  const tbody = document.querySelector('#prof-table tbody');
+  if (!profiles.length) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="9">No profiles yet. Click <strong>Add format</strong> to define one.</td></tr>';
+    return;
+  }
+  const isAdmin = window.me && window.me.role === 'admin';
+  tbody.innerHTML = profiles.map(p => {
+    const acct = p.account_id ? acctById[p.account_id] : null;
+    const acctCell = acct
+      ? `<a href="/accounts/${acct.id}/status-page">${esc(acct.shortname || acct.label)}</a>`
+      : '<span class="muted">— none —</span>';
+    const patternCell = p.filename_pattern
+      ? `<code>${esc(p.filename_pattern)}</code>`
+      : '<span class="muted">manual upload only</span>';
+    return `
+    <tr>
+      <td><strong>${esc(p.name)}</strong></td>
+      <td>${acctCell}</td>
+      <td>${patternCell}</td>
+      <td>${esc(p.currency || (acct ? acct.currency + ' (inherited)' : '(from column)'))}</td>
+      <td><code>${esc(p.delimiter === '\t' ? 'TAB' : p.delimiter)}</code></td>
+      <td class="muted">${esc(p.sign_convention.replace(/_/g, ' '))}</td>
+      <td class="muted">${fmtDateTime(p.created_at)}</td>
+      <td class="muted">${esc(p.created_by || '—')}</td>
+      <td>${isAdmin ? `<button class="btn btn-danger-soft btn-sm" onclick="del(${p.id}, ${JSON.stringify(p.name)})">Delete</button>` : ''}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function del(id, name) {
+  if (!confirm(`Delete profile "${name}"? Sessions ingested under it remain accessible.`)) return;
+  const r = await fetch('/csv-profiles/' + id, { method: 'DELETE' });
+  if (!r.ok) { alert((await r.json().catch(()=>({}))).detail || 'Delete failed'); return; }
+  load();
+}
+
+async function loadAccountsIntoWizard() {
+  try {
+    const r = await fetch('/accounts');
+    if (!r.ok) return;
+    const accounts = await r.json();
+    const sel = document.getElementById('w-account');
+    // Reset, leaving the first '— none —' placeholder.
+    sel.innerHTML = '<option value="">— none — (CSV must supply ac_no &amp; currency)</option>';
+    accounts.forEach(a => {
+      const opt = document.createElement('option');
+      opt.value = a.id;
+      opt.textContent = `${a.shortname || a.label} · ${a.currency}`;
+      sel.appendChild(opt);
+    });
+  } catch (exc) {
+    // Non-fatal — the wizard is still usable without the bound-account
+    // dropdown (operator just types currency manually). Surface in
+    // console so a regression doesn't hide.
+    console.warn('byo wizard: failed to populate accounts dropdown', exc);
+  }
+}
+
+document.getElementById('add-btn')?.addEventListener('click', () => {
+  document.getElementById('w-file').value = '';
+  document.getElementById('w-preview-block').style.display = 'none';
+  document.getElementById('w-name').value = '';
+  document.getElementById('w-ccy').value = '';
+  document.getElementById('w-dfmt').value = '%Y-%m-%d';
+  document.getElementById('w-pattern').value = '';
+  document.getElementById('w-account').value = '';
+  loadAccountsIntoWizard();
+  document.getElementById('wiz').showModal();
+});
+
+function closeWiz() { document.getElementById('wiz').close(); load(); }
+
+async function preview() {
+  const f = document.getElementById('w-file').files[0];
+  const status = document.getElementById('w-preview-status');
+  if (!f) { status.className = 'status error'; status.textContent = 'Choose a file first.'; return; }
+  status.className = 'status'; status.textContent = 'Loading…';
+
+  const fd = new FormData();
+  fd.append('file', f);
+  const params = new URLSearchParams({
+    delimiter: document.getElementById('w-delim').value,
+    header_row: document.getElementById('w-header').value,
+    skip_rows: document.getElementById('w-skip').value,
+  });
+  const r = await fetch('/csv-profiles/preview?' + params, { method: 'POST', body: fd });
+  if (!r.ok) {
+    status.className = 'status error';
+    status.textContent = (await r.json().catch(()=>({}))).detail || 'Preview failed';
+    return;
+  }
+  const j = await r.json();
+  columns = j.columns;
+  status.className = 'status success';
+  status.textContent = `${j.columns.length} columns, ${j.sample.length} sample rows.`;
+
+  // Render preview table
+  const tbl = document.getElementById('w-preview-table');
+  tbl.innerHTML =
+    '<thead><tr>' + j.columns.map(c => `<th>${esc(c)}</th>`).join('') + '</tr></thead>' +
+    '<tbody>' + j.sample.map(row =>
+      '<tr>' + (row || []).map(c => `<td>${esc(c)}</td>`).join('') + '</tr>'
+    ).join('') + '</tbody>';
+
+  // Populate dropdowns
+  const blank = '<option value="">(none)</option>';
+  const opts = blank + j.columns.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+  document.querySelectorAll('#w-map select').forEach(sel => {
+    const key = sel.dataset.key;
+    sel.innerHTML = opts;
+    if (j.guess[key]) sel.value = j.guess[key];
+  });
+  document.getElementById('w-signcol').innerHTML = opts;
+
+  document.getElementById('w-preview-block').style.display = '';
+}
+
+function onSignConvChange() {
+  const conv = document.getElementById('w-sign').value;
+  document.getElementById('w-signcol-wrap').style.display =
+    conv === 'positive_credit' ? 'none' : '';
+}
+
+async function saveProfile() {
+  const name = document.getElementById('w-name').value.trim();
+  if (!name) { alert('Profile name is required.'); return; }
+
+  const map = {};
+  document.querySelectorAll('#w-map select').forEach(sel => {
+    map[sel.dataset.key] = sel.value || null;
+  });
+  const conv = document.getElementById('w-sign').value;
+  const sign_column = conv === 'positive_credit' ? null : document.getElementById('w-signcol').value || null;
+
+  const accountId = document.getElementById('w-account').value;
+  const payload = {
+    name,
+    delimiter: document.getElementById('w-delim').value,
+    header_row: +document.getElementById('w-header').value,
+    skip_rows:  +document.getElementById('w-skip').value,
+    date_format: document.getElementById('w-dfmt').value || '%Y-%m-%d',
+    currency: document.getElementById('w-ccy').value.trim() || null,
+    column_map: map,
+    sign_convention: conv,
+    sign_column,
+    sample_filename: (document.getElementById('w-file').files[0] || {}).name || null,
+    account_id: accountId ? +accountId : null,
+    filename_pattern: document.getElementById('w-pattern').value.trim() || null,
+  };
+  const r = await fetch('/csv-profiles', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload),
+  });
+  if (!r.ok) { alert((await r.json().catch(()=>({}))).detail || 'Save failed'); return; }
+  closeWiz();
+}
+
+document.addEventListener('me:loaded', load);
+load();
+</script>
+{% endblock %}

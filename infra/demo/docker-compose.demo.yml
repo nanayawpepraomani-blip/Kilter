@@ -1,0 +1,68 @@
+# Demo overlay — apply on top of the base docker-compose.yml.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f infra/demo/docker-compose.demo.yml up -d
+#
+# What this overlay adds:
+#   - Caddy in front of the Kilter container, terminating TLS via
+#     Let's Encrypt and gating the whole site behind HTTP basic-auth.
+#   - The Kilter port mapping is removed (Caddy reaches it on the
+#     internal docker network instead of via host-mapped port).
+#   - Sane env defaults for an "always-on" demo (UTC, idle 30 min).
+#
+# Required env (put in .env at the repo root):
+#   KILTER_SECRET_KEY=<paste once, persist>
+#   DEMO_HOSTNAME=demo.kilter.example.com
+#   DEMO_BASIC_AUTH_USER=demo
+#   DEMO_BASIC_AUTH_HASH=<bcrypt hash, see infra/demo/README.md>
+#   ACME_EMAIL=ops@kilter.example.com
+
+services:
+  kilter:
+    # Drop the host port mapping — Caddy is the only thing that talks
+    # to the container, and it does so on the internal docker network.
+    ports: !reset []
+    expose:
+      - "8000"
+    environment:
+      KILTER_SESSION_IDLE_MINUTES: "30"
+      TZ: UTC
+    networks:
+      - demo
+
+  caddy:
+    image: caddy:2.8-alpine
+    container_name: kilter-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DEMO_HOSTNAME: ${DEMO_HOSTNAME}
+      DEMO_BASIC_AUTH_USER: ${DEMO_BASIC_AUTH_USER}
+      DEMO_BASIC_AUTH_HASH: ${DEMO_BASIC_AUTH_HASH}
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./infra/demo/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Optional: per-prospect basic-auth file. The default Caddyfile
+      # uses inline single-user auth and ignores this; switch to the
+      # `import_file /etc/caddy/htpasswd` block (see HOSTED_DEMO.md §4)
+      # to consume it. Bind-mount uses :ro so a leaked container can't
+      # rewrite credentials. The file is only created when an admin
+      # runs `./infra/demo/htpasswd-add.sh add ...`.
+      - ./infra/demo/htpasswd:/etc/caddy/htpasswd:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      kilter:
+        condition: service_healthy
+    networks:
+      - demo
+
+volumes:
+  caddy-data:
+  caddy-config:
+
+networks:
+  demo:
+    driver: bridge

@@ -95,6 +95,10 @@
         <input id="username" name="username" type="text" autocomplete="username" required autofocus>
       </div>
       <div class="field">
+        <label for="password">Password <span style="color:var(--c-text-subtle);font-weight:400">— if AD-authenticated</span></label>
+        <input id="password" name="password" type="password" autocomplete="current-password">
+      </div>
+      <div class="field">
         <label for="code">Authenticator code</label>
         <input id="code" name="code" type="text" inputmode="numeric" pattern="[0-9]{6}"
                maxlength="6" autocomplete="one-time-code" class="code" required placeholder="000000">
@@ -122,17 +126,27 @@
     err.style.display = 'none';
     submit.disabled = true; submit.textContent = 'Signing in...';
     const username = document.getElementById('username').value.trim();
+    const password = document.getElementById('password').value;
     const code = document.getElementById('code').value.trim();
     try {
       const r = await fetch('/login', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, totp_code: code }),
+        body: JSON.stringify({ username, password, totp_code: code }),
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.detail || 'Sign-in failed');
       localStorage.setItem('kilter_user', username);
       localStorage.setItem('kilter_token', j.token);
       localStorage.setItem('kilter_token_expires', j.expires_at);
+      // Mirror the token to a cookie so server-rendered page routes
+      // opened via plain `<a href>` navigation can authenticate too
+      // (e.g. /certificates/{id}/print, opened in a new tab).
+      // SameSite=Strict so it never ships cross-site; Secure flag is
+      // intentionally omitted because the dev/pilot deployment runs
+      // over plain HTTP — production behind TLS should add Secure.
+      const expSecs = Math.max(0,
+        Math.floor((new Date(j.expires_at).getTime() - Date.now()) / 1000));
+      document.cookie = `kilter_token=${j.token}; Max-Age=${expSecs}; Path=/; SameSite=Strict`;
       const params = new URLSearchParams(window.location.search);
       window.location.href = params.get('next') || '/';
     } catch (e) {

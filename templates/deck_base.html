@@ -129,7 +129,7 @@
     }
     .stat-card .sub { font-size: 14px; color: var(--ink-muted); margin-top: 6px; }
 
-    /* --- Contrast table (Kilter vs Corona) --- */
+    /* --- Contrast table (Kilter vs legacy stack) --- */
     .vs-table { width: 100%; font-size: 18px; border-collapse: collapse; }
     .vs-table th, .vs-table td {
       padding: 14px 20px; text-align: left; border-bottom: 1px solid var(--border);
@@ -231,11 +231,68 @@
       margin: 20px 0;
     }
 
+    /* Screenshot frame — used on slides that show a product capture.
+       Adds a subtle browser-chrome dot row + drop shadow so the image
+       reads as "the product" rather than a free-floating bitmap. The
+       frame is dark to match the deck; on light captures the contrast
+       is what sells the polish. */
+    .shot {
+      display: block; max-width: 100%; height: auto;
+      border-radius: 10px;
+      background: var(--bg-card);
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55),
+                  0 1px 0 rgba(255, 255, 255, 0.05) inset,
+                  0 0 0 1px var(--border);
+    }
+    .shot-frame {
+      display: inline-block; max-width: 100%;
+      border-radius: 12px; overflow: hidden;
+      background: linear-gradient(180deg, #1e293b 0%, #131c2e 28px);
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55),
+                  0 0 0 1px var(--border);
+      padding-top: 28px; position: relative;
+    }
+    .shot-frame::before {
+      content: ''; position: absolute; top: 10px; left: 14px;
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #ef4444;
+      box-shadow: 14px 0 0 #f59e0b, 28px 0 0 #10b981;
+    }
+    .shot-frame .shot {
+      display: block; box-shadow: none; border-radius: 0;
+    }
+    .shot-caption {
+      display: block; margin-top: 12px;
+      font-size: 14px; color: var(--ink-dim);
+      letter-spacing: 0.04em; text-transform: uppercase;
+    }
+    /* Layout helpers for screenshot-led slides — image left, copy right
+       (or the inverse). Both columns vertically centred. */
+    .split-shot {
+      display: grid; grid-template-columns: 1.1fr 1fr;
+      gap: 50px; align-items: center;
+    }
+    .split-shot.reverse { grid-template-columns: 1fr 1.1fr; }
+
+    /* Print-to-PDF rules. The Save PDF button (and the P shortcut)
+       call window.print() which routes through these — modern Chromium
+       honors @page so the recipient gets one landscape slide per page
+       with zero margin, full-bleed dark theme, no chrome. */
+    @page { size: landscape; margin: 0; }
     @media print {
-      html, body, .deck { height: auto !important; overflow: visible !important; }
-      .slide { position: static !important; opacity: 1 !important;
-               pointer-events: auto !important; page-break-after: always;
-               min-height: 100vh; }
+      html, body, .deck {
+        height: auto !important; overflow: visible !important;
+        background: var(--bg-deep) !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+      .slide {
+        position: static !important; opacity: 1 !important;
+        pointer-events: auto !important;
+        page-break-after: always; break-after: page;
+        min-height: 100vh; width: 100vw;
+      }
+      .slide:last-of-type { page-break-after: auto; break-after: auto; }
       .deck-chrome, .progress, .jumper-backdrop, .notes { display: none !important; }
     }
   </style>
@@ -259,6 +316,7 @@
       <a href="#" onclick="event.preventDefault();toggleNotes()"><kbd>N</kbd> notes</a>
       <a href="#" onclick="event.preventDefault();toggleJumper()"><kbd>Esc</kbd> overview</a>
       <a href="#" onclick="event.preventDefault();toggleFullscreen()"><kbd>F</kbd> fullscreen</a>
+      <a href="#" onclick="event.preventDefault();printDeck()" title="Save deck as PDF (landscape, one slide per page)"><kbd>P</kbd> save PDF</a>
       <a href="/">Exit deck</a>
     </div>
   </div>
@@ -288,6 +346,17 @@
     if (!document.fullscreenElement) document.documentElement.requestFullscreen();
     else document.exitFullscreen();
   }
+  // Save the whole deck as a PDF. The print CSS at the top of this
+  // file forces every slide visible + page-breaks between them, so
+  // the browser's print dialog renders 1 slide per landscape page.
+  // In Chrome/Edge, "Save as PDF" is the default destination. Tip
+  // for Safari users: pick "Save to Files" instead.
+  function printDeck() {
+    // Close transient overlays so they don't bleed into the print.
+    document.getElementById('jumper').classList.remove('open');
+    document.getElementById('notes').classList.remove('open');
+    window.print();
+  }
   function toggleNotes() {
     document.getElementById('notes').classList.toggle('open');
   }
@@ -313,6 +382,7 @@
     else if (e.key === 'Escape')                                                { toggleJumper(); e.preventDefault(); }
     else if (e.key === 'f' || e.key === 'F')                                    { toggleFullscreen(); e.preventDefault(); }
     else if (e.key === 'n' || e.key === 'N')                                    { toggleNotes(); e.preventDefault(); }
+    else if (e.key === 'p' || e.key === 'P')                                    { printDeck(); e.preventDefault(); }
     else if (/^\d$/.test(e.key))                                                {
       const n = parseInt(e.key, 10); if (n >= 1) go(n - 1);
     }

@@ -25,13 +25,15 @@ Do these in order. If any step fails, fix before presenting — don't improvise 
 
 | Beat | Duration | Scene |
 |------|---------|-------|
-| 0:00 | 0:45 | Scene 1 · The dashboard (admin) |
-| 0:45 | 1:30 | Scene 2 · Ingest a pair |
-| 2:15 | 2:30 | Scene 3 · Review queue — confirm, reject, swap |
-| 4:45 | 1:15 | Scene 4 · Switch to ops — what role-based UI looks like |
-| 6:00 | 1:30 | Scene 5 · Active-area picker (the "mixed audience" hook) |
-| 7:30 | 1:30 | Scene 6 · Export xlsx + audit log |
-| 9:00 | 1:00 | Close + Q&A |
+| 0:00 | 0:45 | Scene 1 · The dashboard (admin) — three-stream framing |
+| 0:45 | 1:30 | Scene 2 · Ingest a pair (nostro stream) |
+| 2:15 | 2:00 | Scene 3 · Review queue — confirm, reject, swap |
+| 4:15 | 1:00 | Scene 4 · Mobile money — `/mobile-money` provider tiles |
+| 5:15 | 1:30 | Scene 5 · Cards — `/cards` Files + Matches tabs, drill-in |
+| 6:45 | 1:00 | Scene 6 · Switch to ops — role-based UI |
+| 7:45 | 1:00 | Scene 7 · Active-area picker (the "mixed audience" hook) |
+| 8:45 | 1:00 | Scene 8 · Export xlsx + audit log |
+| 9:45 | 0:45 | Close + Q&A |
 
 ---
 
@@ -40,12 +42,13 @@ Do these in order. If any step fails, fix before presenting — don't improvise 
 **Show:** Tab 1, logged in as admin, `/` dashboard.
 
 **Point at, in this order:**
-- Top four stat cards: *Pending decisions, Confirmed matches, Open sessions, Registered cash accounts*.
-- Recent sessions table — 4 sessions, one per currency (GBP/USD/EUR/GHS).
-- The sidebar: Workspace / Intake / Admin groups.
+- Top four KPI cards with gradient stripes + sparkline: *Auto-match rate · 14d, Oldest open break, SLA-breached pending, Total open items*.
+- Bottom four stat cards with glyph badges: *Pending decisions, Confirmed matches, Open sessions, Registered cash accounts*.
+- Recent sessions table — 4 sessions, one per currency.
+- The sidebar groups: **Workspace** (Dashboard / Cash accounts / Sessions / **Mobile money** / **Cards** / Open items / Reports), **Intake**, **Admin**.
 
 **Say it like this:**
-> "This is the landing page. Four numbers that matter for month-end — what's pending, what we've cleared, how many sessions still have open work, and how many cash accounts are wired up. The table below is the last four reconciliation sessions. Each one is a SWIFT statement matched against a Flexcube account for one currency."
+> "This is the landing page. Top row is the operational-health view — the auto-match rate is the headline; the sparkline shows the trend. Bottom row is the volume counters. The thing to notice in the sidebar is that **Mobile money** and **Cards** are first-class siblings of the nostro flow. Same operator UI, same audit log, three reconciliation streams. We'll touch each."
 
 ---
 
@@ -83,7 +86,46 @@ Do these in order. If any step fails, fix before presenting — don't improvise 
 
 ---
 
-## Scene 4 — Role-based UI (4:45 – 6:00)
+## Scene 4 — Mobile money (4:15 – 5:15)
+
+**Show:** Sidebar → **Mobile money**. `/mobile-money` page.
+
+**Point at:**
+- Provider tiles across the top — colour-coded per network (M-Pesa green, MTN MoMo yellow, Airtel red, Telcel blue). Each shows wallet count, sessions ingested, currencies in scope.
+- Wallets table — registered wallet accounts with MSISDN / short code.
+- Recent mobile-money sessions table — same reconciliation sessions you saw on the dashboard, filtered to wallet accounts.
+
+**Click:**
+- A provider tile (e.g. **MTN MoMo**) — both tables filter to that provider only. Click the tile again to clear the filter.
+
+**Say it like this:**
+> "The recon engine and the BYO loader handle wallet feeds the same way they handle a SWIFT statement — what's different is the format. Operator-side CSVs are different per network, and they change between releases. We ship pre-seeded profiles for the major networks: M-Pesa, MTN MoMo for both directions — bank-to-wallet and wallet-to-bank — Airtel, and Telcel Cash. An operator binds a profile to a wallet account and starts ingesting same day."
+
+---
+
+## Scene 5 — Cards (5:15 – 6:45)
+
+**Show:** Sidebar → **Cards**. `/cards` page on the **Files** tab.
+
+**Point at:**
+- The PCI banner up top — *first6 + last4 only, never full PAN; CVV / track / PIN refused*.
+- Scheme tiles — Visa, Mastercard, Verve, Cardlink (GhIPSS) — colour-coded.
+- Settlement files table.
+
+**Click:**
+- The **Matches** tab. Filter chips at the top: All · Mismatched · Matched · Unmatched.
+- Click **Mismatched** — the table sorts mismatched-first by amount spread.
+- Pick one match group, click **Records →** to open the drill-in drawer. Show the per-record breakdown: file id + role (acquirer / issuer / switch), masked PAN cell, amount, currency, status pill.
+- Close the drawer. Click **Recompute & persist** (admin-only). Show the toast / status change.
+
+**Say it like this:**
+> "Cards is where most reconciliation tools either don't go, or drag your bank deeper into PCI scope. Kilter does neither. The schema has no column that could hold a full PAN — settlement files are masked at the parser seam into first six plus last four. CVV and track-data fields are refused on ingest. Free-text fields get a Luhn-validated PAN sweep and redacted before persistence.
+>
+> The matching engine joins records across files on the scheme reference — Visa TRR, Mastercard Banknet, switch RRN — and classifies each group as matched, mismatched, or unmatched. Mismatched-first sort means the group that needs investigation is the first thing an operator sees. The drill-in shows you exactly which records disagree and by how much. Recompute writes the status back to records; operator-set states like *disputed* or *written-off* always win over the engine's classification."
+
+---
+
+## Scene 6 — Role-based UI (6:45 – 7:45)
 
 **Show:** Switch to Tab 2 (logged in as `ops_demo`).
 
@@ -97,27 +139,27 @@ Do these in order. If any step fails, fix before presenting — don't improvise 
 
 ---
 
-## Scene 5 — Active-area picker (6:00 – 7:30) · **the mixed-audience hook**
+## Scene 7 — Active-area picker (7:45 – 8:45) · **the mixed-audience hook**
 
 **Show:** Top-right of the page — *Active area: All areas ▾*.
 
 **Do:**
 1. **Click the picker.** A panel opens with a search box and a checkbox list.
-2. **Type "bank"** in the search — point at BANK OF GHANA filtering in.
-3. **Check BANK OF GHANA, click Apply.** Page reloads.
-4. Point at the top-right badge: now reads *Active area: BANK OF GHANA*.
-5. Go to Sessions — only BoG sessions visible.
-6. Go back to the picker, search "branch", check **BRANCH 001 HOFF** and **BRANCH 002 TEMA**, Apply.
-7. Badge now reads *Active area: 2 areas* with a tooltip listing them.
+2. **Type a partial area name** in the search — point at matching areas filtering in.
+3. **Tick one area, click Apply.** Page reloads.
+4. Point at the top-right badge: now reads the chosen area name.
+5. Go to Sessions — only that area's sessions visible.
+6. Go back to the picker, search a different keyword (e.g. "branch"), tick two more areas, Apply.
+7. Badge now reads *Active area: 3 areas* with a tooltip listing them.
 
 **Say it like this (tailor to the room):**
-> "For ops — most of you will pick one area when you log in and live there all day. For supervisors — you can pick several at once and see across your cluster. For leadership — leave it on All areas and you've got the whole bank. The picker is backed by the same 103 access areas Corona uses, so there's no new taxonomy to learn."
+> "For ops — most of you will pick one area when you log in and live there all day. For supervisors — you can pick several at once and see across your cluster. For leadership — leave it on All areas and you've got the whole bank. Areas are configurable per deployment — import from your existing taxonomy, or define your own at install time."
 
-**Click Cancel / set back to All areas before moving on** — scene 6 needs the unscoped view.
+**Click Cancel / set back to All areas before moving on** — scene 8 needs the unscoped view.
 
 ---
 
-## Scene 6 — Export + audit (7:30 – 9:00)
+## Scene 8 — Export + audit (8:45 – 9:45)
 
 **Show:** Tab 1 (admin). Session detail page with the queue cleared.
 
@@ -134,10 +176,10 @@ Do these in order. If any step fails, fix before presenting — don't improvise 
 
 ---
 
-## Close (9:00 – 10:00)
+## Close (9:45 – 10:30)
 
 **Back to the Dashboard. Say:**
-> "That's the loop: ingest, review, export, audited. We built it on our stack, MFA by default, role-based, and scoped to the way each team actually works. What I'd like next is a green light to run a 1-branch, 1-month pilot in parallel with Corona — we measure the real numbers, and we come back with a go/no-go in six weeks."
+> "That's the loop, three times over: ingest, review, export, audited — for nostro, mobile money, and cards. Self-hosted on your infrastructure, MFA by default, role-based, scoped to the way each team actually works. The cards module is PCI-scope-out by design — first six plus last four only, no SAD ever. What I'd like next is a green light to run a 1-branch, 1-month pilot in parallel with your existing nostro tool, with the option to extend into mobile money or a card switch in week 3. We measure the real numbers, and we come back with a go/no-go in six weeks."
 
 **Pause. Invite questions.**
 

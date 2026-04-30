@@ -298,19 +298,19 @@ python -c "import sqlite3; s=sqlite3.connect('d:/Kilter/kilter.db'); d=sqlite3.c
   </tbody>
 </table>
 
-<h2 id="oracle">12. Flexcube Oracle connectivity</h2>
+<h2 id="oracle">12. Direct-from-core connectivity (optional)</h2>
 
-<p>The direct-from-Oracle extract is optional but is the strongest pitch differentiator vs Corona ("ops never touches a file"). To enable:</p>
+<p>The direct-from-core extract is optional but is the strongest differentiator vs file-drop workflows ("ops never touches a file"). It requires a custom integration adaptor for your CBS (Flexcube, T24, Finacle, etc.) — engagement-specific. To enable a Flexcube-Oracle adaptor as one example:</p>
 
 <ol>
   <li>Install the driver: <code>pip install oracledb</code>.</li>
-  <li>Provision a read-only Oracle user with grants on <code>fcubsawa.acvw_all_ac_entries_new</code>, <code>fcubsawa.sttm_dates</code>, and <code>fcubsawa.sttm_branch</code>.</li>
+  <li>Provision a read-only Oracle user with grants on the relevant Flexcube account-entries / dates / branch views (schema names vary per CBS install).</li>
   <li>Set env vars on the Kilter service: <code>FCUBS_USER</code>, <code>FCUBS_PASSWD</code>.</li>
-  <li>Enable the <strong>Flexcube pull (pre-scan)</strong> job at <span class="path">Scheduler</span>. First run will probe the connection; on success, daily extracts land in <code>messages/flexcube/</code> at 05:45 UTC.</li>
+  <li>Enable the <strong>core-banking pull (pre-scan)</strong> job at <span class="path">Scheduler</span>. First run will probe the connection; on success, daily extracts land in <code>messages/flexcube/</code> at 05:45 UTC.</li>
 </ol>
 
 <div class="callout danger">
-  <strong>Do not embed production Oracle credentials in systemd unit files or Windows scheduled task definitions.</strong> Use a secrets file with restricted ACL, or integrate with the bank's secret manager (CyberArk, HashiCorp Vault). The app reads from the process environment only.
+  <strong>Do not embed production database credentials in systemd unit files or Windows scheduled task definitions.</strong> Use a secrets file with restricted ACL, or integrate with the bank's secret manager (CyberArk, HashiCorp Vault). The app reads from the process environment only.
 </div>
 
 <h2 id="trouble">13. Troubleshooting</h2>

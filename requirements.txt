@@ -16,6 +16,11 @@ slowapi==0.1.9
 # secrets_vault.py for the key-source order.
 cryptography==47.0.0
 
+# Active Directory / LDAP integration for the password layer (TOTP stays
+# as the second factor). Pure-Python; no native build deps — keeps the
+# slim Docker image lean. See ldap_auth.py.
+ldap3==2.9.1
+
 # Optional — only required if the Flexcube Oracle pull is enabled.
 # Pilot banks without Flexcube can omit this dependency entirely.
 # oracledb==3.4.1

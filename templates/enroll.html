@@ -130,7 +130,6 @@
   if (params.get('user')) document.getElementById('s-user').value = params.get('user');
   if (params.get('token')) document.getElementById('s-token').value = params.get('token');
 
-  let currentSecret = null;
   let currentUsername = null;
   let currentToken = null;
 
@@ -150,11 +149,13 @@
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.detail || 'Failed');
-      currentSecret = j.secret;
+      // The server keeps the secret. We only show the manual-entry key
+      // on screen so the user can type it into the authenticator if
+      // they can't scan — never round-trip it back to /enroll/complete.
       currentUsername = username;
       currentToken = token;
       document.getElementById('qr').src = j.qr;
-      document.getElementById('secret-text').textContent = j.secret.match(/.{1,4}/g).join(' ');
+      document.getElementById('secret-text').textContent = j.manual_key.match(/.{1,4}/g).join(' ');
       document.getElementById('step1').style.display = 'none';
       document.getElementById('step2').style.display = '';
       document.getElementById('c-code').focus();
@@ -180,7 +181,6 @@
         body: JSON.stringify({
           username: currentUsername,
           enrollment_token: currentToken,
-          secret: currentSecret,
           totp_code: code,
         }),
       });

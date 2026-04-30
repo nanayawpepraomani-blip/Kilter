@@ -18,10 +18,14 @@ safe to call on every startup. Tables:
                    decisions, exports). Details field is a JSON blob.
 """
 
+import os
 import sqlite3
 from pathlib import Path
 
-DB_PATH = Path(__file__).resolve().parent / 'kilter.db'
+# DB location is env-overridable so containerised deployments can mount the
+# database file on a persistent volume (e.g. /data/kilter.db). Defaults to
+# kilter.db next to this file for local / dev runs.
+DB_PATH = Path(os.environ.get('KILTER_DB_PATH') or Path(__file__).resolve().parent / 'kilter.db')
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS sessions (
@@ -39,6 +43,10 @@ CREATE TABLE IF NOT EXISTS sessions (
     flex_currency TEXT,
     account_id INTEGER,
     account_label TEXT,
+    -- The CSV format profile used to load the Flex side, or NULL when
+    -- the default Flexcube xlsx loader handled it. Lets the recent-
+    -- sessions UI surface the source per session and filter by profile.
+    flex_profile_id INTEGER REFERENCES csv_format_profiles(id),
     FOREIGN KEY (account_id) REFERENCES accounts(id)
 );
 
@@ -55,6 +63,22 @@ CREATE TABLE IF NOT EXISTS accounts (
     active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
     created_by TEXT NOT NULL,
+    -- Domain selector. 'cash_nostro' = traditional correspondent-banking
+    -- account (the original Kilter use-case). 'mobile_wallet' = mobile-money
+    -- operator wallet (M-Pesa / MTN MoMo / Airtel Money etc.). The recon
+    -- engine itself doesn't care; the field drives UI grouping, default
+    -- BYO profile selection, and dashboard filters.
+    account_type TEXT NOT NULL DEFAULT 'cash_nostro',
+    -- For mobile_wallet rows: which network. 'mpesa', 'mtn_momo',
+    -- 'airtel_money'. NULL for cash_nostro. Open vocabulary so a new
+    -- wallet operator doesn't require a code change to onboard.
+    provider TEXT,
+    -- The wallet's primary identifiers. msisdn = subscriber phone
+    -- (E.164 stored without leading +). short_code = paybill/till number
+    -- some operators use as the merchant identifier. Either or both may
+    -- be set for a wallet; both NULL for cash_nostro.
+    msisdn TEXT,
+    short_code TEXT,
     UNIQUE (swift_account, flex_ac_no, currency)
 );
 
@@ -120,10 +144,163 @@ CREATE TABLE IF NOT EXISTS assignments (
     status TEXT NOT NULL DEFAULT 'pending',
     decided_by TEXT,
     decided_at TEXT,
+    -- Case management. assignee = the operator who has claimed the case
+    -- (NULL = unclaimed, in the general queue). due_date = ISO date the
+    -- case is expected to be resolved by (NULL = no SLA). priority is a
+    -- low/normal/high/urgent string for filtering.
+    assignee TEXT,
+    due_date TEXT,
+    priority TEXT NOT NULL DEFAULT 'normal',
     FOREIGN KEY (session_id) REFERENCES sessions(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_assignments_session_status ON assignments(session_id, status);
+-- The (assignee, status) index lives in the migration block — it references
+-- a column added by _ensure_columns, and putting CREATE INDEX here would
+-- explode on legacy DBs where the column hasn't been migrated in yet
+-- (executescript runs before _ensure_columns, so the column doesn't exist
+-- when this script runs against a pre-case-management DB). See bottom of
+-- init_db() for the post-migration index creation.
+
+-- Bring-your-own-format CSV profiles. Each row is a saved column-mapping
+-- + parsing-config that turns a non-standard GL extract into the same
+-- canonical txn shape the engine expects from a Flex xlsx. Created via
+-- the /byo-formats wizard; selected at ingest time when the file is a
+-- CSV not matching the built-in parsers.
+CREATE TABLE IF NOT EXISTS csv_format_profiles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    -- Only 'flex' supported initially. The SWIFT side is handled by
+    -- native MT/camt parsers; banks rarely send their nostro statements
+    -- as CSV, so we draw the line here.
+    side TEXT NOT NULL DEFAULT 'flex',
+    delimiter TEXT NOT NULL DEFAULT ',',         -- ',' ';' '\t' '|'
+    header_row INTEGER NOT NULL DEFAULT 1,       -- 1-based; row that holds column names
+    skip_rows INTEGER NOT NULL DEFAULT 0,        -- preamble rows above the header
+    date_format TEXT NOT NULL DEFAULT '%Y-%m-%d',
+    currency TEXT,                               -- ISO; null if pulled from a column or inherited from bound account
+    -- JSON object: {amount, value_date, ref, narration, type, currency, ac_no}
+    -- Each value is the source column name (e.g. "Posting Amount") or null
+    -- when the field isn't present in this format. The loader handles
+    -- missing optional fields by emitting empty strings.
+    column_map TEXT NOT NULL,
+    -- 'positive_credit' = positive amount means CR, negative DR
+    -- 'separate_column' = read sign_column for 'CR'/'DR' / '+' / '-'
+    -- 'cr_dr_column'    = the type column already contains 'CR' or 'DR'
+    sign_convention TEXT NOT NULL DEFAULT 'positive_credit',
+    sign_column TEXT,                            -- only used when sign_convention != positive_credit
+    -- Optional binding to a specific account. When set, files using this
+    -- profile are routed to this account regardless of whether the file
+    -- contains an account-number column. Currency falls back to the
+    -- account's currency when neither profile.currency nor a currency
+    -- column is set. Most banks send one CSV format per account, so this
+    -- removes the requirement to repeat that information in every file.
+    account_id INTEGER REFERENCES accounts(id),
+    -- Glob pattern for scanner intake. When the daily scan finds a .csv
+    -- in messages/flexcube/ matching this pattern, it ingests using
+    -- this profile. Examples: 'acme_gl_*.csv', '*.tsv'. Null = profile
+    -- is manual-upload-only.
+    filename_pattern TEXT,
+    sample_filename TEXT,
+    created_by TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT,
+    active INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE INDEX IF NOT EXISTS idx_csv_profiles_active ON csv_format_profiles(active, name);
+
+-- ---------------------------------------------------------------------------
+-- Cards module — PCI-safe schema.
+--
+-- Storage rule: full PAN is NEVER persisted to either of these tables.
+-- PCI-DSS permits storing first-6 (BIN) and last-4 separately or together
+-- without putting the storage in scope. Loaders MUST mask full PANs at
+-- the parser layer before any INSERT — see pci_safety.mask_pan().
+--
+-- Schemes covered (or planned):
+--   * visa         — Visa Base II clearing
+--   * mastercard   — Mastercard IPM (TC items via CMF)
+--   * verve        — Interswitch Verve (Nigeria)
+--   * gh_cardlink  — Ghana Cardlink switch
+--   * other        — generic CSV via BYO profile
+--
+-- Each settlement file is one row in card_settlement_files; its
+-- transactions live in card_settlement_records joined by file_id.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS card_settlement_files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sha256 TEXT NOT NULL UNIQUE,        -- de-dup guard, same idea as ingested_files
+    scheme TEXT NOT NULL,               -- visa | mastercard | verve | gh_cardlink | other
+    role TEXT NOT NULL,                 -- 'issuer' | 'acquirer' | 'switch'
+    file_id TEXT,                       -- scheme-assigned file identifier (Visa file ID, Mastercard file ID)
+    processing_date TEXT NOT NULL,      -- YYYY-MM-DD when scheme generated the file
+    settlement_date TEXT,               -- YYYY-MM-DD when funds move
+    record_count INTEGER NOT NULL DEFAULT 0,
+    total_amount REAL,                  -- sum of record amounts in settlement currency
+    currency TEXT,                      -- ISO 4217
+    original_filename TEXT,
+    ingested_at TEXT NOT NULL,
+    ingested_by TEXT NOT NULL,
+    notes TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_card_files_scheme_date
+    ON card_settlement_files(scheme, settlement_date DESC);
+
+CREATE TABLE IF NOT EXISTS card_settlement_records (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    file_id INTEGER NOT NULL REFERENCES card_settlement_files(id),
+    record_index INTEGER NOT NULL,      -- 1-based row number within the file
+    -- ---- PCI-safe card identifiers ----
+    -- BIN (first 6 digits) — out of PCI-DSS storage scope.
+    pan_first6 TEXT,
+    -- Last 4 — out of PCI-DSS storage scope.
+    pan_last4 TEXT,
+    -- ---- Transaction identifiers ----
+    -- Scheme-assigned transaction reference — Visa: Transaction
+    -- Reference Number (TRR/ARN); Mastercard: Banknet Reference Number.
+    -- This is the primary key for 3-way matching (auth → clearing →
+    -- settlement) so it MUST be present and unique within a settlement
+    -- batch.
+    scheme_ref TEXT NOT NULL,
+    auth_code TEXT,                     -- 6-digit issuer auth code (PCI-out-of-scope)
+    -- ---- Merchant context ----
+    merchant_id TEXT,
+    merchant_name TEXT,
+    mcc TEXT,                           -- merchant category code (4 digits)
+    terminal_id TEXT,
+    -- ---- Transaction context ----
+    transaction_type TEXT,              -- purchase | refund | cash_advance | chargeback | fee
+    -- ---- Amounts ----
+    amount_settlement REAL NOT NULL,    -- in settlement currency
+    currency_settlement TEXT NOT NULL,  -- ISO 4217
+    amount_transaction REAL,            -- in original transaction currency (for cross-border)
+    currency_transaction TEXT,
+    fx_rate REAL,                       -- transaction → settlement
+    fee_total REAL NOT NULL DEFAULT 0,  -- interchange + scheme fees combined
+    -- ---- Dates ----
+    transaction_date TEXT,              -- YYYY-MM-DD when card was presented
+    settlement_date TEXT NOT NULL,      -- YYYY-MM-DD when funds settle
+    -- ---- Recon state ----
+    -- 'matched' = paired with a GL entry; 'unmatched' = needs review;
+    -- 'disputed' = chargeback in flight; 'written_off' = approved manually.
+    recon_status TEXT NOT NULL DEFAULT 'unmatched',
+    matched_at TEXT,
+    matched_by TEXT,
+    notes TEXT,
+    UNIQUE (file_id, record_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_card_records_scheme_ref
+    ON card_settlement_records(scheme_ref);
+CREATE INDEX IF NOT EXISTS idx_card_records_settlement_date
+    ON card_settlement_records(settlement_date);
+CREATE INDEX IF NOT EXISTS idx_card_records_pan_last4
+    ON card_settlement_records(pan_last4);
+CREATE INDEX IF NOT EXISTS idx_card_records_status
+    ON card_settlement_records(recon_status, settlement_date);
 
 CREATE TABLE IF NOT EXISTS audit_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -156,16 +333,24 @@ CREATE TABLE IF NOT EXISTS users (
     last_seen_at      TEXT,
     totp_secret       TEXT,             -- null until user completes enrollment
     totp_enrolled_at  TEXT,
-    enrollment_token  TEXT              -- one-time; cleared after enrollment
+    enrollment_token  TEXT,             -- one-time; cleared after enrollment
+    -- Password layer source. 'local' = TOTP-only login (current default,
+    -- preserved for the bootstrap admin). 'ldap' = require AD/LDAP bind
+    -- before TOTP. See ldap_auth.py for the bind logic.
+    auth_source       TEXT NOT NULL DEFAULT 'local',
+    -- DN we successfully bound as on the most recent LDAP login. Recorded
+    -- for the audit log; not used for authentication decisions.
+    ldap_dn           TEXT
 );
 
 CREATE TABLE IF NOT EXISTS user_sessions (
-    token       TEXT PRIMARY KEY,
-    username    TEXT NOT NULL,
-    created_at  TEXT NOT NULL,
-    expires_at  TEXT NOT NULL,
-    user_agent  TEXT,
-    revoked_at  TEXT,
+    token         TEXT PRIMARY KEY,
+    username      TEXT NOT NULL,
+    created_at    TEXT NOT NULL,
+    expires_at    TEXT NOT NULL,
+    user_agent    TEXT,
+    revoked_at    TEXT,
+    last_used_at  TEXT,                  -- sliding idle-timeout marker
     FOREIGN KEY (username) REFERENCES users(username)
 );
 
@@ -512,6 +697,7 @@ def init_db() -> None:
         _seed_banks(conn)
         _seed_fx_identity(conn)
         _seed_scheduled_jobs(conn)
+        _seed_mobile_money_profiles(conn)
         conn.commit()
     finally:
         conn.close()
@@ -705,6 +891,226 @@ def _seed_scheduled_jobs(conn) -> None:
         )
 
 
+def _seed_mobile_money_profiles(conn) -> None:
+    """Pre-seed three CSV format profiles for the major African mobile-
+    money operators so admins don't have to figure out the column maps
+    from scratch. Profiles are unbound (no account_id) and have no
+    filename pattern by default — admins bind them to specific wallet
+    accounts via the BYO formats UI once they've been imported.
+
+    Idempotent — keyed on the profile name. Re-running init_db never
+    overwrites a profile an admin has customised after the first seed.
+    """
+    import json
+    from datetime import datetime
+    now = datetime.utcnow().isoformat()
+
+    # Each operator publishes its statement export in a slightly
+    # different shape. The mappings below match the official downloads
+    # available from the operator portal as of late 2025; admins can
+    # tune them per-bank via the BYO wizard. Keys not present in a
+    # given operator's export stay None — the loader treats those as
+    # absent.
+    seeds = [
+        {
+            'name': 'M-Pesa Safaricom statement',
+            # Safaricom Web Self-Service "Daily Statement" CSV. Two-column
+            # amount shape (Paid In / Withdrawn) — handled natively via
+            # the paid_in_withdrawn sign convention.
+            'delimiter': ',',
+            'date_format': '%Y-%m-%d %H:%M:%S',
+            'column_map': {
+                'amount':       'Paid In',
+                'value_date':   'Completion Time',
+                'ref':          'Receipt No.',
+                'narration':    'Details',
+                'type':         None,
+                'currency':     'Currency',
+                'ac_no':        None,
+                'ac_branch':    None,
+                'booking_date': 'Initiation Time',
+            },
+            'sign_convention': 'paid_in_withdrawn',
+            'sign_column': 'Withdrawn',
+        },
+        {
+            'name': 'Telcel Cash organisation statement',
+            # Telcel Cash (formerly Vodafone Cash) Business Self-Service
+            # statement. Same Paid In / Withdrawn shape as M-Pesa — the
+            # bulk-payments product publishes an Excel statement that
+            # operators export to CSV before upload (BYO loader is
+            # CSV-only today).
+            'delimiter': ',',
+            'date_format': '%d/%m/%Y %H:%M:%S',
+            'column_map': {
+                'amount':       'Paid In',
+                'value_date':   'Completion Time',
+                'ref':          'Receipt No.',
+                'narration':    'Details',
+                'type':         None,
+                'currency':     'Currency',
+                'ac_no':        'Opposite Party',
+                'ac_branch':    None,
+                'booking_date': 'Initiation Time',
+            },
+            'sign_convention': 'paid_in_withdrawn',
+            'sign_column': 'Withdrawn',
+        },
+        {
+            'name': 'MTN MoMo agent statement',
+            # MTN MoMo Agent Portal — Ghana, Uganda, Cote d'Ivoire all
+            # ship the same shape (modulo regional date format).
+            'delimiter': ',',
+            'date_format': '%d/%m/%Y',
+            'column_map': {
+                'amount':       'Amount',
+                'value_date':   'Transaction Date',
+                'ref':          'Reference',
+                'narration':    'Description',
+                'type':         'Type',
+                'currency':     None,
+                'ac_no':        'MSISDN',
+                'ac_branch':    None,
+                'booking_date': None,
+            },
+            'sign_convention': 'cr_dr_column',
+            'sign_column': 'Type',
+        },
+        {
+            'name': 'MTN MoMo operator B2W',
+            # MTN MoMo operator-side Bank-to-Wallet (pull) feed. Signed
+            # amount: negative for outflows from the operator's bank
+            # account (= bank-to-wallet transfer). Columns mirror the
+            # MTN B2W CSV export. The first 'Currency' column wins on
+            # lookup (Python csv keeps the first match for duplicate
+            # header names).
+            'delimiter': ',',
+            'date_format': '%m/%d/%Y %H:%M',
+            'column_map': {
+                'amount':       'Amount',
+                'value_date':   'Date',
+                'ref':          'External Transaction Id',
+                'narration':    'To Message',
+                'type':         None,
+                'currency':     'Currency',
+                'ac_no':        'To',
+                'ac_branch':    None,
+                'booking_date': None,
+            },
+            'sign_convention': 'positive_credit',
+            'sign_column': None,
+        },
+        {
+            'name': 'MTN MoMo operator W2B',
+            # MTN MoMo operator-side Wallet-to-Bank (push) feed. Same
+            # 26-column core shape as B2W. Some MTN file generations
+            # also carry External Amount / External FX Rate / External
+            # Service Provider — when present they land in _extra
+            # automatically and are available to downstream FX-recon.
+            # Positive Amount = funds IN to the operator's bank account.
+            'delimiter': ',',
+            'date_format': '%m/%d/%Y %H:%M',
+            'column_map': {
+                'amount':       'Amount',
+                'value_date':   'Date',
+                'ref':          'External Transaction Id',
+                'narration':    'To Message',
+                'type':         None,
+                'currency':     'Currency',
+                'ac_no':        'From',
+                'ac_branch':    None,
+                'booking_date': None,
+            },
+            'sign_convention': 'positive_credit',
+            'sign_column': None,
+        },
+        {
+            'name': 'Airtel Money agent statement',
+            # Airtel Money Africa — common across Kenya, Tanzania,
+            # Uganda, Zambia, DRC etc. Ships an explicit Credit/Debit
+            # column.
+            'delimiter': ',',
+            'date_format': '%Y-%m-%d',
+            'column_map': {
+                'amount':       'Amount',
+                'value_date':   'Date',
+                'ref':          'Transaction ID',
+                'narration':    'Description',
+                'type':         'CR/DR',
+                'currency':     'Currency',
+                'ac_no':        'Customer MSISDN',
+                'ac_branch':    None,
+                'booking_date': None,
+            },
+            'sign_convention': 'cr_dr_column',
+            'sign_column': 'CR/DR',
+        },
+        {
+            'name': 'Card switch acquirer settlement',
+            # Daily acquirer transaction report from a payment switch.
+            # Tab-separated. PAN arrives pre-masked (484680******1168);
+            # cards_ingest reads it via pan_masked_field. Currency is
+            # the ISO numeric code (936=GHS, 840=USD) — admins should
+            # bind this profile to a single-currency wallet account or
+            # clone it per currency.
+            'delimiter': '\t',
+            'date_format': '%m/%d/%Y %H:%M:%S',
+            'column_map': {
+                'amount':       'Settle Amount Impact',
+                'value_date':   'Datetime Req',
+                'ref':          'Retrieval Reference Nr',
+                'narration':    'Card Acceptor Name Loc',
+                'type':         None,
+                'currency':     None,
+                'ac_no':        'Acquiring Inst Id Code',
+                'ac_branch':    None,
+                'booking_date': None,
+            },
+            'sign_convention': 'positive_credit',
+            'sign_column': None,
+        },
+        {
+            'name': 'Card switch issuer settlement',
+            # Daily issuer transaction report from a payment switch.
+            # Same TSV shape as acquirer but the settlement amount lives
+            # in 'Settle Amount Rsp' rather than 'Settle Amount Impact'.
+            'delimiter': '\t',
+            'date_format': '%m/%d/%Y %H:%M:%S',
+            'column_map': {
+                'amount':       'Settle Amount Rsp',
+                'value_date':   'Datetime Req',
+                'ref':          'Retrieval Reference Nr',
+                'narration':    'Card Acceptor Name Loc',
+                'type':         None,
+                'currency':     None,
+                'ac_no':        'Acquiring Inst Id Code',
+                'ac_branch':    None,
+                'booking_date': None,
+            },
+            'sign_convention': 'positive_credit',
+            'sign_column': None,
+        },
+    ]
+
+    existing = {r[0] for r in conn.execute(
+        "SELECT name FROM csv_format_profiles").fetchall()}
+
+    for s in seeds:
+        if s['name'] in existing:
+            continue
+        conn.execute(
+            "INSERT INTO csv_format_profiles "
+            "(name, side, delimiter, header_row, skip_rows, date_format, "
+            " currency, column_map, sign_convention, sign_column, "
+            " account_id, filename_pattern, created_by, created_at, active) "
+            "VALUES (?, 'flex', ?, 1, 0, ?, NULL, ?, ?, ?, NULL, NULL, "
+            "        'system-seed', ?, 1)",
+            (s['name'], s['delimiter'], s['date_format'],
+             json.dumps(s['column_map']),
+             s['sign_convention'], s['sign_column'], now),
+        )
+
+
 def _seed_fx_identity(conn) -> None:
     """Guarantee same-currency identity rows exist so the FX-tolerance lookup
     always finds a row when the two sides share a currency. Idempotent."""
@@ -851,13 +1257,24 @@ def _migrate_add_session_account_columns(conn) -> None:
         ('account_label',        'TEXT'),
     ])
     _ensure_columns(conn, 'accounts', [
-        ('shortname',   'TEXT'),
-        ('access_area', 'TEXT'),
+        ('shortname',    'TEXT'),
+        ('access_area',  'TEXT'),
+        # Mobile-money expansion. Default 'cash_nostro' preserves every
+        # existing account row's behaviour; mobile_wallet rows opt-in
+        # via the new account-create form.
+        ('account_type', "TEXT NOT NULL DEFAULT 'cash_nostro'"),
+        ('provider',     'TEXT'),
+        ('msisdn',       'TEXT'),
+        ('short_code',   'TEXT'),
     ])
     _ensure_columns(conn, 'users', [
         ('totp_secret',      'TEXT'),
         ('totp_enrolled_at', 'TEXT'),
         ('enrollment_token', 'TEXT'),
+        # LDAP integration. 'local' (TOTP-only) is the legacy default so
+        # existing rows behave exactly as they did pre-migration.
+        ('auth_source',      "TEXT NOT NULL DEFAULT 'local'"),
+        ('ldap_dn',          'TEXT'),
     ])
     _ensure_columns(conn, 'discovered_accounts', [
         ('resolved_at', 'TEXT'),
@@ -869,6 +1286,10 @@ def _migrate_add_session_account_columns(conn) -> None:
     # can have different active scopes.
     _ensure_columns(conn, 'user_sessions', [
         ('active_access_areas', 'TEXT'),
+        # Sliding idle-timeout window. NULL on legacy rows is treated as
+        # "freshly used" by resolve_session so deploying this column
+        # doesn't force a wave of logouts.
+        ('last_used_at',        'TEXT'),
     ])
     _ensure_columns(conn, 'sessions', [
         ('opening_balance',        'TEXT'),
@@ -893,7 +1314,17 @@ def _migrate_add_session_account_columns(conn) -> None:
         ('manual_reason',   'TEXT'),
         ('open_item_id',    'INTEGER'),  # set when this match cleared a carry-forward open_item
         ('split_group_id',  'TEXT'),     # shared UUID when a 1:N or N:1 aggregate split is confirmed; null for plain 1:1 matches
+        # Case-management columns. NULL on legacy rows is fine — code
+        # paths fall back to "unassigned, no SLA, normal priority".
+        ('assignee',        'TEXT'),
+        ('due_date',        'TEXT'),
+        ('priority',        "TEXT NOT NULL DEFAULT 'normal'"),
     ])
+    # Optional secondary index on assignee — only useful if the column was
+    # added via migration, since the CREATE TABLE above already sets one
+    # when the table is fresh. CREATE INDEX IF NOT EXISTS is idempotent.
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_assignments_assignee "
+                 "ON assignments(assignee, status)")
     # Functional group (TREASURY / PSC TROPS / etc.) for ops' daily tab-per-team
     # report. Set by auto_grouping_rules at seed time; also editable via the
     # manual-reclassify endpoint.
@@ -906,6 +1337,9 @@ def _migrate_add_session_account_columns(conn) -> None:
         # Indicates whether closure has been run — decoupled from seeded count
         # because a session can legitimately have zero unmatched rows to seed.
         ('functional_groups_applied', 'INTEGER NOT NULL DEFAULT 0'),
+        # CSV profile that loaded the Flex side. NULL on legacy rows
+        # ingested via the default xlsx loader.
+        ('flex_profile_id',           'INTEGER'),
     ])
     # FX tolerance — max acceptable spread (in basis points) between the
     # SWIFT amount converted at the prevailing FX rate and the Flex amount.
@@ -913,6 +1347,14 @@ def _migrate_add_session_account_columns(conn) -> None:
     # quarter-percent FX cushion.
     _ensure_columns(conn, 'tolerance_rules', [
         ('fx_tol_bps', 'REAL NOT NULL DEFAULT 0'),
+    ])
+    # CSV-profile bindings — added in the post-pilot UX pass after the
+    # initial release. Both columns are nullable so existing manual-only
+    # profiles keep working; setting them just unlocks scan routing and
+    # currency inheritance.
+    _ensure_columns(conn, 'csv_format_profiles', [
+        ('account_id',       'INTEGER'),
+        ('filename_pattern', 'TEXT'),
     ])
 
 

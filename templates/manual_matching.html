@@ -177,7 +177,7 @@
 <p>For every <strong>open item</strong> on this session's account (status = <code>open</code>, any age), try to pair it against the current session's still-unclaimed rows. Matching uses the same Tolerance object as the main engine, so ref normalisation, amount tolerance, and date tolerance all carry over.</p>
 
 <h3>Why it's not time-limited</h3>
-<p>A 90-day-old open item finding its counterpart today is exactly the value of the rolling ledger. Arbitrary age cut-offs (e.g. "only look back 30 days") would re-introduce the session-bound-break bug that Corona suffers from.</p>
+<p>A 90-day-old open item finding its counterpart today is exactly the value of the rolling ledger. Arbitrary age cut-offs (e.g. "only look back 30 days") would re-introduce the session-bound-break problem that legacy reconciliation tools suffer from.</p>
 
 <h3>What gets recorded</h3>
 <p>A carry-forward clear creates an assignment with <code>source='auto_carry'</code> and <code>open_item_id</code> set, plus updates the open_item to <code>status='cleared', cleared_via='auto_carry'</code>. The audit log records <code>open_item_auto_cleared</code>.</p>

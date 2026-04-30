@@ -49,7 +49,10 @@ from swift_loader import extract_swift_meta_raw
 
 
 SWIFT_SUFFIXES = ('.out', '.xlsx', '.xlsm', '.xml', '.txt')
-FLEX_SUFFIXES = ('.xlsx', '.xlsm')
+# .csv routed through BYO format profiles (csv_format_profiles.filename_pattern).
+# .txt accepted alongside .csv because some banks ship CSV-shaped data with
+# a .txt extension; the profile decides delimiter regardless of extension.
+FLEX_SUFFIXES = ('.xlsx', '.xlsm', '.csv', '.txt')
 
 
 MESSAGES_DIR = Path(__file__).resolve().parent / 'messages'
@@ -104,11 +107,18 @@ def scan(user: str = 'auto-scan') -> ScanReport:
     registry = _load_registry()
     swift_by_account: dict[tuple, list[Path]] = {}
     flex_by_account: dict[tuple, list[Path]] = {}
+    # Per-file BYO profile lookup. We populate this in _triage_flex when
+    # the file is a CSV matched against an active csv_format_profiles row;
+    # _ingest_one reads it back to pass `flex_profile_id` to ingest_pair.
+    # Keyed by str(Path) so we don't fight Path equality semantics across
+    # platforms.
+    flex_profile_for: dict[str, int | None] = {}
+    profiles = _load_active_csv_profiles()
 
     for p in swift_files:
         _triage_swift(p, registry, swift_by_account, report)
     for p in flex_files:
-        _triage_flex(p, registry, flex_by_account, report)
+        _triage_flex(p, registry, flex_by_account, report, profiles, flex_profile_for)
 
     # Phase 2: pair and ingest.
     all_keys = set(swift_by_account) | set(flex_by_account)
@@ -117,7 +127,8 @@ def scan(user: str = 'auto-scan') -> ScanReport:
         f_list = sorted(flex_by_account.get(key, []))
         pair_n = min(len(s_list), len(f_list))
         for s_path, f_path in zip(s_list[:pair_n], f_list[:pair_n]):
-            _ingest_one(s_path, f_path, user, report)
+            _ingest_one(s_path, f_path, user, report,
+                        flex_profile_id=flex_profile_for.get(str(f_path)))
         # Leftovers with no partner.
         for p in s_list[pair_n:]:
             _move(p, UNLOADED_NO_PARTNER, report, 'swift', 'no_partner',
@@ -169,19 +180,46 @@ def _triage_swift(path: Path, registry: dict, buckets: dict, report: ScanReport)
     buckets.setdefault(key, []).append(path)
 
 
-def _triage_flex(path: Path, registry: dict, buckets: dict, report: ScanReport) -> None:
+def _triage_flex(path: Path, registry: dict, buckets: dict, report: ScanReport,
+                  profiles: list[dict] | None = None,
+                  profile_for: dict[str, int | None] | None = None) -> None:
     sha = sha256_of(path)
     if _hash_already_ingested(sha):
         _move(path, UNLOADED_DUPLICATE, report, 'flexcube', 'duplicate',
               reason=f"SHA-256 already ingested: {sha[:12]}...")
         return
-    try:
-        txns = load_flexcube(path)
-        meta = extract_flex_meta(txns)
-    except Exception as exc:
-        _move(path, UNLOADED_MISMATCH, report, 'flexcube', 'error',
-              reason=f"Couldn't load: {exc}")
-        return
+
+    suffix = path.suffix.lower()
+    profile = None
+    if suffix in ('.csv', '.txt'):
+        # CSV intake — must match an active profile by filename pattern.
+        profile = _match_csv_profile(path.name, profiles or [])
+        if profile is None:
+            _move(path, UNLOADED_UNREGISTERED, report, 'flexcube',
+                  'unregistered',
+                  reason=f"No CSV format profile matches filename {path.name!r}. "
+                         f"Add a profile with a matching filename_pattern, or "
+                         f"upload manually with a profile selected.")
+            return
+        try:
+            txns = _load_byo_for_triage(path, profile)
+        except Exception as exc:
+            _move(path, UNLOADED_MISMATCH, report, 'flexcube', 'error',
+                  reason=f"BYO profile {profile['name']!r} could not parse: {exc}")
+            return
+        meta = extract_flex_meta(txns) if txns else {}
+        # Apply same fallbacks as ingest._load_flex_via_profile so the
+        # registry-key lookup below sees a complete (ac_no, ccy) pair.
+        meta = _apply_profile_fallbacks_to_meta(meta, profile)
+    else:
+        try:
+            txns = load_flexcube(path)
+            meta = extract_flex_meta(txns)
+        except Exception as exc:
+            _move(path, UNLOADED_MISMATCH, report, 'flexcube', 'error',
+                  reason=f"Couldn't load: {exc}")
+            return
+
     if meta.get('multi_account'):
         _move(path, UNLOADED_MISMATCH, report, 'flexcube', 'mismatch',
               reason=f"Multiple AC_NOs in file: {meta['all_accounts']}")
@@ -190,7 +228,8 @@ def _triage_flex(path: Path, registry: dict, buckets: dict, report: ScanReport) 
     ccy = meta.get('currency')
     if not (ac and ccy):
         _move(path, UNLOADED_MISMATCH, report, 'flexcube', 'error',
-              reason="Flexcube file missing AC_NO or ACCT_CCY")
+              reason="Flexcube file missing AC_NO or ACCT_CCY (and profile "
+                     "had no fallback binding to fill them in)")
         return
     key = _registry_key_from_flex(registry, ac, ccy)
     if key is None:
@@ -199,11 +238,15 @@ def _triage_flex(path: Path, registry: dict, buckets: dict, report: ScanReport) 
               reason=f"Flexcube GL {ac} ({ccy}) not in accounts registry")
         return
     buckets.setdefault(key, []).append(path)
+    if profile is not None and profile_for is not None:
+        profile_for[str(path)] = int(profile['id'])
 
 
-def _ingest_one(swift_path: Path, flex_path: Path, user: str, report: ScanReport) -> None:
+def _ingest_one(swift_path: Path, flex_path: Path, user: str, report: ScanReport,
+                 flex_profile_id: int | None = None) -> None:
     try:
-        result: IngestResult = ingest_pair(swift_path, flex_path, user)
+        result: IngestResult = ingest_pair(swift_path, flex_path, user,
+                                            flex_profile_id=flex_profile_id)
     except DuplicateFileError as exc:
         # Defensive — shouldn't fire because we pre-hashed, but handle anyway.
         losing_path = swift_path if exc.which == 'SWIFT' else flex_path
@@ -289,6 +332,73 @@ def _load_registry() -> list[dict]:
         ).fetchall()]
     finally:
         conn.close()
+
+
+def _load_active_csv_profiles() -> list[dict]:
+    """Pull only profiles that have a filename_pattern set — those are the
+    ones intended for scan auto-routing. Profiles without a pattern are
+    manual-upload-only by design."""
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT p.*, a.flex_ac_no AS bound_ac_no, "
+            "       a.currency AS bound_currency "
+            "FROM csv_format_profiles p "
+            "LEFT JOIN accounts a ON a.id = p.account_id "
+            "WHERE p.active=1 AND p.filename_pattern IS NOT NULL "
+            "  AND p.filename_pattern != '' "
+            "ORDER BY p.name"
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def _match_csv_profile(filename: str, profiles: list[dict]) -> dict | None:
+    """Return the single profile whose filename_pattern matches `filename`,
+    or None if zero or more-than-one match. Patterns use fnmatch glob
+    rules (case-insensitive on Windows; we lower-case both sides so the
+    same profile matches across platforms).
+
+    Returning None on multi-match is deliberate — the operator picked
+    overlapping patterns and we'd rather error out than guess wrong."""
+    import fnmatch
+    name_lc = filename.lower()
+    hits = [p for p in profiles
+            if fnmatch.fnmatch(name_lc, (p.get('filename_pattern') or '').lower())]
+    if len(hits) == 1:
+        return hits[0]
+    return None
+
+
+def _load_byo_for_triage(path: Path, profile_row: dict) -> list[dict]:
+    """Run the BYO loader against `path` to produce canonical Flex txns
+    suitable for extract_flex_meta. Same parsing the real ingest does;
+    we run it twice (once here, once in ingest_pair) and accept the cost
+    because the alternative is sharing mutable state through the pipeline.
+    Files this size parse in milliseconds."""
+    from byo_csv_loader import CsvProfile, load_csv as load_byo_csv
+    profile = CsvProfile.from_db(profile_row)
+    content = path.read_bytes()
+    result = load_byo_csv(content, profile)
+    if not result.txns and result.errors:
+        first = result.errors[0]
+        raise RuntimeError(f"row {first[0]}: {first[1]}")
+    return result.txns
+
+
+def _apply_profile_fallbacks_to_meta(meta: dict, profile_row: dict) -> dict:
+    """Fill in ac_no / currency from the profile's bound account when
+    the data didn't carry them. Same logic as ingest._load_flex_via_profile,
+    re-applied here so the registry-key lookup in _triage_flex sees a
+    complete pair."""
+    out = dict(meta)
+    if not out.get('ac_no') and profile_row.get('bound_ac_no'):
+        out['ac_no'] = profile_row['bound_ac_no']
+    if not out.get('currency'):
+        out['currency'] = (profile_row.get('currency')
+                           or profile_row.get('bound_currency'))
+    return out
 
 
 def _registry_key_from_swift(registry: list[dict], swift_account: str, ccy: str):

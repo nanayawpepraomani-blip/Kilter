@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}Manual upload · Kilter{% endblock %}
+{% block crumbs %}<a href="/">Dashboard</a><span class="sep">/</span><span class="current">Manual upload</span>{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Manual upload</h1>
+    <div class="subtitle">Upload a SWIFT statement + matching ledger export for a one-off reconciliation. Goes through the same dedup + validation as the watched-folder scan, just bypasses the folder step.</div>
+  </div>
+</div>
+
+<!-- Manual-upload card (admin-only). -->
+<div class="card admin-only" id="upload" style="display:none">
+  <div class="card-head">
+    <h2>Upload pair</h2>
+    <div class="hint">Pick one SWIFT file and one ledger file for the same account / period.</div>
+  </div>
+  <div class="card-body">
+    <form id="upload-form" class="form-grid">
+      <div class="field">
+        <label>SWIFT file (.out MT940/950, .xml or .txt camt.053/054, .xlsx parsed)</label>
+        <input class="input" type="file" id="swift" accept=".out,.xml,.txt,.xlsx" required>
+      </div>
+      <div class="field">
+        <label>Ledger / Flexcube file</label>
+        <input class="input" type="file" id="flex" accept=".xlsx,.csv,.txt" required>
+      </div>
+      <div class="field">
+        <label>Format profile <span class="muted">(blank = Flexcube xlsx)</span></label>
+        <select id="flex-profile" class="input">
+          <option value="">Flexcube xlsx (default)</option>
+        </select>
+        <a href="/byo-formats" class="hint" style="display:inline-block;margin-top:4px">Manage CSV profiles &rarr;</a>
+      </div>
+      <div class="span-full" style="grid-column:1/-1">
+        <button type="submit" class="btn btn-primary" id="upload-submit">Upload and reconcile</button>
+        <span class="status" id="upload-status"></span>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card non-admin-only" style="display:none">
+  <div class="card-body">
+    <p class="muted" style="margin:0">Manual upload is admin-only. Ask an administrator to upload the pair;
+    once a session is created you'll see it on the Sessions page.</p>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.body.dataset.nav = 'upload';
+
+document.addEventListener('me:loaded', (ev) => {
+  const isAdmin = ev.detail.role === 'admin';
+  document.querySelectorAll('.non-admin-only').forEach(el =>
+    el.style.display = isAdmin ? 'none' : '');
+});
+
+async function loadFlexProfiles() {
+  try {
+    const r = await fetch('/csv-profiles');
+    if (!r.ok) return;
+    const profiles = await r.json();
+    const sel = document.getElementById('flex-profile');
+    if (!sel) return;
+    profiles.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = `${p.name}${p.currency ? ' · ' + p.currency : ''}`;
+      sel.appendChild(opt);
+    });
+  } catch (exc) {
+    // Non-fatal — operator can still upload using the default Flexcube
+    // xlsx profile. Surface to console so regressions don't hide.
+    console.warn('intake/upload: failed to populate CSV profile dropdown', exc);
+  }
+}
+loadFlexProfiles();
+
+document.getElementById('upload-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const swift = document.getElementById('swift').files[0];
+  const flex = document.getElementById('flex').files[0];
+  const profileId = document.getElementById('flex-profile')?.value || '';
+  const status = document.getElementById('upload-status');
+  const btn = document.getElementById('upload-submit');
+  if (!swift || !flex) return;
+  const fd = new FormData();
+  fd.append('swift', swift);
+  fd.append('flex', flex);
+  if (profileId) fd.append('flex_profile_id', profileId);
+  btn.disabled = true;
+  status.className = 'status';
+  status.textContent = 'Uploading and running engine...';
+  try {
+    const r = await fetch('/sessions', { method: 'POST', body: fd });
+    if (!r.ok) throw new Error((await r.json()).detail || 'Upload failed');
+    const j = await r.json();
+    status.className = 'status success';
+    const acctBadge = j.account.registered
+      ? `<span class="badge badge-success">${esc(j.account.label)}</span>`
+      : `<span class="badge badge-warn">Unregistered</span> <span class="muted">${esc(j.account.swift_account)} ↔ ${esc(j.account.flex_ac_no)} (${esc(j.account.currency)})</span>`;
+    status.innerHTML = `Session ${j.session_id}: ${acctBadge} · ${j.pending_assignments} pending, ${j.unmatched_swift} unmatched SWIFT, ${j.unmatched_flex} unmatched Flex. <a href="/sessions/${j.session_id}/review">Review now &rarr;</a>`;
+  } catch (err) {
+    status.className = 'status error';
+    status.textContent = err.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
+</script>
+{% endblock %}

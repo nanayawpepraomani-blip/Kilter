@@ -37,6 +37,12 @@ import qrcode.image.pil
 
 ISSUER = "Kilter"
 SESSION_LIFETIME = timedelta(hours=8)
+# Idle timeout — a session that hasn't been used in this long is treated
+# as expired, even if its absolute lifetime hasn't elapsed. Default 30
+# minutes matches typical bank-internal-app norms; override per
+# deployment via KILTER_SESSION_IDLE_MINUTES.
+import os as _os
+SESSION_IDLE_TIMEOUT = timedelta(minutes=int(_os.environ.get('KILTER_SESSION_IDLE_MINUTES', '30')))
 TOTP_WINDOW = 1  # accept current code ± 1 step (30s either side)
 
 
@@ -95,29 +101,56 @@ def issue_session(conn, username: str, user_agent: str | None = None) -> dict:
     now = datetime.utcnow()
     expires = now + SESSION_LIFETIME
     conn.execute(
-        "INSERT INTO user_sessions (token, username, created_at, expires_at, user_agent) "
-        "VALUES (?, ?, ?, ?, ?)",
-        (token, username, now.isoformat(), expires.isoformat(), user_agent),
+        "INSERT INTO user_sessions (token, username, created_at, expires_at, "
+        "user_agent, last_used_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (token, username, now.isoformat(), expires.isoformat(), user_agent, now.isoformat()),
     )
     return {'token': token, 'expires_at': expires.isoformat()}
 
 
 def resolve_session(conn, token: str) -> str | None:
-    """Return the username for a valid, unexpired, non-revoked token, else None."""
+    """Return the username for a valid, unexpired, non-revoked, non-idle
+    token, else None. Touches `last_used_at` on every successful resolve
+    so the idle window slides forward — a session in continuous use never
+    times out from idleness, only from absolute expiry."""
     if not token:
         return None
     row = conn.execute(
-        "SELECT username, expires_at, revoked_at FROM user_sessions WHERE token=?",
+        "SELECT username, expires_at, revoked_at, last_used_at "
+        "FROM user_sessions WHERE token=?",
         (token,),
     ).fetchone()
     if row is None or row['revoked_at']:
         return None
+    now = datetime.utcnow()
     try:
         exp = datetime.fromisoformat(row['expires_at'])
     except (ValueError, TypeError):
         return None
-    if datetime.utcnow() >= exp:
+    if now >= exp:
         return None
+    # Idle-timeout enforcement. Sessions that pre-date the column have
+    # last_used_at = NULL — treat them as freshly used to avoid a wave of
+    # forced logouts at deploy time.
+    last_used_raw = row['last_used_at'] if 'last_used_at' in row.keys() else None
+    if last_used_raw:
+        try:
+            last_used = datetime.fromisoformat(last_used_raw)
+            if now - last_used >= SESSION_IDLE_TIMEOUT:
+                return None
+        except (ValueError, TypeError):
+            pass
+    # Slide the idle window. Cheap UPDATE; the table is keyed on token.
+    try:
+        conn.execute(
+            "UPDATE user_sessions SET last_used_at=? WHERE token=?",
+            (now.isoformat(), token),
+        )
+        conn.commit()
+    except Exception:
+        # Not load-bearing for the auth decision — fail open on the touch.
+        pass
     return row['username']
 
 

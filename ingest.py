@@ -30,7 +30,80 @@ from pathlib import Path
 from account_meta import extract_flex_meta, extract_swift_meta
 from db import get_conn
 from iso20022_loader import extract_camt_meta_raw, load_camt_raw
-from recon_engine import propose_candidates, resolve, propose_splits
+from recon_engine import propose_candidates, resolve, propose_splits, propose_many_to_many
+from byo_csv_loader import CsvProfile, load_csv as load_byo_csv
+
+
+def _load_flex_via_profile(conn, flex_path: Path, profile_id: int) -> list[dict]:
+    """Load `flex_path` as CSV using the given format profile. Raises
+    IngestError on profile/parse problems so the caller surfaces a 400.
+
+    Currency / account fallback chain:
+        1. The currency column on each row (loader emits it directly).
+        2. profile.currency (loader picks this up when no column).
+        3. The bound account's currency (this function patches it in
+           when the loader emitted ''). Same for ac_no when the
+           profile lacks a column mapping.
+
+    Without this fallback, every BYO file would have to either include a
+    currency column or have the currency repeated in the profile —
+    annoying when the profile is bound to a single account.
+    """
+    row = conn.execute(
+        "SELECT * FROM csv_format_profiles WHERE id=? AND active=1",
+        (profile_id,),
+    ).fetchone()
+    if row is None:
+        raise IngestError(f"CSV profile {profile_id} not found or inactive.")
+    profile_dict = dict(row)
+    profile = CsvProfile.from_db(profile_dict)
+
+    # Look up the bound account once for fallback. accounts has no
+    # ac_branch column today — the BYO file is expected to carry it
+    # in narration/data, or omit it entirely.
+    bound_account = None
+    if profile_dict.get('account_id'):
+        acc_row = conn.execute(
+            "SELECT id, flex_ac_no, currency FROM accounts WHERE id=?",
+            (profile_dict['account_id'],),
+        ).fetchone()
+        if acc_row is None:
+            raise IngestError(
+                f"Profile references account_id {profile_dict['account_id']} "
+                f"which no longer exists.")
+        bound_account = dict(acc_row)
+
+    content = flex_path.read_bytes()
+    try:
+        result = load_byo_csv(content, profile)
+    except ValueError as exc:
+        raise IngestError(f"BYO CSV profile rejected the file: {exc}") from exc
+    if not result.txns and result.errors:
+        first_msg = result.errors[0][1] if result.errors else "no rows parsed"
+        raise IngestError(
+            f"BYO CSV produced no rows. First error on row "
+            f"{result.errors[0][0]}: {first_msg}")
+
+    # Apply fallbacks. Empty cells stay empty if no fallback source —
+    # downstream account-resolve will then bail with a clean error
+    # rather than silently ingesting headless data.
+    fallback_ccy = bound_account['currency'] if bound_account else None
+    fallback_ac_no = bound_account['flex_ac_no'] if bound_account else None
+    if fallback_ccy or fallback_ac_no:
+        for t in result.txns:
+            if not t.get('ccy') and fallback_ccy:
+                t['ccy'] = fallback_ccy
+            if not t.get('ac_no') and fallback_ac_no:
+                t['ac_no'] = fallback_ac_no
+
+    # Final guard: if no row has a currency by now, the engine can't
+    # bucket. Tell the operator instead of producing a half-ingested mess.
+    if result.txns and not any(t.get('ccy') for t in result.txns):
+        raise IngestError(
+            "BYO file has no currency: profile currency is empty, no "
+            "currency column is mapped, and the profile isn't bound to "
+            "an account. Edit the profile to add one of these.")
+    return result.txns
 from reconcile import load_flexcube, load_swift
 from swift_loader import extract_swift_meta_raw, load_swift_raw
 from open_items import (
@@ -98,7 +171,15 @@ def sha256_of(path: Path) -> str:
 
 def ingest_pair(swift_path: Path, flex_path: Path, user: str,
                 swift_filename: str | None = None,
-                flex_filename: str | None = None) -> IngestResult:
+                flex_filename: str | None = None,
+                flex_profile_id: int | None = None) -> IngestResult:
+    """Ingest one (SWIFT, Flex) pair.
+
+    flex_profile_id — when set, the Flex file is treated as a CSV and
+    parsed through byo_csv_loader using the named profile, instead of
+    the default Flexcube xlsx loader. The rest of the pipeline is
+    unchanged because byo_csv_loader emits the same canonical txn shape.
+    """
     swift_filename = swift_filename or swift_path.name
     flex_filename = flex_filename or flex_path.name
 
@@ -119,8 +200,13 @@ def ingest_pair(swift_path: Path, flex_path: Path, user: str,
 
         try:
             swift_txns, swift_meta = _load_swift_auto(swift_path)
-            flex_txns = load_flexcube(flex_path)
+            if flex_profile_id is not None:
+                flex_txns = _load_flex_via_profile(conn, flex_path, flex_profile_id)
+            else:
+                flex_txns = load_flexcube(flex_path)
             flex_meta = extract_flex_meta(flex_txns)
+        except IngestError:
+            raise
         except Exception as exc:
             raise IngestError(f"Failed to parse files: {exc}") from exc
 
@@ -158,16 +244,17 @@ def ingest_pair(swift_path: Path, flex_path: Path, user: str,
         cur.execute(
             "INSERT INTO sessions (created_at, created_by, swift_filename, flex_filename, "
             "swift_account, swift_currency, swift_statement_ref, flex_ac_no, flex_ac_branch, "
-            "flex_currency, account_id, account_label, "
+            "flex_currency, account_id, account_label, flex_profile_id, "
             "opening_balance, opening_balance_amount, opening_balance_sign, opening_balance_date, "
             "closing_balance, closing_balance_amount, closing_balance_sign, closing_balance_date) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?, ?,?,?,?, ?,?,?,?)",
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?, ?,?,?,?, ?,?,?,?)",
             (now, user, swift_filename, flex_filename,
              swift_meta.get('account'), swift_meta.get('currency'),
              swift_meta.get('statement_ref'),
              flex_meta.get('ac_no'), flex_meta.get('ac_branch'), flex_meta.get('currency'),
              account_match['id'] if account_match else None,
              account_match['label'] if account_match else None,
+             flex_profile_id,
              swift_meta.get('opening_balance'),
              swift_meta.get('opening_balance_amount'),
              swift_meta.get('opening_balance_sign'),
@@ -244,6 +331,43 @@ def ingest_pair(swift_path: Path, flex_path: Path, user: str,
                 "VALUES (?,?,?,?,?,?,?,?,?)",
                 split_rows,
             )
+
+        # --- Many-to-many matching (tier 6) ---
+        # Runs after the 1:N / N:1 split pass, on whatever remains. Catches
+        # the genuinely-aggregated case where both sides bundled multiple
+        # txns into a single conceptual settlement — neither tier 1-4 nor
+        # tier 5 covers this. Strict gating (date band + sign mirror + pool
+        # cap) keeps false positives bounded.
+        consumed_swift_so_far = {r[1] for r in split_rows}
+        consumed_flex_so_far  = {r[2] for r in split_rows}
+        m2n_unmatched_swift = set(resolution.unmatched_swift) - consumed_swift_so_far
+        m2n_unmatched_flex  = set(resolution.unmatched_flex)  - consumed_flex_so_far
+        m2n_cands = propose_many_to_many(
+            swift_txns, flex_txns,
+            m2n_unmatched_swift, m2n_unmatched_flex,
+            tol=tol,
+        )
+        m2n_rows = []
+        for sc in m2n_cands:
+            grp = uuid.uuid4().hex[:12]
+            denom = max(len(sc.swift_rows), len(sc.flex_rows))
+            per_row_diff = sc.amount_diff / denom
+            # Cross-product persistence: every (swift, flex) pair in the
+            # subset emits an assignment row sharing the split_group_id.
+            # The UI groups by split_group_id and treats accept/reject
+            # atomically so the operator can't half-confirm an aggregate.
+            for sw in sc.swift_rows:
+                for fx in sc.flex_rows:
+                    m2n_rows.append((session_id, sw, fx, sc.tier, sc.reason,
+                                     per_row_diff, 'pending', 'split', grp))
+        if m2n_rows:
+            cur.executemany(
+                "INSERT INTO assignments (session_id, swift_row, flex_row, tier, reason, "
+                "amount_diff, status, source, split_group_id) "
+                "VALUES (?,?,?,?,?,?,?,?,?)",
+                m2n_rows,
+            )
+
         cur.executemany(
             "INSERT INTO ingested_files (sha256, kind, original_filename, session_id, "
             "ingested_at, ingested_by) VALUES (?,?,?,?,?,?)",
@@ -263,10 +387,10 @@ def ingest_pair(swift_path: Path, flex_path: Path, user: str,
             })),
         )
 
-        # Adjust the unmatched counts to reflect split consumption so the
-        # surfaced numbers match what the review queue actually shows.
-        consumed_swift = {r[1] for r in split_rows}
-        consumed_flex  = {r[2] for r in split_rows}
+        # Adjust the unmatched counts to reflect split + M:N consumption so
+        # the surfaced numbers match what the review queue actually shows.
+        consumed_swift = {r[1] for r in split_rows} | {r[1] for r in m2n_rows}
+        consumed_flex  = {r[2] for r in split_rows} | {r[2] for r in m2n_rows}
         unmatched_swift_after = [r for r in resolution.unmatched_swift
                                  if r not in consumed_swift]
         unmatched_flex_after  = [r for r in resolution.unmatched_flex

@@ -15,23 +15,30 @@ Endpoints:
     GET    /sessions/{id}/export      Download xlsx reconciliation report
     GET    /sessions/{id}/audit       Audit trail for this session
 
-Auth: stubbed. The X-User header is treated as the current user. Replace
-current_user() with an AD/LDAP middleware once IT provisions a service
-account — the rest of the code is unchanged.
+Auth: real. Username + bcrypt-or-LDAP password + TOTP via Microsoft
+Authenticator. Sessions issued on /login; token lives in localStorage
+(injected into fetch() via the wrapper in base.html) and is mirrored
+to a `kilter_token` cookie so server-rendered pages opened via
+browser navigation also authenticate. See auth.py + secrets_vault.py
+for the token issue/resolve + at-rest encryption.
 
 Run:
     uvicorn app:app --reload
 """
 
+from __future__ import annotations
+
 import json
 from datetime import datetime
 from pathlib import Path
+from typing import Optional, List, Tuple
 
 import csv
 import io
 
-from fastapi import FastAPI, Depends, File, Header, HTTPException, Request, UploadFile
+from fastapi import FastAPI, Depends, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
@@ -51,6 +58,13 @@ EXPORT_DIR.mkdir(exist_ok=True)
 UPLOAD_DIR = Path(__file__).resolve().parent / 'uploads'
 UPLOAD_DIR.mkdir(exist_ok=True)
 TEMPLATES_DIR = Path(__file__).resolve().parent / 'templates'
+# Static-asset directory. Currently holds product screenshots used by
+# the pitch / demo decks and the operator manuals. Anything served from
+# here is fully public — do NOT drop secrets, customer data, or
+# pre-prod export artifacts. Screenshot filenames are documented in
+# static/screenshots/README.md.
+STATIC_DIR = Path(__file__).resolve().parent / 'static'
+STATIC_DIR.mkdir(exist_ok=True)
 
 app = FastAPI(
     title="Kilter",
@@ -62,6 +76,7 @@ app = FastAPI(
     docs_url=None, redoc_url=None, openapi_url=None,
 )
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+app.mount('/static', StaticFiles(directory=str(STATIC_DIR)), name='static')
 
 
 # ---------------------------------------------------------------------------
@@ -78,12 +93,85 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 # ---------------------------------------------------------------------------
+# Global exception handler — never leak DB errors, file paths, or stack
+# traces in user-facing responses. FastAPI's default already returns a
+# generic 500, but we want the same guarantee for sqlite3 errors that
+# might otherwise be propagated with their full SQL string in the message.
+# Logged in full to stderr so ops can correlate via the audit timestamp.
+# ---------------------------------------------------------------------------
+import logging as _logging
+import sqlite3 as _sqlite3
+import traceback as _traceback
+
+_log = _logging.getLogger("kilter")
+
+
+@app.exception_handler(_sqlite3.Error)
+async def _sqlite_error_handler(request: Request, exc: _sqlite3.Error):
+    """SQLite errors carry the full SQL in their str(); never let that
+    reach the client. Log server-side, return generic 500."""
+    from fastapi.responses import JSONResponse
+    _log.error("sqlite error on %s %s: %s\n%s",
+               request.method, request.url.path, exc,
+               _traceback.format_exc())
+    return JSONResponse({"detail": "Internal server error."}, status_code=500)
+
+
+@app.exception_handler(Exception)
+async def _generic_error_handler(request: Request, exc: Exception):
+    """Catch-all for anything that isn't HTTPException, RateLimitExceeded
+    (handled above), or sqlite3.Error. Logs the trace, returns generic
+    500. Note: HTTPException is intercepted by FastAPI before reaching
+    this handler, so legitimate 4xx flows are unaffected."""
+    from fastapi.responses import JSONResponse
+    _log.error("unhandled exception on %s %s: %s\n%s",
+               request.method, request.url.path, exc,
+               _traceback.format_exc())
+    return JSONResponse({"detail": "Internal server error."}, status_code=500)
+
+
+# ---------------------------------------------------------------------------
 # Security headers middleware. Conservative defaults that work with the
 # current Jinja2 + vanilla-JS frontend (no inline style/script except where
 # explicitly added; no external script sources). HSTS preload-eligible value
 # only kicks in when actually served over HTTPS — the header is harmless
 # over plain HTTP because browsers ignore it on non-secure origins.
 # ---------------------------------------------------------------------------
+# 300 MB request-body cap. SWIFT statements top out around 2 MB and a Flex
+# xlsx for one account-day under 5 MB, but cards-side settlement reports
+# (Visa Base II, Mastercard IPM, large issuer CSV) routinely hit 250 MB+
+# for medium issuers. 300 MB covers those with headroom; uploads at this
+# size go via the streaming path in _save_upload (chunked write to disk,
+# no full in-memory buffer).
+MAX_REQUEST_BYTES = 300 * 1024 * 1024
+
+# Streaming chunk size for _save_upload. 1 MB balances syscalls vs RAM
+# footprint for the request worker — at 250 MB / 1 MB that's 250 writes
+# per upload, well within syscall budget on any modern host.
+UPLOAD_CHUNK_BYTES = 1 * 1024 * 1024
+
+
+@app.middleware("http")
+async def _enforce_max_request_size(request: Request, call_next):
+    """Reject requests claiming a body bigger than MAX_REQUEST_BYTES. We
+    only act on the Content-Length header (cheap), which catches honest
+    oversized uploads. A malicious chunked-transfer client could still
+    stream forever — protect against that at the reverse proxy with
+    `client_max_body_size 300M;` (nginx) or equivalent."""
+    cl = request.headers.get("content-length")
+    if cl is not None:
+        try:
+            if int(cl) > MAX_REQUEST_BYTES:
+                from fastapi.responses import JSONResponse
+                return JSONResponse(
+                    {"detail": f"Request body exceeds {MAX_REQUEST_BYTES // (1024*1024)} MB cap."},
+                    status_code=413,
+                )
+        except ValueError:
+            pass
+    return await call_next(request)
+
+
 @app.middleware("http")
 async def _security_headers(request: Request, call_next):
     response = await call_next(request)
@@ -132,14 +220,34 @@ def _on_shutdown() -> None:
         pass
 
 
+@app.get("/healthz", include_in_schema=False)
+def _healthz() -> dict:
+    """Liveness probe for container orchestrators. Intentionally shallow —
+    answers "is the worker accepting HTTP?", not "is the database happy?".
+    Keep DB-touching readiness checks out of the hot path."""
+    return {"status": "ok"}
+
+
 ROLES = ('admin', 'ops', 'audit', 'internal_control')
 
 
-def current_user(x_session_token: str = Header(default="")) -> dict:
-    """Auth dependency: validates X-Session-Token against user_sessions,
-    returns the user dict. Replaces the old X-User stub. Invalid, expired,
-    or revoked tokens yield 401 — the frontend redirects to /login."""
+def current_user(request: Request,
+                  x_session_token: str = Header(default="")) -> dict:
+    """Auth dependency: validates the session token against user_sessions,
+    returns the user dict. Token comes from one of two places:
+        1. `X-Session-Token` header — used by every fetch() call (the
+           wrapper in base.html injects it from localStorage).
+        2. `kilter_token` cookie — used by browser navigations to
+           server-rendered pages (e.g. <a target="_blank"> to a
+           certificate print view). The same JS that writes localStorage
+           also writes this cookie so both transports stay in sync.
+
+    Header wins when both are present (header is the authoritative
+    transport for API calls). Invalid, expired, or revoked tokens
+    yield 401; the fetch wrapper bounces those to /login."""
     token = (x_session_token or "").strip()
+    if not token:
+        token = (request.cookies.get('kilter_token') or "").strip()
     if not token:
         raise HTTPException(401, "Missing session token. Please sign in.")
     conn = get_conn()
@@ -166,8 +274,9 @@ def current_user(x_session_token: str = Header(default="")) -> dict:
         conn.close()
 
 
-def active_scope(user: dict = Depends(current_user),
-                 x_session_token: str = Header(default="")) -> list[str] | None:
+def active_scope(request: Request,
+                 user: dict = Depends(current_user),
+                 x_session_token: str = Header(default="")) -> Optional[List[str]]:
     """The user's active access-area scope for list views. None = no filter
     (show everything). [] = "none selected" — we treat the same as None so the
     app never renders a deliberately-empty list from a bad toggle. A concrete
@@ -176,8 +285,14 @@ def active_scope(user: dict = Depends(current_user),
     Now requires a valid session — `current_user` runs first and raises 401
     on missing/expired/revoked tokens. Previously this dep silently no-op'd
     for unauthenticated requests, which left every endpoint depending on it
-    (list_sessions, list_accounts, stats, dashboard/*, etc.) wide open."""
+    (list_sessions, list_accounts, stats, dashboard/*, etc.) wide open.
+
+    Token sourcing mirrors current_user: header first, cookie fallback,
+    so server-rendered pages opened via browser navigation also resolve
+    the user's saved scope."""
     token = (x_session_token or "").strip()
+    if not token:
+        token = (request.cookies.get('kilter_token') or "").strip()
     conn = get_conn()
     try:
         row = conn.execute(
@@ -198,7 +313,7 @@ def active_scope(user: dict = Depends(current_user),
         conn.close()
 
 
-def _scope_clause(scope: list[str] | None, alias: str = 'a') -> tuple[str, list]:
+def _scope_clause(scope: Optional[List[str]], alias: str = 'a') -> Tuple[str, list]:
     """Build a SQL snippet and params for an IN-filter against accounts.access_area.
     When scope is None, returns an always-true clause so callers can concatenate
     it unconditionally."""
@@ -206,6 +321,40 @@ def _scope_clause(scope: list[str] | None, alias: str = 'a') -> tuple[str, list]
         return ("1=1", [])
     placeholders = ",".join("?" * len(scope))
     return (f"{alias}.access_area IN ({placeholders})", list(scope))
+
+
+def _assert_account_in_scope(conn, account_id: int, scope: Optional[List[str]]) -> None:
+    """Raise 403 if `account_id` doesn't belong to one of the user's active
+    access areas. Use on every endpoint that takes an account_id (or a
+    nested id like cert_id that resolves to one) to plug the IDOR class:
+    knowing an integer id was enough to read out-of-scope data otherwise.
+
+    `scope=None` means "no scope filter" — admin-style full visibility,
+    so we don't block. A non-existent account is treated as 404 by the
+    caller; this helper only enforces *visibility*, not existence."""
+    if scope is None:
+        return
+    row = conn.execute(
+        "SELECT access_area FROM accounts WHERE id=?", (account_id,),
+    ).fetchone()
+    if row is None:
+        # Don't leak existence — treat unknown ids the same as out-of-scope.
+        raise HTTPException(404, "not found")
+    area = row['access_area']
+    if area is None or area not in scope:
+        raise HTTPException(403, "Account is outside your active access scope.")
+
+
+def _account_id_for_certificate(conn, cert_id: int) -> int:
+    """Resolve cert_id → account_id for scope checks on the
+    /certificates/{cert_id}/* endpoints. Raises 404 if missing."""
+    row = conn.execute(
+        "SELECT account_id FROM reconciliation_certificates WHERE id=?",
+        (cert_id,),
+    ).fetchone()
+    if row is None:
+        raise HTTPException(404, "certificate not found")
+    return int(row['account_id'])
 
 
 def require_role(*roles: str):
@@ -222,6 +371,49 @@ def require_role(*roles: str):
 @app.get("/")
 def home(request: Request):
     return templates.TemplateResponse(request, "home.html")
+
+
+@app.get("/pitch", include_in_schema=False)
+def pitch_deck(request: Request):
+    """Renders the live sales pitch deck (`templates/deck_pitch.html`).
+    Public — no auth — so prospects can review the deck without an
+    account. Update content via the template, not via this handler."""
+    return templates.TemplateResponse(request, "deck_pitch.html")
+
+
+@app.get("/demo-deck", include_in_schema=False)
+def demo_deck(request: Request):
+    """Renders the demo walkthrough deck (`templates/deck_demo.html`).
+    Same public-no-auth posture as /pitch. Named `/demo-deck` rather
+    than `/demo` to leave `/demo` available for a future hosted-instance
+    landing page."""
+    return templates.TemplateResponse(request, "deck_demo.html")
+
+
+@app.get("/intake")
+def intake_landing():
+    """Intake hub. We split scan + upload into distinct sub-pages so the
+    sidebar's 'Scan messages' and 'Manual upload' lead to genuinely
+    different views; this top-level route just lands the user on the
+    most-common-by-far flow (scan) so the palette / breadcrumbs still
+    have a useful target."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/intake/scan", status_code=303)
+
+
+@app.get("/intake/scan")
+def intake_scan_page(request: Request):
+    """Scan the watched-folder pair (messages/swift + messages/flexcube).
+    Admin-only at the action layer (POST /scan); page renders for any
+    logged-in user, with a non-admin notice when the role doesn't match."""
+    return templates.TemplateResponse(request, "intake_scan.html")
+
+
+@app.get("/intake/upload")
+def intake_upload_page(request: Request):
+    """Manual one-off upload of a SWIFT + ledger pair. Same dedup +
+    validation pipeline as scan, just bypassing the watched folders."""
+    return templates.TemplateResponse(request, "intake_upload.html")
 
 
 @app.get("/login")
@@ -241,6 +433,10 @@ def enroll_page(request: Request):
 class LoginPayload(BaseModel):
     username: str
     totp_code: str
+    # Required only when the user's row has auth_source='ldap'. Local
+    # users (default) ignore this field. The frontend always shows the
+    # field — server-side validation per user is what enforces the rule.
+    password: Optional[str] = ""
 
 
 class EnrollStartPayload(BaseModel):
@@ -257,38 +453,88 @@ class EnrollCompletePayload(BaseModel):
 @app.post("/login")
 @limiter.limit("10/minute")
 def login(payload: LoginPayload, request: Request):
-    """Username + TOTP login. Rate-limited per source IP to slow online
-    TOTP-guessing — 10 attempts/minute is generous enough that legitimate
-    typo retries don't lock anyone out, but kills brute-forcing dead."""
+    """Username + (LDAP password if user is AD-sourced) + TOTP login.
+    Rate-limited per source IP to slow online TOTP-guessing — 10
+    attempts/minute is generous enough that legitimate typo retries
+    don't lock anyone out, but kills brute-forcing dead."""
     username = (payload.username or "").strip()
     code = (payload.totp_code or "").strip()
+    password = payload.password or ""
     conn = get_conn()
     try:
         row = conn.execute(
-            "SELECT username, active, totp_secret FROM users WHERE username=?",
+            "SELECT username, active, totp_secret, totp_enrolled_at, auth_source "
+            "FROM users WHERE username=?",
             (username,),
         ).fetchone()
-        # Generic message for all login failures so we don't leak which field was wrong.
-        if (row is None or not row['active'] or not row['totp_secret']
-                or not verify_totp(row['totp_secret'], code)):
+        # Generic 401 for every failure mode so we don't leak which field was wrong
+        # (username, password, or TOTP). The audit/log line carries the real reason
+        # for ops triage, but the user always gets the same message.
+        # totp_enrolled_at IS NOT NULL guards against the half-enrolled state where
+        # /enroll/start has stashed a pending secret but /enroll/complete never ran.
+        if (row is None or not row['active']
+                or not row['totp_secret'] or not row['totp_enrolled_at']):
+            raise HTTPException(401, "Invalid username or authenticator code.")
+
+        # Password layer (LDAP). For local users this is a no-op — TOTP alone
+        # remains sufficient, preserving the bootstrap-admin path.
+        ldap_dn: Optional[str] = None
+        if (row['auth_source'] or 'local') == 'ldap':
+            from ldap_auth import authenticate as ldap_authenticate, REASON_OK
+            result = ldap_authenticate(username, password)
+            if not result.success:
+                # Audit the reason without surfacing it to the user.
+                _audit_login_failure(conn, username, request, reason=f"ldap:{result.reason}")
+                raise HTTPException(401, "Invalid username or authenticator code.")
+            ldap_dn = result.user_dn
+
+        if not verify_totp(row['totp_secret'], code):
+            _audit_login_failure(conn, username, request, reason="totp")
             raise HTTPException(401, "Invalid username or authenticator code.")
 
         ua = request.headers.get('user-agent', '')[:250]
         session = issue_session(conn, username, user_agent=ua)
         now = datetime.utcnow().isoformat()
-        conn.execute(
-            "UPDATE users SET last_seen_at=? WHERE username=?",
-            (now, username),
-        )
+        if ldap_dn is not None:
+            conn.execute(
+                "UPDATE users SET last_seen_at=?, ldap_dn=? WHERE username=?",
+                (now, ldap_dn, username),
+            )
+        else:
+            conn.execute(
+                "UPDATE users SET last_seen_at=? WHERE username=?",
+                (now, username),
+            )
         conn.execute(
             "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
             "VALUES (NULL, 'login', ?, ?, ?)",
-            (username, now, json.dumps({"user_agent": ua})),
+            (username, now, json.dumps({
+                "user_agent": ua,
+                "auth_source": row['auth_source'] or 'local',
+            })),
         )
         conn.commit()
         return session
     finally:
         conn.close()
+
+
+def _audit_login_failure(conn, username: str, request: Request, *, reason: str) -> None:
+    """Record a failed login attempt with the failure mode (for ops). The
+    end user only ever sees the generic 401 — this gives the audit log
+    enough granularity to investigate without leaking it to the client."""
+    try:
+        ua = request.headers.get('user-agent', '')[:250]
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (NULL, 'login_failed', ?, ?, ?)",
+            (username, datetime.utcnow().isoformat(),
+             json.dumps({"user_agent": ua, "reason": reason})),
+        )
+        conn.commit()
+    except Exception:
+        # Audit is best-effort; never block the user-facing response on it.
+        pass
 
 
 @app.post("/logout")
@@ -312,8 +558,17 @@ def logout(x_session_token: str = Header(default="")):
 
 @app.post("/enroll/start")
 def enroll_start(payload: EnrollStartPayload):
-    """Show the QR. Does NOT save the secret yet — that happens on /enroll/complete
-    once the user proves they scanned it by entering a code."""
+    """Generate a fresh TOTP secret server-side and stash it (encrypted)
+    against the user row. Return the QR and the manual-entry key for the
+    user to scan/type into their authenticator. The secret never returns
+    to the client over the wire as a programmatically-readable JSON
+    field — the client only re-sends a TOTP code in /enroll/complete,
+    not the secret itself.
+
+    Server-side keying closes the attack where a malicious client (XSS,
+    extension, MITM during a misconfigured TLS rollout) substitutes a
+    secret of its own choosing and gets the server to verify against
+    that, capturing future logins."""
     conn = get_conn()
     try:
         row = conn.execute(
@@ -326,12 +581,21 @@ def enroll_start(payload: EnrollStartPayload):
         if row['totp_enrolled_at']:
             raise HTTPException(400, "This user has already enrolled.")
 
-        # Fresh secret per enrollment attempt — if the user abandons midway and
-        # re-starts, the previous secret is harmless (never saved to DB).
+        # Fresh secret per /enroll/start call. If the user abandons and
+        # restarts, the previous (pending) secret is overwritten so any
+        # leaked QR from the abandoned session becomes useless. The QR
+        # and manual-entry key intentionally still ship to the client —
+        # they MUST be displayed for the user to scan or type.
+        from secrets_vault import encrypt
         secret = generate_totp_secret()
+        conn.execute(
+            "UPDATE users SET totp_secret=?, totp_enrolled_at=NULL WHERE username=?",
+            (encrypt(secret), payload.username),
+        )
+        conn.commit()
         return {
             "username": payload.username,
-            "secret": secret,             # client holds this until /complete
+            "manual_key": secret,         # for the "type instead of scan" path
             "uri": provisioning_uri(secret, payload.username),
             "qr": qr_data_url(secret, payload.username),
             "issuer": ISSUER,
@@ -340,38 +604,33 @@ def enroll_start(payload: EnrollStartPayload):
         conn.close()
 
 
-class EnrollCompletePayloadWithSecret(BaseModel):
-    username: str
-    enrollment_token: str
-    secret: str
-    totp_code: str
-
-
 @app.post("/enroll/complete")
-def enroll_complete(payload: EnrollCompletePayloadWithSecret):
+def enroll_complete(payload: EnrollCompletePayload):
+    """Verify the code against the server-stored secret and finalise the
+    enrollment. The client does NOT send the secret — the server reads
+    its own copy from the DB and decrypts."""
     conn = get_conn()
     try:
         row = conn.execute(
-            "SELECT username, enrollment_token, totp_enrolled_at FROM users "
-            "WHERE username=? AND active=1",
+            "SELECT username, enrollment_token, totp_secret, totp_enrolled_at "
+            "FROM users WHERE username=? AND active=1",
             (payload.username,),
         ).fetchone()
         if row is None or not row['enrollment_token'] or row['enrollment_token'] != payload.enrollment_token:
             raise HTTPException(400, "Invalid enrollment link.")
         if row['totp_enrolled_at']:
             raise HTTPException(400, "This user has already enrolled.")
-        if not verify_totp(payload.secret, payload.totp_code):
+        if not row['totp_secret']:
+            raise HTTPException(400, "No enrollment in progress. Open the enrollment link again to start over.")
+        # verify_totp transparently decrypts before checking.
+        if not verify_totp(row['totp_secret'], payload.totp_code):
             raise HTTPException(400, "Code didn't match. Make sure your phone's time is in sync and try the next rotation.")
-
-        # Encrypt the secret at rest. verify_totp will decrypt on each login.
-        from secrets_vault import encrypt
-        encrypted_secret = encrypt(payload.secret)
 
         now = datetime.utcnow().isoformat()
         conn.execute(
-            "UPDATE users SET totp_secret=?, totp_enrolled_at=?, enrollment_token=NULL "
+            "UPDATE users SET totp_enrolled_at=?, enrollment_token=NULL "
             "WHERE username=?",
-            (encrypted_secret, now, payload.username),
+            (now, payload.username),
         )
         conn.execute(
             "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
@@ -385,21 +644,13 @@ def enroll_complete(payload: EnrollCompletePayloadWithSecret):
 
 
 @app.get("/sessions/{session_id}/review")
-def review(request: Request, session_id: int,
-           user: dict = Depends(current_user),
-           scope: list[str] | None = Depends(active_scope)):
-    conn = get_conn()
-    try:
-        scope_where, scope_params = _scope_clause(scope, alias='a')
-        s = conn.execute(
-            "SELECT s.id FROM sessions s LEFT JOIN accounts a ON a.id = s.account_id "
-            "WHERE s.id=? AND (s.account_id IS NULL OR " + scope_where + ")",
-            (session_id, *scope_params),
-        ).fetchone()
-        if s is None:
-            raise HTTPException(404, "Session not found")
-    finally:
-        conn.close()
+def review(request: Request, session_id: int):
+    """Review-page render. Page routes never run server-side auth deps —
+    the X-Session-Token lives in localStorage and is only injected on
+    fetch(), so a browser navigation arrives without it. Auth + scope
+    happen JS-side: review.html immediately hits GET /sessions/{id},
+    which IS auth-and-scope-protected, and the fetch wrapper in
+    base.html bounces on 401 to /login?next=…."""
     return templates.TemplateResponse(request, "review.html",
                                       {"session_id": session_id})
 
@@ -542,7 +793,7 @@ def whoami(user: dict = Depends(current_user)):
 # ---------------------------------------------------------------------------
 
 class AccessScopePayload(BaseModel):
-    areas: list[str] | None = None   # null or [] -> clear filter (all areas)
+    areas: Optional[List[str]] = None   # null or [] -> clear filter (all areas)
 
 
 @app.get("/me/access-scope")
@@ -558,7 +809,7 @@ def get_my_access_scope(
             "SELECT active_access_areas FROM user_sessions WHERE token=?",
             ((x_session_token or "").strip(),),
         ).fetchone()
-        areas: list[str] | None = None
+        areas: Optional[List[str]] = None
         if row and row['active_access_areas']:
             try:
                 parsed = json.loads(row['active_access_areas'])
@@ -620,16 +871,21 @@ def set_my_access_scope(
 # /users — admin-only management
 # ---------------------------------------------------------------------------
 
+AUTH_SOURCES = ('local', 'ldap')
+
+
 class UserPayload(BaseModel):
     username: str
-    display_name: str | None = None
+    display_name: Optional[str] = None
     role: str   # admin | ops | audit | internal_control
+    auth_source: Optional[str] = 'local'   # 'local' | 'ldap'
 
 
 class UserPatch(BaseModel):
-    role: str | None = None
-    display_name: str | None = None
-    active: bool | None = None
+    role: Optional[str] = None
+    display_name: Optional[str] = None
+    active: Optional[bool] = None
+    auth_source: Optional[str] = None      # 'local' | 'ldap'
 
 
 @app.get("/users/export")
@@ -663,9 +919,9 @@ def export_users(user: dict = Depends(require_role('admin'))):
 
 @app.get("/activity/export")
 def export_activity(
-    actor: str | None = None,
-    action: str | None = None,
-    session_id: int | None = None,
+    actor: Optional[str] = None,
+    action: Optional[str] = None,
+    session_id: Optional[int] = None,
     user: dict = Depends(require_role('admin', 'audit', 'internal_control')),
 ):
     """CSV export of the audit_log — same filters as GET /activity. No row
@@ -723,7 +979,8 @@ def list_users(user: dict = Depends(require_role('admin'))):
     conn = get_conn()
     try:
         rows = conn.execute(
-            "SELECT username, display_name, role, active, created_at, created_by, last_seen_at "
+            "SELECT username, display_name, role, active, created_at, created_by, "
+            "last_seen_at, auth_source, ldap_dn "
             "FROM users ORDER BY role, username"
         ).fetchall()
         return [dict(r) for r in rows]
@@ -735,6 +992,9 @@ def list_users(user: dict = Depends(require_role('admin'))):
 def create_user(payload: UserPayload, user: dict = Depends(require_role('admin'))):
     if payload.role not in ROLES:
         raise HTTPException(400, f"role must be one of {ROLES}")
+    auth_source = (payload.auth_source or 'local').strip().lower()
+    if auth_source not in AUTH_SOURCES:
+        raise HTTPException(400, f"auth_source must be one of {AUTH_SOURCES}")
     username = (payload.username or '').strip()
     if not username:
         raise HTTPException(400, "username is required")
@@ -745,8 +1005,8 @@ def create_user(payload: UserPayload, user: dict = Depends(require_role('admin')
         try:
             conn.execute(
                 "INSERT INTO users (username, display_name, role, active, created_at, "
-                "created_by, enrollment_token) VALUES (?, ?, ?, 1, ?, ?, ?)",
-                (username, payload.display_name, payload.role, now, user['username'], token),
+                "created_by, enrollment_token, auth_source) VALUES (?, ?, ?, 1, ?, ?, ?, ?)",
+                (username, payload.display_name, payload.role, now, user['username'], token, auth_source),
             )
         except Exception as exc:
             if 'UNIQUE' in str(exc) or 'PRIMARY KEY' in str(exc):
@@ -772,10 +1032,20 @@ def create_user(payload: UserPayload, user: dict = Depends(require_role('admin')
 def update_user(target: str, payload: UserPatch, user: dict = Depends(require_role('admin'))):
     if payload.role is not None and payload.role not in ROLES:
         raise HTTPException(400, f"role must be one of {ROLES}")
+    if payload.auth_source is not None and payload.auth_source not in AUTH_SOURCES:
+        raise HTTPException(400, f"auth_source must be one of {AUTH_SOURCES}")
     if target == user['username'] and payload.active is False:
         raise HTTPException(400, "You can't deactivate yourself.")
     if target == user['username'] and payload.role is not None and payload.role != 'admin':
         raise HTTPException(400, "You can't demote yourself from admin.")
+    # Lock-out guard: don't let an admin flip themselves to LDAP if no
+    # LDAP server is reachable yet — that's how you accidentally lock the
+    # whole system out. Force them to test it on a non-admin first.
+    if (target == user['username']
+            and payload.auth_source == 'ldap'):
+        from ldap_auth import is_enabled as ldap_is_enabled
+        if not ldap_is_enabled():
+            raise HTTPException(400, "Configure KILTER_LDAP_URL before changing your own auth_source to ldap.")
 
     conn = get_conn()
     try:
@@ -790,14 +1060,17 @@ def update_user(target: str, payload: UserPatch, user: dict = Depends(require_ro
             fields.append("display_name=?"); params.append(payload.display_name)
         if payload.active is not None:
             fields.append("active=?"); params.append(1 if payload.active else 0)
+        if payload.auth_source is not None:
+            fields.append("auth_source=?"); params.append(payload.auth_source)
         if not fields:
             raise HTTPException(400, "Nothing to update")
         params.append(target)
         conn.execute(f"UPDATE users SET {', '.join(fields)} WHERE username=?", params)
 
-        # Deactivation or role change → kill the user's live sessions so
-        # the new restriction takes effect immediately, not in 8h.
-        if payload.active is False or payload.role is not None:
+        # Deactivation, role change, or auth-source flip → kill the user's
+        # live sessions so the new restriction takes effect immediately.
+        if (payload.active is False or payload.role is not None
+                or payload.auth_source is not None):
             revoke_all_sessions_for(conn, target)
 
         now = datetime.utcnow().isoformat()
@@ -807,11 +1080,12 @@ def update_user(target: str, payload: UserPatch, user: dict = Depends(require_ro
             (user['username'], now, json.dumps({
                 "target": target, "role": payload.role,
                 "display_name": payload.display_name, "active": payload.active,
+                "auth_source": payload.auth_source,
             })),
         )
         conn.commit()
         updated = conn.execute(
-            "SELECT username, display_name, role, active FROM users WHERE username=?",
+            "SELECT username, display_name, role, active, auth_source FROM users WHERE username=?",
             (target,),
         ).fetchone()
         return dict(updated)
@@ -825,12 +1099,12 @@ def update_user(target: str, payload: UserPatch, user: dict = Depends(require_ro
 
 @app.get("/activity")
 def activity(
-    actor: str | None = None,
-    action: str | None = None,
-    session_id: int | None = None,
-    from_date: str | None = None,      # ISO date, inclusive (UTC)
-    to_date: str | None = None,        # ISO date, inclusive (UTC)
-    q: str | None = None,              # free-text search over details JSON
+    actor: Optional[str] = None,
+    action: Optional[str] = None,
+    session_id: Optional[int] = None,
+    from_date: Optional[str] = None,      # ISO date, inclusive (UTC)
+    to_date: Optional[str] = None,        # ISO date, inclusive (UTC)
+    q: Optional[str] = None,              # free-text search over details JSON
     limit: int = 200,
     user: dict = Depends(require_role('admin', 'audit', 'internal_control')),
 ):
@@ -862,7 +1136,7 @@ def activity(
 
 
 @app.get("/stats")
-def stats(scope: list[str] | None = Depends(active_scope)):
+def stats(scope: Optional[List[str]] = Depends(active_scope)):
     """Aggregates used by the dashboard. When a scope is active, counts are
     restricted to sessions whose account falls in the chosen access areas."""
     conn = get_conn()
@@ -906,7 +1180,7 @@ def stats(scope: list[str] | None = Depends(active_scope)):
 
 @app.get("/dashboard/trend")
 def dashboard_trend(days: int = 14,
-                    scope: list[str] | None = Depends(active_scope)):
+                    scope: Optional[List[str]] = Depends(active_scope)):
     """Daily totals of assignment state-changes over the last N days, used to
     draw the match-rate sparkline. Returns one row per calendar day from
     (today - days + 1) to today, zero-filled when nothing happened."""
@@ -952,7 +1226,7 @@ def dashboard_trend(days: int = 14,
 
 
 @app.get("/dashboard/ageing")
-def dashboard_ageing(scope: list[str] | None = Depends(active_scope)):
+def dashboard_ageing(scope: Optional[List[str]] = Depends(active_scope)):
     """Histogram of currently-open items by age bucket. Drives the ageing bar
     chart on the dashboard and the at-risk (> 30d) callout."""
     from datetime import datetime, timedelta
@@ -1002,7 +1276,7 @@ def dashboard_ageing(scope: list[str] | None = Depends(active_scope)):
 
 
 @app.get("/dashboard/by-group")
-def dashboard_by_group(scope: list[str] | None = Depends(active_scope)):
+def dashboard_by_group(scope: Optional[List[str]] = Depends(active_scope)):
     """Open-item count + absolute amount per functional_group — powers the
     per-team breakdown card. Respects access-area scope."""
     conn = get_conn()
@@ -1021,6 +1295,177 @@ def dashboard_by_group(scope: list[str] | None = Depends(active_scope)):
         conn.close()
 
 
+@app.get("/dashboard/kpis")
+def dashboard_kpis(scope: Optional[List[str]] = Depends(active_scope)):
+    """Top-of-page operational health KPIs. Cheap aggregates only — this
+    endpoint loads on every dashboard render so anything expensive should
+    move to its own card-level endpoint with on-demand fetch.
+
+    Returns:
+        tier1_rate         — % of decisions that landed at tier 1 in the
+                             trailing 14 days. The "easy match" baseline;
+                             slipping below ~70% usually means a parser
+                             or tolerance has drifted.
+        oldest_open_days   — age in days of the oldest currently-open item.
+                             Pinned because regulators ask "what's your
+                             oldest unresolved break?" and the answer is
+                             always a single number.
+        sla_breached       — count of pending assignments where due_date
+                             is in the past. Zero is the operating state;
+                             non-zero is a noise signal for the duty
+                             manager.
+        total_open_items   — same denominator as the ageing card; convenient
+                             to surface alongside the SLA count.
+    """
+    from datetime import date as _date, datetime as _dt
+    conn = get_conn()
+    try:
+        where, scope_params = _scope_clause(scope, alias='a')
+        account_filter = "AND a.id IS NOT NULL" if scope else ""
+        sess_subq = (
+            f"SELECT s.id FROM sessions s LEFT JOIN accounts a ON a.id = s.account_id "
+            f"WHERE {where} {account_filter}"
+        )
+
+        # Tier-1 hit rate over the trailing 14 days. Same window the trend
+        # chart uses, so the KPI matches whatever the operator is staring
+        # at. confirmed-only — rejected tier-1 doesn't count toward "easy".
+        from datetime import timedelta as _td
+        cutoff = (_dt.utcnow() - _td(days=14)).isoformat()
+        decided = conn.execute(
+            f"SELECT tier, COUNT(*) AS n FROM assignments "
+            f"WHERE decided_at >= ? AND status='confirmed' "
+            f"AND session_id IN ({sess_subq}) GROUP BY tier",
+            (cutoff, *scope_params),
+        ).fetchall()
+        tier_counts = {r['tier']: r['n'] for r in decided}
+        total_decided = sum(tier_counts.values())
+        tier1_rate = (
+            round(100.0 * tier_counts.get(1, 0) / total_decided, 1)
+            if total_decided else None
+        )
+
+        # Oldest open item — a single max() lookup. NULL when no open items.
+        oldest_row = conn.execute(
+            f"SELECT MIN(oi.opened_at) AS first_opened FROM open_items oi "
+            f"LEFT JOIN accounts a ON a.id = oi.account_id "
+            f"WHERE oi.status='open' AND {where}",
+            scope_params,
+        ).fetchone()
+        oldest_open_days = None
+        if oldest_row and oldest_row['first_opened']:
+            try:
+                opened = _dt.fromisoformat(oldest_row['first_opened'])
+                oldest_open_days = (_dt.utcnow() - opened).days
+            except (ValueError, TypeError):
+                pass
+
+        # SLA-breached pending cases: due_date strictly in the past.
+        # The due_date column is stored as ISO 'YYYY-MM-DD' so a string
+        # comparison works correctly.
+        today_iso = _date.today().isoformat()
+        sla_breached = conn.execute(
+            f"SELECT COUNT(*) AS n FROM assignments "
+            f"WHERE status='pending' AND due_date IS NOT NULL AND due_date < ? "
+            f"AND session_id IN ({sess_subq})",
+            (today_iso, *scope_params),
+        ).fetchone()['n']
+
+        total_open = conn.execute(
+            f"SELECT COUNT(*) AS n FROM open_items oi "
+            f"LEFT JOIN accounts a ON a.id = oi.account_id "
+            f"WHERE oi.status='open' AND {where}",
+            scope_params,
+        ).fetchone()['n']
+
+        return {
+            'tier1_rate': tier1_rate,
+            'tier_counts': tier_counts,
+            'total_decided_14d': total_decided,
+            'oldest_open_days': oldest_open_days,
+            'sla_breached': sla_breached,
+            'total_open_items': total_open,
+        }
+    finally:
+        conn.close()
+
+
+@app.get("/dashboard/case-load")
+def dashboard_case_load(scope: Optional[List[str]] = Depends(active_scope)):
+    """Pending-case count per assignee, plus how many of each are
+    SLA-breached. Drives the "who's swamped, who's overdue" table.
+
+    Returns one row per assignee (including the synthetic '(unassigned)'
+    bucket for null assignees) sorted by descending pending count.
+    """
+    from datetime import date as _date
+    conn = get_conn()
+    try:
+        where, scope_params = _scope_clause(scope, alias='a')
+        account_filter = "AND a.id IS NOT NULL" if scope else ""
+        sess_subq = (
+            f"SELECT s.id FROM sessions s LEFT JOIN accounts a ON a.id = s.account_id "
+            f"WHERE {where} {account_filter}"
+        )
+        today_iso = _date.today().isoformat()
+        rows = conn.execute(
+            f"SELECT COALESCE(asg.assignee, '(unassigned)') AS assignee, "
+            f"       COUNT(*) AS pending, "
+            f"       SUM(CASE WHEN asg.due_date IS NOT NULL AND asg.due_date < ? "
+            f"                THEN 1 ELSE 0 END) AS overdue, "
+            f"       SUM(CASE WHEN asg.priority IN ('high','urgent') THEN 1 ELSE 0 END) AS high_priority "
+            f"FROM assignments asg "
+            f"WHERE asg.status='pending' AND asg.session_id IN ({sess_subq}) "
+            f"GROUP BY assignee ORDER BY pending DESC",
+            (today_iso, *scope_params),
+        ).fetchall()
+        return [{
+            'assignee': r['assignee'],
+            'pending': r['pending'],
+            'overdue': r['overdue'] or 0,
+            'high_priority': r['high_priority'] or 0,
+        } for r in rows]
+    finally:
+        conn.close()
+
+
+@app.get("/dashboard/by-account")
+def dashboard_by_account(limit: int = 10,
+                          scope: Optional[List[str]] = Depends(active_scope)):
+    """Open-item count + absolute amount per account, top N by count.
+    Surfaces which nostros are actually slipping — the per-account view
+    operators want when planning a clean-up sprint.
+
+    Caps at 50 to keep the response cheap; default 10 fits a card."""
+    limit = max(1, min(50, int(limit)))
+    conn = get_conn()
+    try:
+        where, scope_params = _scope_clause(scope, alias='a')
+        rows = conn.execute(
+            f"SELECT a.id AS account_id, "
+            f"       COALESCE(a.shortname, a.label) AS label, "
+            f"       a.currency AS currency, "
+            f"       COUNT(*) AS n, "
+            f"       SUM(ABS(oi.amount)) AS amt, "
+            f"       MIN(oi.opened_at) AS oldest_at "
+            f"FROM open_items oi "
+            f"JOIN accounts a ON a.id = oi.account_id "
+            f"WHERE oi.status='open' AND {where} "
+            f"GROUP BY a.id ORDER BY n DESC LIMIT ?",
+            (*scope_params, limit),
+        ).fetchall()
+        return [{
+            'account_id': r['account_id'],
+            'label': r['label'],
+            'currency': r['currency'],
+            'count': r['n'],
+            'amount': float(r['amt'] or 0),
+            'oldest_at': r['oldest_at'],
+        } for r in rows]
+    finally:
+        conn.close()
+
+
 @app.on_event("startup")
 def _on_startup() -> None:
     init_db()
@@ -1035,19 +1480,32 @@ def _on_startup() -> None:
 async def create_session(
     swift: UploadFile = File(...),
     flex: UploadFile = File(...),
+    flex_profile_id: Optional[int] = Form(None),
     user: dict = Depends(require_role('admin')),
 ):
-    if not (swift.filename or '').lower().endswith(('.xlsx', '.out')):
-        raise HTTPException(400, "SWIFT file must be .out or .xlsx")
-    if not (flex.filename or '').lower().endswith('.xlsx'):
-        raise HTTPException(400, "Flexcube file must be .xlsx")
+    """Default flow: SWIFT MT/camt or xlsx + Flex xlsx. With
+    `flex_profile_id`, the Flex file is treated as CSV and parsed via
+    a saved BYO format profile — same recon pipeline downstream."""
+    if not (swift.filename or '').lower().endswith(('.xlsx', '.out', '.xml', '.txt')):
+        raise HTTPException(400, "SWIFT file must be .out/.xml/.txt or .xlsx")
+    flex_lower = (flex.filename or '').lower()
+    if flex_profile_id is not None:
+        if not flex_lower.endswith(('.csv', '.txt')):
+            raise HTTPException(400,
+                "When using a CSV profile, Flex file must be .csv or .txt")
+    elif not flex_lower.endswith('.xlsx'):
+        raise HTTPException(400,
+            "Flexcube file must be .xlsx (or supply flex_profile_id for CSV)")
 
     swift_path = await _save_upload(swift, 'swift')
     flex_path = await _save_upload(flex, 'flex')
 
     try:
-        result = ingest_pair(swift_path, flex_path, user['username'],
-                             swift_filename=swift.filename, flex_filename=flex.filename)
+        result = ingest_pair(
+            swift_path, flex_path, user['username'],
+            swift_filename=swift.filename, flex_filename=flex.filename,
+            flex_profile_id=flex_profile_id,
+        )
     except DuplicateFileError as exc:
         raise HTTPException(409, str(exc))
     except IngestError as exc:
@@ -1098,7 +1556,20 @@ def run_scan(user: dict = Depends(require_role('admin'))):
 # ---------------------------------------------------------------------------
 
 @app.get("/sessions")
-def list_sessions(scope: list[str] | None = Depends(active_scope)):
+def list_sessions(flex_profile_id: Optional[str] = None,
+                  scope: Optional[List[str]] = Depends(active_scope)):
+    """List recent sessions, scope-filtered.
+
+    flex_profile_id query param accepts:
+        - an integer N → only sessions ingested via that profile
+        - the string 'default' → only sessions ingested via the
+          built-in Flexcube xlsx loader (sessions where flex_profile_id
+          IS NULL)
+        - omitted → all sessions
+
+    The dashboard uses this filter to power the source-chip toolbar
+    above the recent-sessions table.
+    """
     conn = get_conn()
     try:
         where, params = _scope_clause(scope, alias='a')
@@ -1106,12 +1577,32 @@ def list_sessions(scope: list[str] | None = Depends(active_scope)):
         # is null) don't belong to any area and are hidden — the user asked to
         # see BRANCH X, so legacy/unclaimed sessions shouldn't leak in.
         account_filter = "AND a.id IS NOT NULL" if scope else ""
+
+        profile_filter = ""
+        profile_params: list = []
+        if flex_profile_id is not None:
+            if flex_profile_id == 'default':
+                profile_filter = "AND s.flex_profile_id IS NULL"
+            else:
+                try:
+                    pid = int(flex_profile_id)
+                except (TypeError, ValueError):
+                    raise HTTPException(400,
+                        "flex_profile_id must be an integer or 'default'")
+                profile_filter = "AND s.flex_profile_id = ?"
+                profile_params.append(pid)
+
         rows = conn.execute(
-            f"SELECT s.*, a.shortname AS account_shortname, a.access_area AS account_access_area "
-            f"FROM sessions s LEFT JOIN accounts a ON a.id = s.account_id "
-            f"WHERE {where} {account_filter} "
+            f"SELECT s.*, "
+            f"       a.shortname AS account_shortname, "
+            f"       a.access_area AS account_access_area, "
+            f"       p.name AS flex_profile_name "
+            f"FROM sessions s "
+            f"LEFT JOIN accounts a ON a.id = s.account_id "
+            f"LEFT JOIN csv_format_profiles p ON p.id = s.flex_profile_id "
+            f"WHERE {where} {account_filter} {profile_filter} "
             f"ORDER BY s.id DESC LIMIT 100",
-            params,
+            (*params, *profile_params),
         ).fetchall()
         sessions = [dict(r) for r in rows]
         # Per-session counts in one query so we don't N+1 the list view.
@@ -1136,7 +1627,7 @@ def list_sessions(scope: list[str] | None = Depends(active_scope)):
 @app.get("/sessions/{session_id}")
 def get_session(session_id: int,
                 user: dict = Depends(current_user),
-                scope: list[str] | None = Depends(active_scope)):
+                scope: Optional[List[str]] = Depends(active_scope)):
     conn = get_conn()
     try:
         # Scope check: a user limited to certain access areas can only read
@@ -1292,7 +1783,7 @@ def session_register(session_id: int, user: dict = Depends(current_user)):
 @app.get("/sessions/{session_id}/queue")
 def get_queue(session_id: int,
               user: dict = Depends(current_user),
-              scope: list[str] | None = Depends(active_scope)):
+              scope: Optional[List[str]] = Depends(active_scope)):
     conn = get_conn()
     try:
         # Scope-check the parent session before exposing its queue.
@@ -1331,6 +1822,11 @@ def get_queue(session_id: int,
                  a['swift_row'], a['flex_row']),
             ).fetchall()
 
+            comment_count = conn.execute(
+                "SELECT COUNT(*) AS n FROM break_comments "
+                "WHERE target_type='assignment' AND target_id=?",
+                (a['id'],),
+            ).fetchone()['n']
             out.append({
                 "assignment_id": a['id'],
                 "tier": a['tier'],
@@ -1339,10 +1835,126 @@ def get_queue(session_id: int,
                 "swift": dict(swift) if swift else None,
                 "flex": dict(flex) if flex else None,
                 "competing": [dict(c) for c in competing],
+                # Case-management fields. None / 'normal' on rows that
+                # haven't been touched — UI renders defaults.
+                "assignee":     a['assignee'] if 'assignee' in a.keys() else None,
+                "due_date":     a['due_date'] if 'due_date' in a.keys() else None,
+                "priority":     (a['priority'] if 'priority' in a.keys() else None) or 'normal',
+                "comment_count": comment_count,
             })
         return out
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Case management — assignee, due date, priority, comments.
+# Layered on top of the existing pending-assignment workflow rather than a
+# parallel object so the existing decision flow (confirm / reject) is
+# unchanged. A "case" is just an assignment with extra metadata.
+# ---------------------------------------------------------------------------
+
+class CasePatch(BaseModel):
+    assignee: Optional[str] = None     # username; empty string clears
+    due_date: Optional[str] = None     # ISO date 'YYYY-MM-DD'; empty clears
+    priority: Optional[str] = None     # 'low' | 'normal' | 'high' | 'urgent'
+
+
+CASE_PRIORITIES = ('low', 'normal', 'high', 'urgent')
+
+
+def _assignment_session_id(conn, assignment_id: int) -> int:
+    """Resolve assignment_id → session_id with NotFound on missing.
+    Used by the case endpoints to scope-check against the parent session."""
+    row = conn.execute(
+        "SELECT session_id FROM assignments WHERE id=?", (assignment_id,),
+    ).fetchone()
+    if row is None:
+        raise HTTPException(404, "assignment not found")
+    return int(row['session_id'])
+
+
+def _assert_session_in_scope(conn, session_id: int, scope: Optional[List[str]]) -> None:
+    """Re-uses the account-scope helper indirectly: a session inherits its
+    account's access_area. NULL account = unscoped; admins (scope=None)
+    bypass entirely."""
+    if scope is None:
+        return
+    row = conn.execute(
+        "SELECT s.account_id, a.access_area "
+        "FROM sessions s LEFT JOIN accounts a ON a.id = s.account_id "
+        "WHERE s.id=?", (session_id,),
+    ).fetchone()
+    if row is None:
+        raise HTTPException(404, "not found")
+    if row['account_id'] is None:
+        return  # untagged session — visible to everyone
+    if row['access_area'] is None or row['access_area'] not in scope:
+        raise HTTPException(403, "Session is outside your active access scope.")
+
+
+@app.patch("/assignments/{assignment_id}/case")
+def patch_case(assignment_id: int, payload: CasePatch,
+               user: dict = Depends(require_role('ops', 'admin', 'internal_control')),
+               scope: Optional[List[str]] = Depends(active_scope)):
+    """Update case fields on a pending or confirmed assignment. Empty
+    string in `assignee` or `due_date` clears the field; None means
+    leave-unchanged. Priority must be one of CASE_PRIORITIES.
+
+    Audit-logged because changing the assignee or SLA on an in-flight
+    case is a meaningful operational decision."""
+    if (payload.assignee is None and payload.due_date is None
+            and payload.priority is None):
+        raise HTTPException(400, "Nothing to update")
+    if payload.priority is not None and payload.priority not in CASE_PRIORITIES:
+        raise HTTPException(400, f"priority must be one of {CASE_PRIORITIES}")
+    if payload.due_date is not None and payload.due_date != "":
+        # Soft validation: just confirm we can parse it as YYYY-MM-DD.
+        try:
+            datetime.strptime(payload.due_date, '%Y-%m-%d')
+        except ValueError:
+            raise HTTPException(400, "due_date must be ISO 'YYYY-MM-DD'")
+    conn = get_conn()
+    try:
+        session_id = _assignment_session_id(conn, assignment_id)
+        _assert_session_in_scope(conn, session_id, scope)
+
+        fields, params = [], []
+        if payload.assignee is not None:
+            fields.append("assignee=?"); params.append(payload.assignee or None)
+        if payload.due_date is not None:
+            fields.append("due_date=?"); params.append(payload.due_date or None)
+        if payload.priority is not None:
+            fields.append("priority=?"); params.append(payload.priority)
+        params.append(assignment_id)
+        conn.execute(
+            f"UPDATE assignments SET {', '.join(fields)} WHERE id=?", params,
+        )
+        now = datetime.utcnow().isoformat()
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (?, 'case_updated', ?, ?, ?)",
+            (session_id, user['username'], now, json.dumps({
+                "assignment_id": assignment_id,
+                "assignee": payload.assignee,
+                "due_date": payload.due_date,
+                "priority": payload.priority,
+            })),
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT id, session_id, assignee, due_date, priority "
+            "FROM assignments WHERE id=?", (assignment_id,),
+        ).fetchone()
+        return dict(row)
+    finally:
+        conn.close()
+
+
+# NOTE on comments: the existing /comments endpoints (POST/GET) handle
+# break_comments against any assignment or open_item. Case management
+# reuses that store; we only added the assignee / due_date / priority
+# metadata to assignments above. See the /comments handlers further down.
 
 
 # ---------------------------------------------------------------------------
@@ -1494,7 +2106,7 @@ def export_session(session_id: int, user: dict = Depends(current_user)):
 @app.get("/sessions/{session_id}/audit")
 def get_audit(session_id: int,
               user: dict = Depends(current_user),
-              scope: list[str] | None = Depends(active_scope)):
+              scope: Optional[List[str]] = Depends(active_scope)):
     conn = get_conn()
     try:
         scope_where, scope_params = _scope_clause(scope, alias='a')
@@ -1520,26 +2132,57 @@ def get_audit(session_id: int,
 # Accounts registry
 # ---------------------------------------------------------------------------
 
+ACCOUNT_TYPES = ('cash_nostro', 'mobile_wallet')
+MOBILE_MONEY_PROVIDERS = ('mpesa', 'mtn_momo', 'airtel_money', 'orange_money', 'tigo_pesa', 'other')
+
+
 class AccountPayload(BaseModel):
     label: str
-    shortname: str | None = None
-    access_area: str | None = None
-    bic: str | None = None
+    shortname: Optional[str] = None
+    access_area: Optional[str] = None
+    bic: Optional[str] = None
     swift_account: str
     flex_ac_no: str
     currency: str
-    notes: str | None = None
+    notes: Optional[str] = None
+    # Mobile-money expansion. account_type defaults to 'cash_nostro'
+    # which preserves the original behaviour. provider / msisdn /
+    # short_code are only meaningful when account_type='mobile_wallet'.
+    account_type: Optional[str] = 'cash_nostro'
+    provider: Optional[str] = None
+    msisdn: Optional[str] = None
+    short_code: Optional[str] = None
 
 
 @app.get("/accounts")
-def list_accounts(scope: list[str] | None = Depends(active_scope)):
+def list_accounts(account_type: Optional[str] = None,
+                  provider: Optional[str] = None,
+                  scope: Optional[List[str]] = Depends(active_scope)):
+    """Cash accounts + mobile-money wallets. The /mobile-money page
+    passes account_type='mobile_wallet' to scope to wallets only;
+    the legacy nostro view passes 'cash_nostro' (or omits, which
+    returns everything for backwards compatibility)."""
+    if account_type is not None and account_type not in ACCOUNT_TYPES:
+        raise HTTPException(400, f"account_type must be one of {ACCOUNT_TYPES}")
+    if provider is not None and provider not in MOBILE_MONEY_PROVIDERS:
+        raise HTTPException(400, f"provider must be one of {MOBILE_MONEY_PROVIDERS}")
     conn = get_conn()
     try:
         where, params = _scope_clause(scope, alias='accounts')
+        type_clause = ""
+        prov_clause = ""
+        extra_params: list = []
+        if account_type is not None:
+            type_clause = "AND account_type = ?"
+            extra_params.append(account_type)
+        if provider is not None:
+            prov_clause = "AND provider = ?"
+            extra_params.append(provider)
         rows = conn.execute(
             f"SELECT * FROM accounts WHERE active=1 AND {where} "
+            f"{type_clause} {prov_clause} "
             f"ORDER BY COALESCE(access_area, 'zzz'), COALESCE(shortname, label)",
-            params,
+            (*params, *extra_params),
         ).fetchall()
         return [dict(r) for r in rows]
     finally:
@@ -1575,10 +2218,10 @@ class CurrencyPayload(BaseModel):
 
 
 class CurrencyPatchPayload(BaseModel):
-    name: str | None = None
-    decimals: int | None = None
-    euro_currency: int | None = None
-    active: int | None = None
+    name: Optional[str] = None
+    decimals: Optional[int] = None
+    euro_currency: Optional[int] = None
+    active: Optional[int] = None
 
 
 @app.get("/currencies")
@@ -1712,21 +2355,21 @@ def currencies_admin_page(request: Request):
 class BankPayload(BaseModel):
     bic: str
     name: str
-    nickname: str | None = None
+    nickname: Optional[str] = None
     origin: str = 'their'           # 'their' | 'our'
     type: str = 'bank'              # 'bank' | 'broker'
-    access_area: str | None = None
-    user_code: str | None = None
+    access_area: Optional[str] = None
+    user_code: Optional[str] = None
 
 
 class BankPatchPayload(BaseModel):
-    name: str | None = None
-    nickname: str | None = None
-    origin: str | None = None
-    type: str | None = None
-    access_area: str | None = None
-    user_code: str | None = None
-    active: int | None = None
+    name: Optional[str] = None
+    nickname: Optional[str] = None
+    origin: Optional[str] = None
+    type: Optional[str] = None
+    access_area: Optional[str] = None
+    user_code: Optional[str] = None
+    active: Optional[int] = None
 
 
 @app.get("/banks")
@@ -1885,14 +2528,14 @@ class FxRatePayload(BaseModel):
     from_ccy: str
     to_ccy: str
     rate: float
-    valid_from: str | None = None    # ISO date; defaults to today
-    source: str | None = None
+    valid_from: Optional[str] = None    # ISO date; defaults to today
+    source: Optional[str] = None
 
 
 class FxRatePatchPayload(BaseModel):
-    rate: float | None = None
-    source: str | None = None
-    active: int | None = None
+    rate: Optional[float] = None
+    source: Optional[str] = None
+    active: Optional[int] = None
 
 
 @app.get("/fx-rates")
@@ -2004,14 +2647,16 @@ def fx_admin_page(request: Request):
 # ---------------------------------------------------------------------------
 
 class CertActionPayload(BaseModel):
-    note: str | None = None
+    note: Optional[str] = None
 
 
 @app.get("/accounts/{account_id}/certificates")
 def list_certificates(account_id: int,
-                      user: dict = Depends(current_user)):
+                      user: dict = Depends(current_user),
+                      scope: Optional[List[str]] = Depends(active_scope)):
     conn = get_conn()
     try:
+        _assert_account_in_scope(conn, account_id, scope)
         rows = conn.execute(
             "SELECT * FROM reconciliation_certificates WHERE account_id=? "
             "ORDER BY period_end DESC, id DESC",
@@ -2024,12 +2669,14 @@ def list_certificates(account_id: int,
 
 @app.post("/accounts/{account_id}/certificates")
 def create_certificate(account_id: int, period_start: str, period_end: str,
-                       user: dict = Depends(require_role('admin', 'ops'))):
+                       user: dict = Depends(require_role('admin', 'ops')),
+                       scope: Optional[List[str]] = Depends(active_scope)):
     """Generate a draft certificate for the account+period. Idempotent per
     (account, period_start, period_end) — re-issuing returns the existing
     draft so analysts can iterate without spawning duplicates."""
     conn = get_conn()
     try:
+        _assert_account_in_scope(conn, account_id, scope)
         existing = conn.execute(
             "SELECT * FROM reconciliation_certificates WHERE account_id=? "
             "AND period_start=? AND period_end=? AND status != 'superseded' "
@@ -2062,7 +2709,7 @@ def create_certificate(account_id: int, period_start: str, period_end: str,
 
 def _transition_cert(conn, cert_id: int, expected_statuses: tuple,
                      new_status: str, field_user: str, field_at: str,
-                     user: str, note: str | None) -> dict:
+                     user: str, note: Optional[str]) -> dict:
     row = conn.execute(
         "SELECT * FROM reconciliation_certificates WHERE id=?", (cert_id,),
     ).fetchone()
@@ -2094,10 +2741,12 @@ def _transition_cert(conn, cert_id: int, expected_statuses: tuple,
 
 @app.post("/certificates/{cert_id}/prepare")
 def prepare_certificate(cert_id: int, payload: CertActionPayload,
-                        user: dict = Depends(require_role('admin', 'ops'))):
+                        user: dict = Depends(require_role('admin', 'ops')),
+                        scope: Optional[List[str]] = Depends(active_scope)):
     """Maker step — analyst attests the figures are ready for review."""
     conn = get_conn()
     try:
+        _assert_account_in_scope(conn, _account_id_for_certificate(conn, cert_id), scope)
         return _transition_cert(conn, cert_id, ('draft',), 'prepared',
                                  'prepared_by', 'prepared_at',
                                  user['username'], payload.note)
@@ -2107,10 +2756,12 @@ def prepare_certificate(cert_id: int, payload: CertActionPayload,
 
 @app.post("/certificates/{cert_id}/review")
 def review_certificate(cert_id: int, payload: CertActionPayload,
-                       user: dict = Depends(require_role('admin', 'internal_control'))):
+                       user: dict = Depends(require_role('admin', 'internal_control')),
+                       scope: Optional[List[str]] = Depends(active_scope)):
     """Checker step — independent reviewer attests figures are correct."""
     conn = get_conn()
     try:
+        _assert_account_in_scope(conn, _account_id_for_certificate(conn, cert_id), scope)
         return _transition_cert(conn, cert_id, ('prepared',), 'reviewed',
                                  'reviewed_by', 'reviewed_at',
                                  user['username'], payload.note)
@@ -2120,13 +2771,15 @@ def review_certificate(cert_id: int, payload: CertActionPayload,
 
 @app.post("/certificates/{cert_id}/sign")
 def sign_certificate(cert_id: int, payload: CertActionPayload,
-                     user: dict = Depends(require_role('admin'))):
+                     user: dict = Depends(require_role('admin')),
+                     scope: Optional[List[str]] = Depends(active_scope)):
     """Approver step — freezes the figures into snapshot_json and makes the
     certificate immutable. At this point the xlsx becomes reproducible
     from snapshot_json alone, so later ledger changes don't rewrite it."""
     from certificates import compute_figures
     conn = get_conn()
     try:
+        _assert_account_in_scope(conn, _account_id_for_certificate(conn, cert_id), scope)
         row = conn.execute(
             "SELECT * FROM reconciliation_certificates WHERE id=?", (cert_id,),
         ).fetchone()
@@ -2161,15 +2814,22 @@ def sign_certificate(cert_id: int, payload: CertActionPayload,
 
 @app.get("/certificates/{cert_id}/print")
 def print_certificate(cert_id: int, request: Request,
-                      user: dict = Depends(current_user)):
+                      user: dict = Depends(current_user),
+                      scope: Optional[List[str]] = Depends(active_scope)):
     """Render a print-ready HTML view of the certificate. Browser's native
     Save-as-PDF dialog produces the final PDF — zero external PDF dependency
     (no reportlab, no weasyprint, no wkhtmltopdf install). When IT provisions
     reportlab this same endpoint can stream binary PDF; the template is
-    designed to be one-to-one convertible."""
+    designed to be one-to-one convertible.
+
+    Auth deps work because `current_user` and `active_scope` both fall
+    back to the `kilter_token` cookie when the X-Session-Token header
+    is absent (browser navigation case for `<a target="_blank">`). The
+    same JS that writes localStorage also writes the cookie."""
     from certificates import compute_figures
     conn = get_conn()
     try:
+        _assert_account_in_scope(conn, _account_id_for_certificate(conn, cert_id), scope)
         row = conn.execute(
             "SELECT * FROM reconciliation_certificates WHERE id=?", (cert_id,),
         ).fetchone()
@@ -2190,13 +2850,15 @@ def print_certificate(cert_id: int, request: Request,
 
 @app.get("/certificates/{cert_id}/download")
 def download_certificate(cert_id: int,
-                         user: dict = Depends(current_user)):
+                         user: dict = Depends(current_user),
+                         scope: Optional[List[str]] = Depends(active_scope)):
     """Reproducible xlsx. For signed certs the frozen snapshot drives the
     figures; for unsigned certs the live ledger does — so unsigned xlsx
     can shift if more sessions land, but a signed cert is forever."""
     from certificates import compute_figures, build_xlsx
     conn = get_conn()
     try:
+        _assert_account_in_scope(conn, _account_id_for_certificate(conn, cert_id), scope)
         row = conn.execute(
             "SELECT * FROM reconciliation_certificates WHERE id=?", (cert_id,),
         ).fetchone()
@@ -2238,19 +2900,19 @@ class ChannelPayload(BaseModel):
     kind: str                       # 'teams' | 'email' | 'log'
     config_json: str                # JSON string with channel-specific config
     threshold_days: int = 30
-    access_area_filter: str | None = None   # JSON list or null
+    access_area_filter: Optional[str] = None   # JSON list or null
     active: int = 1
 
 
 class ChannelPatchPayload(BaseModel):
-    name: str | None = None
-    config_json: str | None = None
-    threshold_days: int | None = None
-    access_area_filter: str | None = None
-    active: int | None = None
+    name: Optional[str] = None
+    config_json: Optional[str] = None
+    threshold_days: Optional[int] = None
+    access_area_filter: Optional[str] = None
+    active: Optional[int] = None
 
 
-def _redact_channel_config(config_json: str | None) -> str | None:
+def _redact_channel_config(config_json: Optional[str]) -> Optional[str]:
     """Strip the smtp_password field for outbound responses. Admin UI never
     needs to see the stored password — they re-enter it to rotate. Returns
     the JSON string with smtp_password replaced by an empty string if any
@@ -2266,7 +2928,7 @@ def _redact_channel_config(config_json: str | None) -> str | None:
     return json.dumps(cfg)
 
 
-def _encrypt_channel_config(config_json: str | None) -> str | None:
+def _encrypt_channel_config(config_json: Optional[str]) -> Optional[str]:
     """Inverse-side: encrypt the smtp_password field before persisting.
     Caller is responsible for the JSON-validity round-trip; this is a
     best-effort no-op for non-email channels."""
@@ -2378,7 +3040,7 @@ def update_channel(channel_id: int, payload: ChannelPatchPayload,
 
 
 @app.post("/sla/check")
-def sla_check(channel_id: int | None = None, dry_run: bool = False,
+def sla_check(channel_id: Optional[int] = None, dry_run: bool = False,
               user: dict = Depends(require_role('admin'))):
     """Evaluate active channels (or one specific channel) against the
     current open_items ledger and dispatch. dry_run=true runs the query
@@ -2497,19 +3159,19 @@ class JobPayload(BaseModel):
     name: str
     job_type: str                           # scan|daily_close|sla_check|daily_breaks_report|flex_extract
     schedule_kind: str                      # 'interval' | 'daily_at'
-    interval_minutes: int | None = None
-    daily_at_utc: str | None = None
-    params_json: str | None = None
+    interval_minutes: Optional[int] = None
+    daily_at_utc: Optional[str] = None
+    params_json: Optional[str] = None
     enabled: int = 1
 
 
 class JobPatchPayload(BaseModel):
-    name: str | None = None
-    schedule_kind: str | None = None
-    interval_minutes: int | None = None
-    daily_at_utc: str | None = None
-    params_json: str | None = None
-    enabled: int | None = None
+    name: Optional[str] = None
+    schedule_kind: Optional[str] = None
+    interval_minutes: Optional[int] = None
+    daily_at_utc: Optional[str] = None
+    params_json: Optional[str] = None
+    enabled: Optional[int] = None
 
 
 @app.get("/scheduled-jobs")
@@ -2702,12 +3364,12 @@ def manual_page(request: Request, slug: str):
 
 
 class AccountPatchPayload(BaseModel):
-    label: str | None = None
-    shortname: str | None = None
-    access_area: str | None = None
-    bic: str | None = None
-    notes: str | None = None
-    active: int | None = None
+    label: Optional[str] = None
+    shortname: Optional[str] = None
+    access_area: Optional[str] = None
+    bic: Optional[str] = None
+    notes: Optional[str] = None
+    active: Optional[int] = None
 
 
 @app.patch("/accounts/{account_id}")
@@ -2752,7 +3414,7 @@ def update_account(account_id: int, payload: AccountPatchPayload,
         conn.close()
 
 
-def _require_registered_bic(conn, bic: str | None) -> None:
+def _require_registered_bic(conn, bic: Optional[str]) -> None:
     """Strict BIC enforcement: if a cash account references a BIC, that BIC
     must exist in the banks registry as an active row. Blank/null BICs are
     allowed — not every GL has a correspondent (e.g. internal sub-ledgers)."""
@@ -2779,6 +3441,38 @@ def _require_registered_bic(conn, bic: str | None) -> None:
 @app.post("/accounts")
 def create_account(payload: AccountPayload, user: dict = Depends(require_role('admin'))):
     username = user['username']
+    account_type = (payload.account_type or 'cash_nostro').strip()
+    if account_type not in ACCOUNT_TYPES:
+        raise HTTPException(400, f"account_type must be one of {ACCOUNT_TYPES}")
+    provider = (payload.provider or '').strip() or None
+    msisdn = (payload.msisdn or '').strip() or None
+    short_code = (payload.short_code or '').strip() or None
+
+    if account_type == 'mobile_wallet':
+        if provider is None:
+            raise HTTPException(400,
+                "Mobile wallet accounts must have a provider "
+                f"({MOBILE_MONEY_PROVIDERS}).")
+        if provider not in MOBILE_MONEY_PROVIDERS:
+            raise HTTPException(400,
+                f"provider must be one of {MOBILE_MONEY_PROVIDERS}")
+        if msisdn is None and short_code is None:
+            raise HTTPException(400,
+                "Mobile wallet accounts must have either an MSISDN or a "
+                "short code (paybill / till number) — without one of "
+                "those there's nothing to identify the wallet.")
+        # Normalise MSISDN to digits-only so '+233 24 123 4567' and
+        # '233241234567' don't create duplicate accounts.
+        if msisdn:
+            msisdn = ''.join(ch for ch in msisdn if ch.isdigit())
+    else:
+        # Cash nostro accounts must NOT have wallet-specific fields set
+        # — keeps the data model honest and the dashboard filters clean.
+        if provider or msisdn or short_code:
+            raise HTTPException(400,
+                "provider / msisdn / short_code are only valid for "
+                "account_type='mobile_wallet'.")
+
     conn = get_conn()
     try:
         _require_registered_bic(conn, payload.bic)
@@ -2786,11 +3480,13 @@ def create_account(payload: AccountPayload, user: dict = Depends(require_role('a
         try:
             cur = conn.execute(
                 "INSERT INTO accounts (label, shortname, access_area, bic, swift_account, "
-                "flex_ac_no, currency, notes, created_at, created_by) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                "flex_ac_no, currency, notes, created_at, created_by, "
+                "account_type, provider, msisdn, short_code) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (payload.label, payload.shortname, payload.access_area, payload.bic,
                  payload.swift_account, payload.flex_ac_no, payload.currency,
-                 payload.notes, now, username),
+                 payload.notes, now, username,
+                 account_type, provider, msisdn, short_code),
             )
         except Exception as exc:
             if 'UNIQUE' in str(exc):
@@ -2800,10 +3496,14 @@ def create_account(payload: AccountPayload, user: dict = Depends(require_role('a
         conn.execute(
             "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
             "VALUES (NULL, 'account_created', ?, ?, ?)",
-            (username, now, json.dumps({"account_id": cur.lastrowid, "label": payload.label})),
+            (username, now, json.dumps({
+                "account_id": cur.lastrowid, "label": payload.label,
+                "account_type": account_type, "provider": provider,
+            })),
         )
         conn.commit()
-        return {"id": cur.lastrowid, "label": payload.label}
+        return {"id": cur.lastrowid, "label": payload.label,
+                "account_type": account_type}
     finally:
         conn.close()
 
@@ -2817,10 +3517,10 @@ class RegisterDiscoveryPayload(BaseModel):
     flex_ac_no: str
     currency: str
     label: str
-    shortname: str | None = None
-    access_area: str | None = None
-    bic: str | None = None
-    notes: str | None = None
+    shortname: Optional[str] = None
+    access_area: Optional[str] = None
+    bic: Optional[str] = None
+    notes: Optional[str] = None
 
 
 @app.get("/discovered-accounts")
@@ -2979,13 +3679,13 @@ def ignore_discovery(disc_id: int, user: dict = Depends(require_role('admin'))):
 
 @app.get("/open-items")
 def list_open_items(
-    account_id: int | None = None,
+    account_id: Optional[int] = None,
     status: str = 'open',
-    category: str | None = None,
-    min_age_days: int | None = None,
+    category: Optional[str] = None,
+    min_age_days: Optional[int] = None,
     limit: int = 500,
     user: dict = Depends(current_user),
-    scope: list[str] | None = Depends(active_scope),
+    scope: Optional[List[str]] = Depends(active_scope),
 ):
     """Rolling ledger query. Returns age_days per row so the UI can bucket
     without another round-trip. Access-area scope applies via the account
@@ -3069,7 +3769,7 @@ class OpenItemManualClearPayload(BaseModel):
     session_id: int
     counterpart_row: int
     counterpart_side: str      # 'swift' | 'flex' — row's side in that session
-    note: str | None = None
+    note: Optional[str] = None
 
 
 @app.post("/open-items/{open_item_id}/clear")
@@ -3187,7 +3887,7 @@ def set_open_item_category(open_item_id: int,
 class ManualMatchPayload(BaseModel):
     swift_row: int
     flex_row: int
-    reason: str | None = None
+    reason: Optional[str] = None
 
 
 @app.post("/sessions/{session_id}/manual-match")
@@ -3267,7 +3967,7 @@ def manual_match(session_id: int, payload: ManualMatchPayload,
 class ManualSplitPayload(BaseModel):
     swift_rows: list[int]
     flex_rows: list[int]
-    reason: str | None = None
+    reason: Optional[str] = None
 
 
 @app.post("/sessions/{session_id}/manual-split")
@@ -3383,7 +4083,7 @@ def manual_split(session_id: int, payload: ManualSplitPayload,
 class CommentPayload(BaseModel):
     target_type: str        # 'assignment' | 'open_item'
     target_id: int
-    session_id: int | None = None
+    session_id: Optional[int] = None
     body: str
 
 
@@ -3457,6 +4157,9 @@ class TolerancePayload(BaseModel):
     amount_tol_pct: float
     date_tol_days: int
     min_ref_len: int
+    # Basis-points cushion after FX conversion. Optional so existing
+    # callers that never set it don't have to know it exists. 0 disables.
+    fx_tol_bps: Optional[float] = 0.0
 
 
 @app.get("/accounts/{account_id}/tolerance")
@@ -3467,7 +4170,7 @@ def get_tolerance(account_id: int, user: dict = Depends(current_user)):
     try:
         row = conn.execute(
             "SELECT amount_tol_abs, amount_tol_pct, date_tol_days, min_ref_len, "
-            "       updated_at, updated_by "
+            "       fx_tol_bps, updated_at, updated_by "
             "FROM tolerance_rules WHERE account_id=?",
             (account_id,),
         ).fetchone()
@@ -3476,7 +4179,7 @@ def get_tolerance(account_id: int, user: dict = Depends(current_user)):
             return {
                 "account_id": account_id,
                 "amount_tol_abs": 0.01, "amount_tol_pct": 0.0,
-                "date_tol_days": 1, "min_ref_len": 6,
+                "date_tol_days": 1, "min_ref_len": 6, "fx_tol_bps": 0.0,
                 "updated_at": None, "updated_by": None, "is_default": True,
             }
         return {"account_id": account_id, **dict(row), "is_default": False}
@@ -3497,6 +4200,10 @@ def put_tolerance(account_id: int, payload: TolerancePayload,
         raise HTTPException(400, "date_tol_days must be between 0 and 30")
     if payload.min_ref_len < 3 or payload.min_ref_len > 32:
         raise HTTPException(400, "min_ref_len must be between 3 and 32")
+    fx_bps = payload.fx_tol_bps or 0.0
+    if fx_bps < 0 or fx_bps > 1000:
+        # 1000 bps = 10%; anything looser hides genuine FX errors.
+        raise HTTPException(400, "fx_tol_bps must be between 0 and 1000 (basis points; 100 = 1%)")
     conn = get_conn()
     try:
         exists = conn.execute("SELECT id FROM accounts WHERE id=?",
@@ -3510,16 +4217,18 @@ def put_tolerance(account_id: int, payload: TolerancePayload,
         ).fetchone()
         conn.execute(
             "INSERT INTO tolerance_rules (account_id, amount_tol_abs, amount_tol_pct, "
-            "date_tol_days, min_ref_len, updated_at, updated_by) "
-            "VALUES (?,?,?,?,?,?,?) "
+            "date_tol_days, min_ref_len, fx_tol_bps, updated_at, updated_by) "
+            "VALUES (?,?,?,?,?,?,?,?) "
             "ON CONFLICT(account_id) DO UPDATE SET "
             "  amount_tol_abs=excluded.amount_tol_abs, "
             "  amount_tol_pct=excluded.amount_tol_pct, "
             "  date_tol_days=excluded.date_tol_days, "
             "  min_ref_len=excluded.min_ref_len, "
+            "  fx_tol_bps=excluded.fx_tol_bps, "
             "  updated_at=excluded.updated_at, updated_by=excluded.updated_by",
             (account_id, payload.amount_tol_abs, payload.amount_tol_pct,
-             payload.date_tol_days, payload.min_ref_len, now, user['username']),
+             payload.date_tol_days, payload.min_ref_len, fx_bps,
+             now, user['username']),
         )
         conn.execute(
             "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
@@ -3542,11 +4251,11 @@ def put_tolerance(account_id: int, payload: TolerancePayload,
 class AutoCatRulePayload(BaseModel):
     name: str
     priority: int = 100
-    side: str | None = None              # 'swift' | 'flex' | null
-    narration_contains: str | None = None
-    type_equals: str | None = None
-    amount_min: float | None = None
-    amount_max: float | None = None
+    side: Optional[str] = None              # 'swift' | 'flex' | null
+    narration_contains: Optional[str] = None
+    type_equals: Optional[str] = None
+    amount_min: Optional[float] = None
+    amount_max: Optional[float] = None
     category: str
     active: bool = True
 
@@ -3598,12 +4307,12 @@ def create_auto_cat_rule(payload: AutoCatRulePayload,
 class AutoGroupingRulePayload(BaseModel):
     name: str
     priority: int = 100
-    side: str | None = None
-    narration_contains: str | None = None
-    ref_contains: str | None = None
-    type_equals: str | None = None
-    amount_min: float | None = None
-    amount_max: float | None = None
+    side: Optional[str] = None
+    narration_contains: Optional[str] = None
+    ref_contains: Optional[str] = None
+    type_equals: Optional[str] = None
+    amount_min: Optional[float] = None
+    amount_max: Optional[float] = None
     functional_group: str
     active: bool = True
 
@@ -3823,6 +4532,655 @@ def tolerance_admin_page(request: Request):
     return templates.TemplateResponse(request, "tolerance_admin.html")
 
 
+# ---------------------------------------------------------------------------
+# BYO format profiles — admin-managed CSV column mappings.
+#
+# Workflow:
+#   1. Admin opens /byo-formats, clicks "Add format".
+#   2. POST /csv-profiles/preview with a sample upload + minimal config
+#      (delimiter / skip_rows / header_row). Server returns the detected
+#      columns, a sample of rows, and an auto-guessed column map.
+#   3. Admin tweaks the mapping in the UI, names the profile.
+#   4. POST /csv-profiles to save.
+#   5. Profile appears in the Flex-side dropdown on the upload page; the
+#      ingest path uses byo_csv_loader to parse the file using the
+#      profile instead of the default Flex xlsx loader.
+# ---------------------------------------------------------------------------
+
+class CsvProfilePayload(BaseModel):
+    name: str
+    delimiter: str = ','
+    header_row: int = 1
+    skip_rows: int = 0
+    date_format: str = '%Y-%m-%d'
+    currency: Optional[str] = None
+    column_map: dict        # {amount, value_date, ref, narration, type, currency, ac_no, ac_branch, booking_date}
+    sign_convention: str = 'positive_credit'
+    sign_column: Optional[str] = None
+    sample_filename: Optional[str] = None
+    # Optional binding to a specific account. When set, files using this
+    # profile inherit the account's currency and are routed to that
+    # account at ingest time without needing an ac_no column in the data.
+    account_id: Optional[int] = None
+    # Glob pattern (e.g. 'acme_gl_*.csv'). When set, the daily scanner
+    # picks up matching files from messages/flexcube/ and ingests them
+    # automatically. Null = manual-upload-only.
+    filename_pattern: Optional[str] = None
+
+
+def _validate_profile_payload(p: CsvProfilePayload) -> None:
+    """Reject obviously-bad profile shapes early so we don't write
+    garbage that breaks the loader at first use.
+
+    Currency policy (post-pilot fix):
+        - currency column set → use that
+        - profile.currency set → use that
+        - account_id set → fall back to the bound account's currency at ingest
+        - none of the above → reject (can't bucket txns by currency)
+    """
+    from byo_csv_loader import VALID_DELIMITERS, VALID_SIGN_CONVENTIONS, REQUIRED_COLUMNS
+    if not (p.name or '').strip():
+        raise HTTPException(400, "name is required")
+    if p.delimiter not in VALID_DELIMITERS:
+        raise HTTPException(400, f"delimiter must be one of {VALID_DELIMITERS!r}")
+    if p.sign_convention not in VALID_SIGN_CONVENTIONS:
+        raise HTTPException(400,
+            f"sign_convention must be one of {VALID_SIGN_CONVENTIONS!r}")
+    if p.sign_convention != 'positive_credit' and not p.sign_column:
+        raise HTTPException(400,
+            f"sign_convention={p.sign_convention!r} requires sign_column")
+    for k in REQUIRED_COLUMNS:
+        if not p.column_map.get(k):
+            raise HTTPException(400, f"column_map missing required field {k!r}")
+    if (not p.currency and not p.column_map.get('currency')
+            and not p.account_id):
+        raise HTTPException(400,
+            "Currency must come from somewhere: a currency column, a "
+            "profile-level currency, or a bound account. Otherwise the "
+            "engine can't bucket txns by currency.")
+
+
+@app.get("/csv-profiles")
+def list_csv_profiles(user: dict = Depends(current_user)):
+    """Read-only for non-admins so the upload page can show the dropdown
+    without requiring elevated rights."""
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT id, name, delimiter, header_row, skip_rows, date_format, "
+            "currency, column_map, sign_convention, sign_column, "
+            "sample_filename, account_id, filename_pattern, "
+            "created_by, created_at, updated_at, active "
+            "FROM csv_format_profiles WHERE active=1 ORDER BY name"
+        ).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            try:
+                d['column_map'] = json.loads(d['column_map'])
+            except (TypeError, ValueError):
+                d['column_map'] = {}
+            out.append(d)
+        return out
+    finally:
+        conn.close()
+
+
+@app.post("/csv-profiles")
+def create_csv_profile(payload: CsvProfilePayload,
+                       user: dict = Depends(require_role('admin'))):
+    _validate_profile_payload(payload)
+    # If account_id is set, verify it exists — a dangling FK isn't enforced
+    # at the SQLite layer in the existing schema and we want a clean 400.
+    if payload.account_id is not None:
+        conn = get_conn()
+        try:
+            row = conn.execute("SELECT id FROM accounts WHERE id=? AND active=1",
+                               (payload.account_id,)).fetchone()
+            if row is None:
+                raise HTTPException(400,
+                    f"account_id {payload.account_id} does not exist or is inactive.")
+        finally:
+            conn.close()
+    now = datetime.utcnow().isoformat()
+    conn = get_conn()
+    try:
+        try:
+            cur = conn.execute(
+                "INSERT INTO csv_format_profiles (name, side, delimiter, header_row, "
+                "skip_rows, date_format, currency, column_map, sign_convention, "
+                "sign_column, sample_filename, account_id, filename_pattern, "
+                "created_by, created_at, updated_at) "
+                "VALUES (?, 'flex', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (payload.name.strip(), payload.delimiter, payload.header_row,
+                 payload.skip_rows, payload.date_format, payload.currency,
+                 json.dumps(payload.column_map), payload.sign_convention,
+                 payload.sign_column, payload.sample_filename,
+                 payload.account_id, payload.filename_pattern,
+                 user['username'], now, now),
+            )
+        except Exception as exc:
+            if 'UNIQUE' in str(exc):
+                raise HTTPException(409,
+                    f"A profile named {payload.name!r} already exists.")
+            raise
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (NULL, 'csv_profile_created', ?, ?, ?)",
+            (user['username'], now, json.dumps({
+                'profile_id': cur.lastrowid, 'name': payload.name,
+            })),
+        )
+        conn.commit()
+        return {'id': cur.lastrowid, 'name': payload.name, 'created_at': now}
+    finally:
+        conn.close()
+
+
+@app.delete("/csv-profiles/{profile_id}")
+def delete_csv_profile(profile_id: int,
+                        user: dict = Depends(require_role('admin'))):
+    """Soft-delete via active=0 — preserves any sessions ingested under
+    this profile so the audit trail still resolves."""
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            "SELECT name FROM csv_format_profiles WHERE id=?", (profile_id,)
+        ).fetchone()
+        if row is None:
+            raise HTTPException(404, "profile not found")
+        now = datetime.utcnow().isoformat()
+        conn.execute("UPDATE csv_format_profiles SET active=0, updated_at=? "
+                     "WHERE id=?", (now, profile_id))
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (NULL, 'csv_profile_deleted', ?, ?, ?)",
+            (user['username'], now, json.dumps({
+                'profile_id': profile_id, 'name': row['name'],
+            })),
+        )
+        conn.commit()
+        return {'ok': True}
+    finally:
+        conn.close()
+
+
+@app.post("/csv-profiles/preview")
+async def preview_csv_profile(file: UploadFile = File(...),
+                               delimiter: str = ',',
+                               header_row: int = 1,
+                               skip_rows: int = 0,
+                               user: dict = Depends(require_role('admin'))):
+    """Wizard step 2: take a sample upload, return the columns we found,
+    a sample of rows, and a suggested column-map. Read-only — does NOT
+    save anything to the DB."""
+    from byo_csv_loader import autoguess_mapping, VALID_DELIMITERS
+    if delimiter not in VALID_DELIMITERS:
+        raise HTTPException(400, f"delimiter must be one of {VALID_DELIMITERS!r}")
+    # Preview only inspects the header + first 5 sample rows. Cap the
+    # read at PREVIEW_BYTES so a 250 MB cards-side CSV doesn't load
+    # in full just to show column names. xlsx is a special case —
+    # truncating breaks the zip's central directory (located at the
+    # end of the archive), so for xlsx we read the whole file. xlsx
+    # statements rarely exceed 50 MB even for high-volume operators.
+    PREVIEW_BYTES = 5 * 1024 * 1024
+    content = await file.read(PREVIEW_BYTES + 1)
+    looks_like_xlsx = content[:4] == b'PK\x03\x04'
+    if looks_like_xlsx and len(content) > PREVIEW_BYTES:
+        # Got a partial xlsx — read the rest so openpyxl can parse the
+        # zip central directory at the tail. Capped at MAX_REQUEST_BYTES
+        # by the surrounding middleware.
+        rest = await file.read()
+        content = content + rest
+    elif len(content) > PREVIEW_BYTES:
+        # CSV path — truncate to the last newline within the cap so we
+        # don't pass a half-row to the parser.
+        cut = content.rfind(b'\n', 0, PREVIEW_BYTES)
+        content = content[:cut if cut > 0 else PREVIEW_BYTES]
+    if not content:
+        raise HTTPException(400, "file is empty")
+    try:
+        out = autoguess_mapping(
+            content, delimiter=delimiter,
+            skip_rows=int(skip_rows), header_row=int(header_row),
+        )
+    except Exception as exc:
+        raise HTTPException(400, f"could not parse file: {exc}")
+    out['filename'] = file.filename
+    return out
+
+
+@app.get("/byo-formats")
+def byo_formats_page(request: Request):
+    return templates.TemplateResponse(request, "byo_formats.html")
+
+
+@app.get("/mobile-money")
+def mobile_money_page(request: Request):
+    """Wallets-only dashboard. The recon engine and BYO loader handle
+    everything underneath; this page is just a domain-specific view of
+    the same data with provider grouping + per-wallet metrics."""
+    return templates.TemplateResponse(request, "mobile_money.html")
+
+
+# ===========================================================================
+# Cards module endpoints.
+#
+# Settlement-file ingest + listing. Mirrors the cash side's POST /sessions
+# but for the cards domain: one settlement file per ingest (not a pair),
+# routed through PCI-safe parsers in cards_loaders/.
+#
+# CSV via BYO profile is the only working path today. Visa Base II /
+# Mastercard IPM are stubbed pending scheme-published synthetic test data
+# (Visa V.I.P., Mastercard PUF). See docs/CARDS_DESIGN.md.
+# ===========================================================================
+
+@app.get("/cards")
+def cards_page(request: Request):
+    """Cards-recon dashboard. Read-only view of card_settlement_files
+    rows + recent records, grouped by scheme and role. Operators upload
+    via this page (admin-only); audit/ops can view but not ingest."""
+    return templates.TemplateResponse(request, "cards.html")
+
+
+@app.post("/cards/files")
+async def upload_card_settlement(
+    file: UploadFile = File(...),
+    scheme: str = Form(...),
+    role: str = Form('issuer'),
+    settlement_date: Optional[str] = Form(None),
+    currency: Optional[str] = Form(None),
+    profile_id: Optional[int] = Form(None),
+    pan_field: Optional[str] = Form(None),
+    pan_masked_field: Optional[str] = Form(None),
+    notes: Optional[str] = Form(None),
+    user: dict = Depends(require_role('admin')),
+):
+    """Ingest one cards settlement file. Body shape:
+        - file: the settlement CSV (or .out/.dat once binary parsers ship).
+        - scheme: visa | mastercard | verve | gh_cardlink | other.
+        - role: issuer | acquirer | switch (default: issuer).
+        - settlement_date: YYYY-MM-DD; falls through to per-row dates if
+          the file has its own column for them.
+        - currency: ISO 4217; falls through to per-row currency if mapped.
+        - profile_id: a saved csv_format_profiles row id (required for
+          CSV until binary parsers land).
+        - pan_field: optional name of a column carrying full PAN; gets
+          masked at the parser seam.
+
+    Returns: file_id + record_count + total_amount + skipped_records.
+    The file row is idempotent on sha256 — re-uploading the same bytes
+    yields a 409 with the existing file_id."""
+    if not (file.filename or '').lower().endswith(
+            ('.csv', '.txt', '.out', '.dat')):
+        raise HTTPException(
+            400, "Settlement file must be .csv, .txt, .out, or .dat")
+    if settlement_date:
+        try:
+            datetime.strptime(settlement_date, '%Y-%m-%d')
+        except ValueError:
+            raise HTTPException(
+                400, "settlement_date must be YYYY-MM-DD or omitted.")
+
+    file_path = await _save_upload(file, 'cards')
+
+    from cards_ingest import (
+        ingest_card_settlement, CardsIngestError, DuplicateCardFileError,
+    )
+    try:
+        result = ingest_card_settlement(
+            file_path=file_path,
+            scheme=scheme, role=role,
+            settlement_date=settlement_date,
+            currency=currency,
+            ingested_by=user['username'],
+            original_filename=file.filename,
+            profile_id=profile_id,
+            pan_field=pan_field,
+            pan_masked_field=pan_masked_field,
+            notes=notes,
+        )
+    except DuplicateCardFileError as exc:
+        raise HTTPException(409, str(exc))
+    except CardsIngestError as exc:
+        raise HTTPException(400, str(exc))
+
+    return {
+        'file_id': result.file_id,
+        'scheme': result.scheme,
+        'role': result.role,
+        'record_count': result.record_count,
+        'total_amount': result.total_amount,
+        'currency': result.currency,
+        'settlement_date': result.settlement_date,
+        'skipped_records': result.skipped_records,
+    }
+
+
+@app.get("/cards/files")
+def list_card_files(user: dict = Depends(current_user)):
+    """List recent settlement files, newest first. No PII exposed beyond
+    file-level totals — record-level data is fetched separately."""
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT id, scheme, role, settlement_date, processing_date, "
+            "record_count, total_amount, currency, original_filename, "
+            "ingested_at, ingested_by "
+            "FROM card_settlement_files "
+            "ORDER BY ingested_at DESC LIMIT 100"
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+@app.get("/cards/files/{file_id}/records")
+def list_card_records(file_id: int, limit: int = 100, offset: int = 0,
+                       user: dict = Depends(current_user)):
+    """List records in a settlement file. Paged — settlement files
+    can run to 100k+ rows for medium issuers, so we never return the
+    whole batch in one response."""
+    if limit > 500:
+        limit = 500
+    conn = get_conn()
+    try:
+        meta = conn.execute(
+            "SELECT id, scheme, role, settlement_date, record_count, "
+            "total_amount, currency, original_filename "
+            "FROM card_settlement_files WHERE id=?",
+            (file_id,),
+        ).fetchone()
+        if meta is None:
+            raise HTTPException(404, f"Card settlement file {file_id} not found.")
+        rows = conn.execute(
+            "SELECT record_index, pan_first6, pan_last4, scheme_ref, "
+            "auth_code, merchant_id, merchant_name, mcc, terminal_id, "
+            "transaction_type, amount_settlement, currency_settlement, "
+            "transaction_date, settlement_date, recon_status "
+            "FROM card_settlement_records WHERE file_id=? "
+            "ORDER BY record_index LIMIT ? OFFSET ?",
+            (file_id, limit, offset),
+        ).fetchall()
+        return {
+            'file': dict(meta),
+            'records': [dict(r) for r in rows],
+            'limit': limit, 'offset': offset,
+        }
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Cards matching engine — scheme_ref join across files.
+# Surfaces 'matched' / 'mismatched' / 'unmatched' groups so operators can
+# focus on the cases that need investigation. The engine is read-only by
+# default (GET /cards/match/groups); POST /cards/match/recompute persists
+# the resulting status into card_settlement_records.recon_status.
+# ---------------------------------------------------------------------------
+
+@app.get("/cards/match/groups")
+def list_card_match_groups(
+    scheme: Optional[str] = None,
+    settlement_date_from: Optional[str] = None,
+    settlement_date_to: Optional[str] = None,
+    status: Optional[str] = None,
+    limit: int = 200,
+    user: dict = Depends(current_user),
+):
+    """Compute scheme_ref groups on-the-fly and return them. Pure read —
+    does not write to records. Use POST /cards/match/recompute to
+    persist statuses."""
+    from cards_engine import compute_match_groups
+    if limit > 1000:
+        limit = 1000
+    conn = get_conn()
+    try:
+        groups = compute_match_groups(
+            conn,
+            scheme=scheme,
+            settlement_date_from=settlement_date_from,
+            settlement_date_to=settlement_date_to,
+        )
+        if status:
+            groups = [g for g in groups if g.status == status]
+        out = []
+        for g in groups[:limit]:
+            out.append({
+                'scheme_ref': g.scheme_ref,
+                'status': g.status,
+                'record_count': g.record_count,
+                'file_count': g.file_count,
+                'file_ids': g.file_ids,
+                'amount_min': g.amount_min,
+                'amount_max': g.amount_max,
+                'amount_total': g.amount_total,
+                'amount_spread': g.amount_spread,
+                'currencies': g.currencies,
+                'pan_last4_set': g.pan_last4_set,
+                'schemes': g.schemes,
+            })
+        # Header counts come from the unfiltered total so the UI can
+        # show "X matched / Y mismatched" without a second roundtrip.
+        all_groups = groups
+        return {
+            'groups': out,
+            'total_groups': len(all_groups),
+            'returned': len(out),
+            'counts': {
+                'matched': sum(1 for g in all_groups if g.status == 'matched'),
+                'mismatched': sum(1 for g in all_groups if g.status == 'mismatched'),
+                'unmatched': sum(1 for g in all_groups if g.status == 'unmatched'),
+            },
+        }
+    finally:
+        conn.close()
+
+
+@app.get("/cards/match/groups/{scheme_ref}/records")
+def list_records_for_scheme_ref(scheme_ref: str,
+                                  user: dict = Depends(current_user)):
+    """All records carrying a given scheme_ref, plus the file metadata
+    each came from. Used by the cards UI's drill-in panel — operators
+    click a mismatched group and see exactly which records disagree."""
+    if not scheme_ref or len(scheme_ref) > 100:
+        raise HTTPException(400, "scheme_ref required (max 100 chars).")
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT r.id, r.record_index, r.pan_first6, r.pan_last4, "
+            "r.scheme_ref, r.auth_code, r.merchant_id, r.merchant_name, "
+            "r.mcc, r.amount_settlement, r.currency_settlement, "
+            "r.amount_transaction, r.currency_transaction, r.fx_rate, "
+            "r.fee_total, r.transaction_date, r.settlement_date, "
+            "r.recon_status, r.matched_at, r.matched_by, "
+            "f.id AS file_id, f.scheme, f.role, f.original_filename, "
+            "f.ingested_at "
+            "FROM card_settlement_records r "
+            "JOIN card_settlement_files f ON f.id = r.file_id "
+            "WHERE r.scheme_ref=? "
+            "ORDER BY f.role, r.record_index",
+            (scheme_ref,),
+        ).fetchall()
+        return {
+            'scheme_ref': scheme_ref,
+            'records': [dict(r) for r in rows],
+        }
+    finally:
+        conn.close()
+
+
+@app.get("/cards/files/export")
+def export_card_files(user: dict = Depends(current_user)):
+    """CSV of all settlement files — file_id, scheme, role, dates,
+    counts, totals. Same shape as the /cards "Files" tab, dumped for
+    spreadsheet workflows / month-end reports."""
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT id, scheme, role, settlement_date, processing_date, "
+            "record_count, total_amount, currency, original_filename, "
+            "ingested_at, ingested_by, sha256 "
+            "FROM card_settlement_files ORDER BY ingested_at DESC"
+        ).fetchall()
+    finally:
+        conn.close()
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(['file_id', 'scheme', 'role', 'settlement_date',
+                'processing_date', 'record_count', 'total_amount',
+                'currency', 'original_filename', 'ingested_at',
+                'ingested_by', 'sha256'])
+    for r in rows:
+        w.writerow([r['id'], r['scheme'], r['role'],
+                    r['settlement_date'] or '', r['processing_date'] or '',
+                    r['record_count'], f"{r['total_amount'] or 0:.2f}",
+                    r['currency'] or '', r['original_filename'] or '',
+                    r['ingested_at'], r['ingested_by'], r['sha256']])
+    _audit_export(user['username'], 'cards_files_export', {"rows": len(rows)})
+    fname = f"kilter_cards_files_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type='text/csv',
+        headers={'Content-Disposition': f'attachment; filename="{fname}"'},
+    )
+
+
+@app.get("/cards/match/groups/export")
+def export_card_match_groups(
+    scheme: Optional[str] = None,
+    settlement_date_from: Optional[str] = None,
+    settlement_date_to: Optional[str] = None,
+    status: Optional[str] = None,
+    user: dict = Depends(current_user),
+):
+    """CSV of match groups — same filter args as GET /cards/match/groups,
+    but no row cap. Ops sends this to the recon meeting — every
+    mismatched scheme_ref with its spread, file mix, and amount range."""
+    from cards_engine import compute_match_groups
+    conn = get_conn()
+    try:
+        groups = compute_match_groups(
+            conn, scheme=scheme,
+            settlement_date_from=settlement_date_from,
+            settlement_date_to=settlement_date_to,
+        )
+    finally:
+        conn.close()
+    if status:
+        groups = [g for g in groups if g.status == status]
+
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(['scheme_ref', 'status', 'record_count', 'file_count',
+                'file_ids', 'amount_min', 'amount_max', 'amount_total',
+                'amount_spread', 'currencies', 'schemes', 'pan_last4_set'])
+    for g in groups:
+        w.writerow([
+            g.scheme_ref, g.status, g.record_count, g.file_count,
+            ';'.join(str(x) for x in g.file_ids),
+            f"{g.amount_min:.2f}", f"{g.amount_max:.2f}",
+            f"{g.amount_total:.2f}", f"{g.amount_spread:.2f}",
+            ';'.join(g.currencies), ';'.join(g.schemes),
+            ';'.join(g.pan_last4_set),
+        ])
+    _audit_export(user['username'], 'cards_match_groups_export', {
+        "rows": len(groups),
+        "filters": {"scheme": scheme, "status": status,
+                    "settlement_date_from": settlement_date_from,
+                    "settlement_date_to": settlement_date_to},
+    })
+    fname = f"kilter_cards_matches_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type='text/csv',
+        headers={'Content-Disposition': f'attachment; filename="{fname}"'},
+    )
+
+
+@app.get("/cards/files/{file_id}/records/export")
+def export_card_records(file_id: int, user: dict = Depends(current_user)):
+    """CSV of every record in one settlement file — full per-row drill-
+    down for spreadsheet reconciliation. PCI-safe by construction:
+    only first6 / last4 leave the schema."""
+    conn = get_conn()
+    try:
+        meta = conn.execute(
+            "SELECT id, original_filename FROM card_settlement_files WHERE id=?",
+            (file_id,),
+        ).fetchone()
+        if meta is None:
+            raise HTTPException(404, f"Card settlement file {file_id} not found.")
+        rows = conn.execute(
+            "SELECT record_index, pan_first6, pan_last4, scheme_ref, "
+            "auth_code, merchant_id, merchant_name, mcc, terminal_id, "
+            "transaction_type, amount_settlement, currency_settlement, "
+            "amount_transaction, currency_transaction, fx_rate, "
+            "fee_total, transaction_date, settlement_date, recon_status, "
+            "matched_at, matched_by "
+            "FROM card_settlement_records WHERE file_id=? ORDER BY record_index",
+            (file_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(['record_index', 'pan_first6', 'pan_last4', 'scheme_ref',
+                'auth_code', 'merchant_id', 'merchant_name', 'mcc',
+                'terminal_id', 'transaction_type', 'amount_settlement',
+                'currency_settlement', 'amount_transaction',
+                'currency_transaction', 'fx_rate', 'fee_total',
+                'transaction_date', 'settlement_date', 'recon_status',
+                'matched_at', 'matched_by'])
+    for r in rows:
+        w.writerow([r[k] if r[k] is not None else '' for k in r.keys()])
+    _audit_export(user['username'], 'cards_records_export',
+                  {"file_id": file_id, "rows": len(rows)})
+    fname = (f"kilter_cards_records_file{file_id}_"
+             f"{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv")
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type='text/csv',
+        headers={'Content-Disposition': f'attachment; filename="{fname}"'},
+    )
+
+
+@app.post("/cards/match/recompute")
+def recompute_card_matches(
+    scheme: Optional[str] = Form(None),
+    settlement_date_from: Optional[str] = Form(None),
+    settlement_date_to: Optional[str] = Form(None),
+    user: dict = Depends(require_role('admin')),
+):
+    """Recompute match groups and write the resulting status into
+    `card_settlement_records.recon_status`. Records in operator-set
+    state ('disputed', 'written_off') are preserved.
+
+    Idempotent — re-running over unchanged data yields the same result.
+    Wrapped in a single transaction so a partial failure leaves the
+    table consistent."""
+    from cards_engine import compute_match_groups, apply_match_status
+    conn = get_conn()
+    try:
+        groups = compute_match_groups(
+            conn,
+            scheme=scheme,
+            settlement_date_from=settlement_date_from,
+            settlement_date_to=settlement_date_to,
+        )
+        result = apply_match_status(conn, groups, actor=user['username'])
+        return {
+            'groups_total': result.groups_total,
+            'matched': result.matched,
+            'mismatched': result.mismatched,
+            'unmatched': result.unmatched,
+            'records_updated': result.records_updated,
+            'records_protected': result.records_protected,
+        }
+    finally:
+        conn.close()
+
+
 # ===========================================================================
 # Reports endpoints (2026-04-22).
 #
@@ -3834,7 +5192,7 @@ def tolerance_admin_page(request: Request):
 # straight into spreadsheets, so raw-data export is a first-class feature.
 # ===========================================================================
 
-def _parse_ymd(s: str | None) -> str | None:
+def _parse_ymd(s: Optional[str]) -> Optional[str]:
     """Accept YYYY-MM-DD, return ISO start-of-day string, or None."""
     if not s:
         return None
@@ -3845,7 +5203,7 @@ def _parse_ymd(s: str | None) -> str | None:
         raise HTTPException(400, f"Invalid date '{s}'. Use YYYY-MM-DD.")
 
 
-def _parse_ymd_end(s: str | None) -> str | None:
+def _parse_ymd_end(s: Optional[str]) -> Optional[str]:
     """Same as _parse_ymd but anchored to 23:59:59 so a single-day filter
     includes everything on that day."""
     if not s:
@@ -3874,14 +5232,14 @@ def _csv_response(rows: list[list], headers: list[str], filename: str) -> Stream
 
 @app.get("/reports/sessions")
 def report_sessions(
-    account_id: int | None = None,
-    from_date: str | None = None,      # created_at >= YYYY-MM-DD
-    to_date: str | None = None,        # created_at <= YYYY-MM-DD 23:59:59
-    account_label: str | None = None,  # substring, case-insensitive
-    status: str | None = None,         # 'open' | 'closed'
+    account_id: Optional[int] = None,
+    from_date: Optional[str] = None,      # created_at >= YYYY-MM-DD
+    to_date: Optional[str] = None,        # created_at <= YYYY-MM-DD 23:59:59
+    account_label: Optional[str] = None,  # substring, case-insensitive
+    status: Optional[str] = None,         # 'open' | 'closed'
     format: str = 'json',
     user: dict = Depends(current_user),
-    scope: list[str] | None = Depends(active_scope),
+    scope: Optional[List[str]] = Depends(active_scope),
 ):
     """Archived sessions, filterable and ready to re-download. Scoped by
     access area so a BRANCH 001 analyst doesn't see NOSTRO reconciliations."""
@@ -3961,14 +5319,14 @@ def report_sessions(
 
 @app.get("/reports/cleared-items")
 def report_cleared_items(
-    account_id: int | None = None,
-    from_date: str | None = None,       # cleared_at >= ...
-    to_date: str | None = None,
-    category: str | None = None,
-    outcome: str | None = None,         # 'cleared' | 'written_off' | null = both
+    account_id: Optional[int] = None,
+    from_date: Optional[str] = None,       # cleared_at >= ...
+    to_date: Optional[str] = None,
+    category: Optional[str] = None,
+    outcome: Optional[str] = None,         # 'cleared' | 'written_off' | null = both
     format: str = 'json',
     user: dict = Depends(current_user),
-    scope: list[str] | None = Depends(active_scope),
+    scope: Optional[List[str]] = Depends(active_scope),
 ):
     """The archive side of the rolling ledger: everything that *used* to
     be an open item and has since been resolved. Essential for audit trails
@@ -4037,8 +5395,8 @@ def report_cleared_items(
 @app.get("/reports/account-history/{account_id}")
 def report_account_history(
     account_id: int,
-    from_date: str | None = None,
-    to_date: str | None = None,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
     format: str = 'json',
     user: dict = Depends(current_user),
 ):
@@ -4112,12 +5470,12 @@ def report_account_history(
 
 @app.get("/reports/break-analysis")
 def report_break_analysis(
-    from_date: str | None = None,
-    to_date: str | None = None,
-    account_id: int | None = None,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    account_id: Optional[int] = None,
     format: str = 'json',
     user: dict = Depends(current_user),
-    scope: list[str] | None = Depends(active_scope),
+    scope: Optional[List[str]] = Depends(active_scope),
 ):
     """Pivots the open-items pool (open + written_off + cleared) by the
     three dimensions ops cares about: category, account, and month.
@@ -4216,9 +5574,9 @@ def report_break_analysis(
 
 @app.get("/reports/decisions")
 def report_decisions(
-    from_date: str | None = None,
-    to_date: str | None = None,
-    actor: str | None = None,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    actor: Optional[str] = None,
     format: str = 'json',
     user: dict = Depends(require_role('admin', 'audit', 'internal_control')),
 ):
@@ -4319,11 +5677,11 @@ def reports_page(request: Request):
 
 @app.get("/reports/daily-breaks")
 def report_daily_breaks(
-    as_of: str | None = None,     # YYYY-MM-DD; defaults to today
-    account_id: int | None = None,
+    as_of: Optional[str] = None,     # YYYY-MM-DD; defaults to today
+    account_id: Optional[int] = None,
     format: str = 'xlsx',         # 'xlsx' or 'json'
     user: dict = Depends(current_user),
-    scope: list[str] | None = Depends(active_scope),
+    scope: Optional[List[str]] = Depends(active_scope),
 ):
     from io import BytesIO
     import openpyxl
@@ -4505,12 +5863,33 @@ async def _save_upload(upload: UploadFile, prefix: str) -> Path:
     """Write an upload to the persistent uploads/ folder with a timestamped
     name. Files are retained for audit — we don't try to delete them because
     openpyxl's read-only mode holds the handle open on Windows and unlink
-    races with GC. Disk use is bounded by retention policy, not per-request."""
+    races with GC. Disk use is bounded by retention policy, not per-request.
+
+    Streams the body in UPLOAD_CHUNK_BYTES blocks so 250+ MB cards-side
+    settlement files don't materialize in worker RAM. Enforces
+    MAX_REQUEST_BYTES inline as a defence-in-depth check (the middleware
+    catches honest Content-Length, this catches chunked-transfer abuse)."""
     ts = datetime.utcnow().strftime('%Y%m%d_%H%M%S_%f')
     safe_name = f"{ts}_{prefix}_{Path(upload.filename).name}"
     path = UPLOAD_DIR / safe_name
+    written = 0
     with path.open('wb') as f:
-        f.write(await upload.read())
+        while True:
+            chunk = await upload.read(UPLOAD_CHUNK_BYTES)
+            if not chunk:
+                break
+            written += len(chunk)
+            if written > MAX_REQUEST_BYTES:
+                f.close()
+                try:
+                    path.unlink()
+                except OSError:
+                    pass
+                raise HTTPException(
+                    413,
+                    f"Upload exceeds {MAX_REQUEST_BYTES // (1024*1024)} MB cap.",
+                )
+            f.write(chunk)
     return path
 
 

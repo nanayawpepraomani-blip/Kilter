@@ -65,16 +65,16 @@
     <section class="center">
       <div class="brand-badge">E</div>
       <h1 style="margin-bottom: 0.2em">Kilter</h1>
-      <p class="subtitle">A modern replacement for Corona 7.9 reconciliation.</p>
+      <p class="subtitle">A modern replacement for the legacy reconciliation stack.</p>
       <p class="muted" style="margin-top: 2em">
-        Built in-house &middot; Runs on our stack &middot; Audit trail by default.
+        Self-hosted &middot; Vendor-neutral &middot; Audit trail by default.
       </p>
       <p class="muted" style="margin-top: 3em; font-size: 0.8em">
         <span class="fill">Presenter name</span> &middot; <span class="fill">Date</span>
       </p>
       <aside class="notes">
-        For 15+ years our month-end reconciliation has depended on Corona 7.9. Kilter is the
-        purpose-built replacement — same job, 2026-era UX, and every action leaves an audit trail.
+        Most mid-tier banks still run a 1990s reconciliation tool — end-of-life, no active vendor support.
+        Kilter is the purpose-built replacement — same job, 2026-era UX, and every action leaves an audit trail.
       </aside>
     </section>
 
@@ -83,14 +83,14 @@
       <h2>Why now</h2>
       <p class="muted" style="margin-bottom: 1em">Three pressures converging.</p>
       <ul>
-        <li><strong>Corona 7.9 is end-of-life.</strong> No vendor support. No Windows 11 hardening. UI unchanged since launch.</li>
-        <li><strong>Month-end reconciliation is manual.</strong> Ops exports from Flexcube, pulls SWIFT, eyeballs matches in Excel. <span class="fill">[FILL: hours per cycle]</span>.</li>
+        <li><strong>The legacy reconciliation tool is end-of-life.</strong> No active vendor support. No Windows 11 hardening. UI unchanged since launch.</li>
+        <li><strong>Month-end reconciliation is manual.</strong> Ops exports from the core (Flexcube / T24 / Finacle / equivalent), pulls SWIFT, eyeballs matches in Excel. <span class="fill">[FILL: hours per cycle]</span>.</li>
         <li><strong>Audit has no breadcrumbs.</strong> "Who cleared this on the 14th?" → a spreadsheet filename.</li>
       </ul>
       <aside class="notes">
-        The problem isn't Corona itself — it's that Corona plus manual Excel stitching is how we
-        actually close the books. Three risks in one: a tool we can't patch, hours we can't reclaim,
-        decisions we can't trace.
+        The problem isn't the legacy tool itself — it's that legacy tool plus manual Excel stitching is how
+        books actually close. Three risks in one: a tool you can't patch, hours you can't reclaim,
+        decisions you can't trace.
       </aside>
     </section>
 
@@ -156,7 +156,7 @@
         <li>Top-bar picker, present on every page.</li>
         <li><strong>Single area</strong> (most common) or <strong>multi-select</strong> (regional supervisors).</li>
         <li>Scope filters Dashboard / Cash accounts / Sessions &mdash; users only see work relevant to them.</li>
-        <li>Backed by the same taxonomy Corona uses &mdash; <span class="pill pill-ok">103 areas seeded from Corona 7.9</span></li>
+        <li>Areas configurable per deployment &mdash; import from your existing tool's taxonomy, or define your own.</li>
       </ul>
       <aside class="notes">
         Ops asked: I only work on Branch 001 — don't show me 102 other areas. Done.
@@ -187,7 +187,7 @@
       <p class="muted">Fill these in before presenting &mdash; or swap this slide for the pilot plan.</p>
       <table>
         <thead>
-          <tr><th>Metric</th><th class="num">Corona + Excel today</th><th class="num">Kilter pilot</th></tr>
+          <tr><th>Metric</th><th class="num">Legacy tool + Excel today</th><th class="num">Kilter pilot</th></tr>
         </thead>
         <tbody>
           <tr><td>Month-end close cycle</td><td class="num"><span class="fill">[FILL] hrs</span></td><td class="num"><span class="fill">[FILL] hrs</span></td></tr>
@@ -220,7 +220,7 @@
         <div>
           <h3 style="color: var(--accent)">Next (in order)</h3>
           <ol style="font-size: 0.85em">
-            <li><strong>Pilot</strong> &mdash; 1 branch, 1 month, parallel to Corona.</li>
+            <li><strong>Pilot</strong> &mdash; 1 branch, 1 month, parallel to the existing tool.</li>
             <li><strong>RBAC for access areas</strong> &mdash; admin restricts user scope.</li>
             <li><strong>Scheduled scan</strong> &mdash; replace manual click with cron.</li>
             <li><strong>AD/LDAP integration</strong> &mdash; retire local user table.</li>
@@ -233,7 +233,7 @@
     <section>
       <h2>The ask</h2>
       <ol class="ask-list">
-        <li><strong>Green-light a 1-branch / 1-month pilot.</strong> Low-risk, parallel to Corona, measures the numbers on slide 8.</li>
+        <li><strong>Green-light a 1-branch / 1-month pilot.</strong> Low-risk, parallel to the existing tool, measures the numbers on slide 8.</li>
         <li><strong>Name an ops champion.</strong> The person who lives in the review queue during the pilot.</li>
         <li><strong>Commit a go/no-go review date.</strong> <span class="fill">[FILL: ~6 weeks from pilot start]</span></li>
       </ol>

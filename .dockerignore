@@ -1,0 +1,64 @@
+# Build context exclusions — keep the image small and avoid baking
+# host-specific or sensitive state into layers.
+
+# Python noise
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtualenvs
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Tests / dev-only
+tests/
+requirements-dev.txt
+
+# Persistent runtime state — must come in via volumes, never via the image.
+kilter.db
+kilter.db-shm
+kilter.db-wal
+kilter.db.backup-*
+.kilter_secret_key
+messages/*
+uploads/*
+exports/*
+demo_data/
+
+# Logs
+*.log
+uvicorn.log
+
+# Documentation, marketing, legal — not needed at runtime
+demo/
+legal/
+docs/
+*.md
+LICENSE
+
+# Docker self
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+# CI / packaging
+.github/
+.gitlab-ci.yml

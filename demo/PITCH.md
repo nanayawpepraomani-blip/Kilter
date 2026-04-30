@@ -9,13 +9,15 @@
 ## Slide 1 — Title
 
 > **Kilter**
-> A modern replacement for Corona 7.9 reconciliation.
+> A modern replacement for the legacy reconciliation stack — and more.
 >
-> Built in-house · Runs on our stack · Audit trail by default.
+> Same nostro recon, plus mobile-money and card-scheme reconciliation in one platform.
+>
+> Self-hosted · Vendor-neutral · Audit trail by default.
 >
 > *\[Presenter name · Date]*
 
-**Talk track (20 s):** "For 15+ years our month-end reconciliation has depended on Corona 7.9. Kilter is the purpose-built replacement — same job, 2026-era UX, and every action leaves an audit trail."
+**Talk track (20 s):** "Most mid-tier banks still run a 1990s reconciliation tool — end-of-life, no vendor support, MT-only. Kilter is the purpose-built replacement: same job, 2026-era UX, every action audited. The same platform also handles mobile-money operator feeds (MTN MoMo, Telcel Cash, M-Pesa, Airtel) and card-switch settlement files. One operator UI, one audit log, three reconciliation streams."
 
 ---
 
@@ -23,23 +25,31 @@
 
 Three pressures converging:
 
-- **Corona 7.9 is end-of-life** — no vendor support, no Windows 11 hardening, UI unchanged since its launch.
-- **Month-end reconciliation is manual** — ops exports from Flexcube, pulls SWIFT messages, eyeballs matches in Excel. **\[FILL: hours per cycle]**.
+- **The legacy reconciliation tool is end-of-life** — no active vendor support, no Windows 11 hardening, UI unchanged since its launch.
+- **Month-end reconciliation is manual** — ops exports from the core (Flexcube / T24 / Finacle / equivalent), pulls SWIFT messages, eyeballs matches in Excel. **\[FILL: hours per cycle]**.
 - **Audit has no breadcrumbs** — when finance asks "who cleared this item on the 14th?" the answer is a spreadsheet filename.
 
-**Talk track (45 s):** "The problem isn't Corona itself — it's that Corona plus manual Excel stitching is how we actually close the books. That's three risks in one: a tool we can't patch, hours we can't reclaim, and decisions we can't trace."
+**Talk track (45 s):** "The problem isn't the legacy tool itself — it's that legacy tool plus manual Excel stitching is how books actually close. That's three risks in one: a tool you can't patch, hours you can't reclaim, and decisions you can't trace."
 
 ---
 
 ## Slide 3 — What Kilter does
 
-One sentence: **Pairs SWIFT messages with Flexcube transactions, proposes matches in tiers, and lets ops confirm or reject — with every click logged.**
+One sentence: **Pairs the bank-side ledger against the counter-party stream — SWIFT, mobile-money operator, or card scheme — proposes matches in tiers, and lets ops confirm or reject with every click logged.**
 
-Four user-visible parts:
-1. **Intake** — drop the SWIFT `.out` and Flexcube `.xlsx` files, or let the scanner auto-ingest from `messages/`.
+Three streams, same interface:
+
+| Stream | Source | Bank-side |
+|---|---|---|
+| **Nostro / GL** (legacy-tool replacement) | MT940 / MT950 / camt.053 / camt.054 | Core-banking GL extract (xlsx / CSV / DB) |
+| **Mobile money** | MTN MoMo (B2W & W2B), Telcel Cash, Airtel, M-Pesa CSV | Wallet account on the core |
+| **Card scheme** | Switch settlement TSV with masked PAN; Visa/Mastercard binary stubbed pending scheme samples | Issuing / acquiring GL on the core |
+
+Four user-visible parts (same for all three):
+1. **Intake** — drop the file or let the scanner auto-ingest from `messages/` (or for cards, `POST /cards/files`).
 2. **Review queue** — ranked candidates per unmatched transaction; confirm in one click.
 3. **Scoped dashboard** — each user picks the access areas they work in (a branch, a cluster, or all).
-4. **Export + audit** — xlsx report for finance, full audit log for compliance.
+4. **Export + audit** — xlsx report for finance, full audit log for compliance, match-groups CSV for cards.
 
 ---
 
@@ -73,12 +83,12 @@ What ops still does: **decides** on tier 2-4. What the engine does: **proposes**
 
 ## Slide 6 — Access-area scoping (for the "I just need my branch" crowd)
 
-*\[Screenshot placeholder: topbar "Active area: BANK OF GHANA ▾" control open]*
+*\[Screenshot placeholder: topbar "Active area: ▾" control open]*
 
 - Top-bar picker, present on every page.
 - Single area (most common) or multi-select (regional supervisors).
 - Scope filters Dashboard / Cash accounts / Sessions — users only see work relevant to them.
-- Backed by the same taxonomy Corona uses (103 areas seeded from Corona 7.9).
+- Areas are configurable per deployment — import the taxonomy from your existing tool or define your own.
 
 **Talk track (30 s):** "Ops asked: 'I only work on Branch 001 — don't show me 102 other areas.' Done. Leadership asked: 'I want to see the whole bank.' Leave it on All areas — same screen, different scope."
 
@@ -103,7 +113,7 @@ What ops still does: **decides** on tier 2-4. What the engine does: **proposes**
 
 *\[FILL with your pilot data before presenting. Example shape:]*
 
-| Metric | Corona + Excel today | Kilter pilot |
+| Metric | Legacy tool + Excel today | Kilter pilot |
 |---|---:|---:|
 | Month-end close cycle | **\[FILL] hrs** | **\[FILL] hrs** |
 | Items auto-proposed (tier 1) | 0 | **\[FILL] %** |
@@ -117,15 +127,16 @@ If you don't have pilot numbers yet, replace this slide with: **"Pilot plan: 1 c
 ## Slide 9 — What's built vs. what's next
 
 **Built and working today:**
-- Intake (manual upload + auto-scan), tiered matching engine, review queue, xlsx export.
-- MFA login, four roles, audit log, activity export.
-- Access-area scoping, discovered-accounts inbox.
+- **Nostro / GL stream:** intake (manual + auto-scan), 4-tier matching engine, review queue, xlsx export, daily breaks workbook, month-end certificate with maker/checker/approver workflow.
+- **Mobile-money stream:** five pre-seeded operator profiles (M-Pesa, Telcel Cash, MTN MoMo agent + B2W + W2B, Airtel Money), wallet-account intake, dedicated `/mobile-money` view.
+- **Cards stream:** PCI-safe ingest (`/cards/files`), N-way matching engine on `scheme_ref`, auth-clearing-settlement classifier, mismatched-first match groups view, CSV exports of records and match groups, switch settlement profile (Visa/Mastercard binary parsers stubbed).
+- **Platform:** MFA login (TOTP), four roles, immutable audit log, activity export, access-area scoping, discovered-accounts inbox, BYO format wizard with xlsx native support, 300 MB streaming uploads.
 
 **Next (in priority order):**
-1. **Pilot** — 1 branch, 1 month, parallel-run against Corona.
-2. **RBAC for access areas** — admins restrict which areas a user *can* pick (today it's convenience-only).
-3. **Scheduled scan** — replace the "admin clicks Scan" with a cron.
-4. **AD/LDAP integration** — retire the local user table once IT provisions a service account.
+1. **Pilot** — 1 branch, 1 month, parallel-run against the existing tool. Add a wallet operator feed and / or a card switch file in week 3 to exercise multi-stream value.
+2. **Visa Base II + Mastercard IPM parsers** — calibrate against V.I.P. / PUF synthetic data when scheme bundles arrive (see CARDS_DESIGN.md for what unblocks this).
+3. **AD/LDAP password layer** — wire up service-account bind for users opting into AD-authenticated logins.
+4. **Cards 3-way classifier** — extend match groups to require all three stages (auth + clearing + settlement) for `matched` status, once the binary parsers ship.
 
 ---
 
@@ -133,7 +144,7 @@ If you don't have pilot numbers yet, replace this slide with: **"Pilot plan: 1 c
 
 Three things, in order:
 
-1. **Green-light a 1-branch / 1-month pilot** — low-risk, parallel to Corona, measures the numbers on slide 8.
+1. **Green-light a 1-branch / 1-month pilot** — low-risk, parallel to the existing tool, measures the numbers on slide 8.
 2. **Name an ops champion** — the person who lives in the review queue during the pilot.
 3. **Commit a go/no-go review date** — *\[FILL: ~6 weeks from pilot start]*.
 

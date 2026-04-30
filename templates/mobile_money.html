@@ -1,0 +1,294 @@
+{% extends "base.html" %}
+{% block title %}Mobile money · Kilter{% endblock %}
+{% block crumbs %}<a href="/">Dashboard</a><span class="sep">/</span><span class="current">Mobile money</span>{% endblock %}
+
+{% block content %}
+<style>
+  /* Provider tiles — one per active mobile-money network. Each shows
+     the wallet count and rolls up to a per-provider session view. */
+  .provider-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 14px; margin-bottom: 22px;
+  }
+  .provider-tile {
+    background: var(--c-surface); border: 1px solid var(--c-border);
+    border-radius: var(--radius-lg); padding: 16px 18px;
+    transition: border-color 120ms ease, box-shadow 120ms ease;
+  }
+  .provider-tile:hover {
+    border-color: var(--c-primary); box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  }
+  .provider-name {
+    font-weight: 700; font-size: 1.02em; margin-bottom: 4px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .provider-icon {
+    width: 28px; height: 28px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: white; font-weight: 800; font-size: 12px;
+  }
+  /* Brand-loose colour cues (not the operators' logos — just a stable
+     per-provider hue so admins can visually distinguish at a glance). */
+  .provider-icon.mpesa        { background: #1cb144; }
+  .provider-icon.mtn_momo     { background: #ffcc00; color: #1a1a1a; }
+  .provider-icon.airtel_money { background: #ed1c24; }
+  .provider-icon.orange_money { background: #ff7900; }
+  .provider-icon.tigo_pesa    { background: #0050a0; }
+  .provider-icon.other        { background: #6b7280; }
+  .provider-stat {
+    display: flex; justify-content: space-between;
+    color: var(--c-text-muted); font-size: var(--t-small);
+    padding: 3px 0;
+  }
+  .provider-stat .v { color: var(--c-text); font-weight: 600; }
+
+  .wallet-id {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: var(--t-small);
+    background: var(--c-bg-sub); padding: 1px 8px;
+    border-radius: 4px; color: var(--c-text-muted);
+  }
+</style>
+
+<div class="page-head">
+  <div>
+    <h1>Mobile money</h1>
+    <div class="subtitle">Wallet-level reconciliation across M-Pesa, MTN MoMo, Airtel Money and other providers. Same engine as the cash-nostro side; this view filters to mobile-money accounts only.</div>
+  </div>
+  <div>
+    <a href="/byo-formats" class="btn btn-default admin-only" style="display:none">Manage CSV profiles &rarr;</a>
+  </div>
+</div>
+
+<div id="empty-state" class="card" style="display:none">
+  <div class="card-body" style="padding:32px;text-align:center">
+    <h2 style="margin:0 0 8px 0">No mobile-money wallets yet</h2>
+    <p class="muted" style="max-width:520px;margin:0 auto 14px">
+      To start reconciling mobile money, register a wallet account and
+      bind a CSV profile to it. Three operator profiles are pre-seeded
+      (M-Pesa Safaricom, MTN MoMo, Airtel Money) — bind one to your
+      wallet and you're ready to ingest.
+    </p>
+    <a class="btn btn-primary admin-only" href="/admin/discovered" style="display:none">Register a wallet</a>
+    <div class="muted" style="margin-top:12px;font-size:var(--t-small)">
+      Need to define a different operator's CSV format?
+      <a href="/byo-formats">Open the BYO formats wizard</a>.
+    </div>
+  </div>
+</div>
+
+<!-- Provider tiles. One per provider that has at least one active wallet
+     in scope. Click a tile to filter the wallets table and the recent
+     sessions table below to that provider only. -->
+<div id="provider-grid" class="provider-grid"></div>
+
+<div class="card">
+  <div class="card-head">
+    <h2>Wallets</h2>
+    <div class="hint" id="wallet-count">0 wallets</div>
+  </div>
+  <div class="card-body tight">
+    <table class="table" id="wallets-table">
+      <thead>
+        <tr>
+          <th>Label</th>
+          <th>Provider</th>
+          <th>MSISDN</th>
+          <th>Short code</th>
+          <th>Currency</th>
+          <th>Access area</th>
+          <th>Recent sessions</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody><tr class="empty-row"><td colspan="8">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card" style="margin-top:20px">
+  <div class="card-head">
+    <h2>Recent mobile-money sessions</h2>
+    <div class="hint" id="sessions-count">0 sessions</div>
+  </div>
+  <div class="card-body tight">
+    <table class="table" id="sessions-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Created</th>
+          <th>Wallet</th>
+          <th>Provider</th>
+          <th>Source</th>
+          <th class="num">Pending</th>
+          <th class="num">Confirmed</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody><tr class="empty-row"><td colspan="8">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.body.dataset.nav = 'mobile-money';
+
+const PROVIDER_LABELS = {
+  mpesa: 'M-Pesa', mtn_momo: 'MTN MoMo', airtel_money: 'Airtel Money',
+  orange_money: 'Orange Money', tigo_pesa: 'Tigo Pesa', other: 'Other',
+};
+
+function providerInitials(p) {
+  const lbl = PROVIDER_LABELS[p] || p;
+  const parts = lbl.replace(/[^A-Za-z ]/g, '').split(/\s+/).filter(Boolean);
+  return (parts.map(s => s[0]).join('').slice(0, 2) || '?').toUpperCase();
+}
+
+let allWallets = [];
+let allSessions = [];
+let currentProvider = '';   // '' = all, otherwise a provider key
+
+async function load() {
+  const [walletsR, sessR] = await Promise.all([
+    fetch('/accounts?account_type=mobile_wallet'),
+    fetch('/sessions'),
+  ]);
+  if (!walletsR.ok || !sessR.ok) return;
+  allWallets = await walletsR.json();
+  const sessions = await sessR.json();
+
+  // Filter to sessions whose account is one of the mobile-money wallets.
+  const walletIds = new Set(allWallets.map(w => w.id));
+  allSessions = sessions.filter(s => walletIds.has(s.account_id));
+
+  if (allWallets.length === 0) {
+    document.getElementById('empty-state').style.display = '';
+    document.querySelector('.provider-grid').style.display = 'none';
+    return;
+  }
+  document.getElementById('empty-state').style.display = 'none';
+
+  renderProviderTiles();
+  renderWallets();
+  renderSessions();
+}
+
+function renderProviderTiles() {
+  const host = document.getElementById('provider-grid');
+  // Bucket wallets by provider, count sessions per provider.
+  const buckets = new Map();
+  for (const w of allWallets) {
+    const key = w.provider || 'other';
+    const b = buckets.get(key) || { key, label: PROVIDER_LABELS[key] || key,
+                                      wallets: 0, sessions: 0, currencies: new Set() };
+    b.wallets += 1;
+    b.currencies.add(w.currency);
+    buckets.set(key, b);
+  }
+  for (const s of allSessions) {
+    const w = allWallets.find(x => x.id === s.account_id);
+    if (!w) continue;
+    const key = w.provider || 'other';
+    const b = buckets.get(key);
+    if (b) b.sessions += 1;
+  }
+
+  const tiles = [...buckets.values()].sort((a, b) => b.wallets - a.wallets);
+  host.innerHTML = tiles.map(b => {
+    const isActive = currentProvider === b.key;
+    return `
+      <div class="provider-tile" data-provider="${esc(b.key)}"
+           style="cursor:pointer;${isActive ? 'border-color:var(--c-primary);box-shadow:0 0 0 2px var(--c-primary-soft)' : ''}">
+        <div class="provider-name">
+          <span class="provider-icon ${esc(b.key)}">${esc(providerInitials(b.key))}</span>
+          ${esc(b.label)}
+        </div>
+        <div class="provider-stat"><span>Wallets</span><span class="v">${b.wallets}</span></div>
+        <div class="provider-stat"><span>Sessions ingested</span><span class="v">${b.sessions}</span></div>
+        <div class="provider-stat"><span>Currencies</span><span class="v">${[...b.currencies].sort().join(', ') || '—'}</span></div>
+      </div>`;
+  }).join('');
+  host.querySelectorAll('.provider-tile').forEach(el => {
+    el.addEventListener('click', () => {
+      const p = el.dataset.provider;
+      currentProvider = (currentProvider === p) ? '' : p;
+      renderProviderTiles();
+      renderWallets();
+      renderSessions();
+    });
+  });
+}
+
+function _filteredWallets() {
+  return currentProvider
+    ? allWallets.filter(w => (w.provider || 'other') === currentProvider)
+    : allWallets;
+}
+
+function renderWallets() {
+  const wallets = _filteredWallets();
+  document.getElementById('wallet-count').textContent =
+    `${wallets.length} wallet${wallets.length === 1 ? '' : 's'}`
+    + (currentProvider ? ` · ${PROVIDER_LABELS[currentProvider] || currentProvider}` : '');
+
+  const tbody = document.querySelector('#wallets-table tbody');
+  if (wallets.length === 0) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="8">No wallets in this scope.</td></tr>';
+    return;
+  }
+  // Recent-session counts per wallet from the cached sessions list.
+  const sessByAcct = new Map();
+  for (const s of allSessions) {
+    sessByAcct.set(s.account_id, (sessByAcct.get(s.account_id) || 0) + 1);
+  }
+  tbody.innerHTML = wallets.map(w => `
+    <tr>
+      <td><a href="/accounts/${w.id}/status-page"><strong>${esc(w.shortname || w.label)}</strong></a></td>
+      <td><span class="provider-icon ${esc(w.provider || 'other')}" style="width:18px;height:18px;font-size:9px;display:inline-flex;margin-right:4px">${esc(providerInitials(w.provider || 'other'))}</span>${esc(PROVIDER_LABELS[w.provider] || w.provider || '—')}</td>
+      <td>${w.msisdn ? `<span class="wallet-id">${esc(w.msisdn)}</span>` : '<span class="muted">—</span>'}</td>
+      <td>${w.short_code ? `<span class="wallet-id">${esc(w.short_code)}</span>` : '<span class="muted">—</span>'}</td>
+      <td>${esc(w.currency)}</td>
+      <td class="muted">${esc(w.access_area || '')}</td>
+      <td class="num">${sessByAcct.get(w.id) || 0}</td>
+      <td><a href="/accounts/${w.id}/status-page" class="btn btn-default btn-sm">Open &rarr;</a></td>
+    </tr>`).join('');
+}
+
+function renderSessions() {
+  const wallets = _filteredWallets();
+  const walletIds = new Set(wallets.map(w => w.id));
+  const sessions = allSessions.filter(s => walletIds.has(s.account_id));
+  document.getElementById('sessions-count').textContent =
+    `${sessions.length} session${sessions.length === 1 ? '' : 's'}`;
+
+  const walletById = new Map(allWallets.map(w => [w.id, w]));
+  const tbody = document.querySelector('#sessions-table tbody');
+  if (sessions.length === 0) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="8">No mobile-money sessions yet for this scope.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = sessions.slice(0, 20).map(s => {
+    const w = walletById.get(s.account_id);
+    const provider = w ? (w.provider || 'other') : 'other';
+    const sourceCell = s.flex_profile_id
+      ? `<span class="badge" style="background:#ede9fe;color:#4c1d95">${esc(s.flex_profile_name || ('Profile ' + s.flex_profile_id))}</span>`
+      : `<span class="muted">Default loader</span>`;
+    return `
+      <tr>
+        <td><a href="/sessions/${s.id}/review">#${s.id}</a></td>
+        <td class="muted">${fmtDateTime(s.created_at)}</td>
+        <td>${w ? esc(w.shortname || w.label) : '<span class="muted">—</span>'}</td>
+        <td>${esc(PROVIDER_LABELS[provider] || provider)}</td>
+        <td>${sourceCell}</td>
+        <td class="num">${s.counts?.pending ?? 0}</td>
+        <td class="num">${s.counts?.confirmed ?? 0}</td>
+        <td><a class="btn btn-default btn-sm" href="/sessions/${s.id}/review">Review &rarr;</a></td>
+      </tr>`;
+  }).join('');
+}
+
+load();
+</script>
+{% endblock %}
