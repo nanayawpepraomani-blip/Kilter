@@ -82,6 +82,22 @@ CREATE TABLE IF NOT EXISTS accounts (
     UNIQUE (swift_account, flex_ac_no, currency)
 );
 
+-- swift_txns: holds the "left-hand side" of every reconciliation pair.
+--
+-- For TWO-SIDED sessions (session_kind='recon'): real SWIFT statement
+--   rows (MT940/MT950/CAMT). Matched against flex_txns Flexcube rows.
+--
+-- For ONE-SIDED sessions (session_kind='seed' or 'flex_delta', e.g. the
+--   BTW Bank-to-Wallet GL): there is NO SWIFT involved. Ingest's
+--   _split_flex_for_self_match() in ingest.py reshapes the Flexcube
+--   file's DR rows into swift-shape and parks them here so the engine
+--   can match them against flex_txns CR rows as a self-match.
+--
+--   Operator-facing surfaces (UI labels, xlsx exports, error messages,
+--   chat replies) MUST translate "swift_txns row" → "Flexcube DR leg"
+--   on one-sided sessions. Calling it "SWIFT" outside the engine is
+--   wrong. See ingest.py::_split_flex_for_self_match and
+--   recon_engine.py module docstring for the same warning.
 CREATE TABLE IF NOT EXISTS swift_txns (
     session_id INTEGER NOT NULL,
     row_number INTEGER NOT NULL,
@@ -453,6 +469,47 @@ CREATE TABLE IF NOT EXISTS tolerance_rules (
     FOREIGN KEY (account_id) REFERENCES accounts(id)
 );
 
+-- match_tiers — user-editable matching tier definitions. Replaces the
+-- hardcoded T1-T4 logic that used to live in recon_engine._classify().
+-- Each tier is an ordered list of conditions (all AND'd); the engine
+-- walks tiers by priority and returns the first whose conditions all
+-- pass for a given (DR, CR) pair.
+--
+-- Scope:
+--   account_id IS NULL  → default tier set for `recon_type` (one_sided,
+--                         two_sided, mobile_money, cards). Applied to
+--                         any account that doesn't have its own row.
+--   account_id IS set   → per-account override; replaces the default
+--                         set entirely (not additive).
+--
+-- conditions_json is a JSON array of objects:
+--   [{"field": "value_date", "op": "equal"},
+--    {"field": "amount", "op": "equal_within_tol"},
+--    {"field": "ref", "op": "symmetric_in_narration"}, ...]
+-- See recon_engine.CONDITION_OPS for the supported (field, op, params)
+-- combinations.
+--
+-- legacy_tier preserves the old T1-T4 numbering for the seeded defaults
+-- so historical assignments + UI references keep working without a
+-- separate translation table.
+CREATE TABLE IF NOT EXISTS match_tiers (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id      INTEGER,                      -- NULL = default for recon_type
+    recon_type      TEXT NOT NULL,                -- 'one_sided' | 'two_sided' | 'mobile_money' | 'cards'
+    name            TEXT NOT NULL,
+    priority        INTEGER NOT NULL,             -- lower runs first
+    conditions_json TEXT NOT NULL,                -- JSON array of conditions
+    enabled         INTEGER NOT NULL DEFAULT 1,
+    auto_confirm    INTEGER NOT NULL DEFAULT 0,
+    legacy_tier     INTEGER,                      -- 1-4 for seeded defaults; NULL for custom
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT,
+    created_by      TEXT,
+    FOREIGN KEY (account_id) REFERENCES accounts(id)
+);
+CREATE INDEX IF NOT EXISTS idx_match_tiers_lookup
+    ON match_tiers(account_id, recon_type, enabled, priority);
+
 -- auto_categorization_rules — simple keyword-based auto-tagging for
 -- one-sided items. Evaluated in priority order; first match wins. The
 -- audit trail (open_items.category_rule_id + category_source) ensures
@@ -764,9 +821,73 @@ def init_db() -> None:
         _seed_fx_identity(conn)
         _seed_scheduled_jobs(conn)
         _seed_mobile_money_profiles(conn)
+        _seed_match_tiers(conn)
         conn.commit()
     finally:
         conn.close()
+
+
+def _seed_match_tiers(conn) -> None:
+    """Seed the default tier set per recon_type if match_tiers is empty.
+    These rows reproduce the legacy hardcoded T1-T4 behavior; they ARE
+    deletable + editable by admins via the visual rule builder.
+
+    For one-sided / mobile_money / cards: T3 + T4 ship DISABLED per
+    Ecobank Ghana ops policy (amount+date alone is unsafe on busy GLs
+    where many transactions share common amounts). Operator can enable
+    per account via the rule builder once they confirm safety.
+
+    Idempotent — keyed on (account_id IS NULL, recon_type, legacy_tier).
+    Admin edits to seeded rows survive re-init; only missing rows are
+    created."""
+    import json
+    from datetime import datetime
+    now = datetime.utcnow().isoformat()
+
+    # All seeded defaults ship DISABLED. Operator must explicitly
+    # enable via the Matching tiers page (or build their own custom
+    # tiers from scratch via the visual rule builder). This keeps
+    # loading + matching fully under operator control — no engine
+    # behavior happens until the operator wires it up.
+    DEFAULT_TIERS = {
+        # priority, name, conditions, auto_confirm
+        1: ('Strong match',
+            [{'field': 'sign',       'op': 'mirror'},
+             {'field': 'amount',     'op': 'equal_within_tol'},
+             {'field': 'ref',        'op': 'symmetric_in_narration'}],
+            0),  # auto_confirm OFF — operator opts in per tier
+        2: ('Reference matches, amounts differ',
+            [{'field': 'sign',       'op': 'mirror'},
+             {'field': 'ref',        'op': 'symmetric_in_narration'}],
+            0),
+        3: ('Same amount, same day, no ref',
+            [{'field': 'sign',       'op': 'mirror'},
+             {'field': 'amount',     'op': 'equal_within_tol'},
+             {'field': 'value_date', 'op': 'equal'}],
+            0),
+        4: ('Same amount, off by one day, no ref',
+            [{'field': 'sign',       'op': 'mirror'},
+             {'field': 'amount',     'op': 'equal_within_tol'},
+             {'field': 'value_date', 'op': 'within_days', 'params': {'n': 1}}],
+            0),
+    }
+
+    for recon_type in ('one_sided', 'two_sided', 'mobile_money', 'cards'):
+        for legacy_tier, (name, conds, auto) in DEFAULT_TIERS.items():
+            existing = conn.execute(
+                "SELECT id FROM match_tiers "
+                "WHERE account_id IS NULL AND recon_type=? AND legacy_tier=?",
+                (recon_type, legacy_tier),
+            ).fetchone()
+            if existing is not None:
+                continue
+            conn.execute(
+                "INSERT INTO match_tiers (account_id, recon_type, name, priority, "
+                "  conditions_json, enabled, auto_confirm, legacy_tier, created_at, created_by) "
+                "VALUES (NULL, ?, ?, ?, ?, 0, ?, ?, ?, 'system_seed')",
+                (recon_type, name, legacy_tier, json.dumps(conds),
+                 auto, legacy_tier, now),
+            )
 
 
 # Generic first-run access-area seed. Gives admins a starting taxonomy
@@ -1228,10 +1349,11 @@ def _seed_banks(conn) -> None:
 def _seed_bootstrap_admin(conn) -> None:
     """If the users table is empty, seed one admin with an enrollment token
     so someone can bootstrap MFA and log in. The token is printed to the
-    uvicorn console — out-of-band delivery is the correct pattern for a
-    first-run secret."""
+    uvicorn console AND written to first_login.txt in the project root so
+    it isn't lost if the terminal scrolls past it."""
     from datetime import datetime
     import secrets
+    from pathlib import Path
 
     count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
     if count == 0:
@@ -1241,11 +1363,41 @@ def _seed_bootstrap_admin(conn) -> None:
             "created_by, enrollment_token) VALUES (?, ?, 'admin', 1, ?, 'system', ?)",
             ('admin', 'Administrator', datetime.utcnow().isoformat(), token),
         )
+        enroll_url = f"http://localhost:8000/enroll?user=admin&token={token}"
+        print("")
         print("=" * 66)
         print("  FIRST-RUN ADMIN ENROLLMENT")
-        print(f"  Open: http://localhost:8000/enroll?user=admin&token={token}")
-        print("  Scan the QR with Microsoft Authenticator, then log in.")
+        print("")
+        print(f"  {enroll_url}")
+        print("")
+        print("  Step 1: Open the URL above in your browser.")
+        print("  Step 2: Scan the QR code with any authenticator app")
+        print("          (Microsoft Authenticator, Google Authenticator, Authy).")
+        print("  Step 3: Go to http://localhost:8000/login")
+        print("          Username: admin   Code: 6-digit code from the app")
         print("=" * 66)
+        print("")
+        # Also write to first_login.txt so the URL isn't lost on scroll.
+        try:
+            txt_path = Path(__file__).resolve().parent / "first_login.txt"
+            txt_path.write_text(
+                "KILTER — FIRST LOGIN\n"
+                "====================\n\n"
+                "Step 1: Open this URL in your browser:\n\n"
+                f"  {enroll_url}\n\n"
+                "Step 2: Scan the QR code with any authenticator app\n"
+                "        (Microsoft Authenticator, Google Authenticator, Authy, etc.)\n\n"
+                "Step 3: Go to http://localhost:8000/login\n"
+                "        Username: admin\n"
+                "        Code: the 6-digit code from your authenticator app\n\n"
+                "NOTE: This file is deleted automatically after you enroll.\n"
+                "      Keep it private until then — anyone with the link can enroll.\n",
+                encoding="utf-8",
+            )
+            print(f"  [Saved enrollment link to: {txt_path}]")
+            print("")
+        except OSError:
+            pass
 
 
 def _migrate_encrypt_secrets_at_rest(conn) -> None:
@@ -1451,6 +1603,52 @@ def _migrate_add_session_account_columns(conn) -> None:
     # when KILTER_REQUIRE_APPROVAL=true and an ops user confirms a match.
     _ensure_columns(conn, 'assignments', [
         ('approval_required', 'INTEGER NOT NULL DEFAULT 0'),
+    ])
+    # Balance-chain columns. The anchor on accounts advances every time a
+    # delta successfully ingests; the next delta's stated opening must
+    # match this within tolerance or the file is rejected. NULL anchor =
+    # account hasn't been seeded yet (first-load behaviour: take the
+    # file's opening as the implicit start, no continuity check).
+    _ensure_columns(conn, 'accounts', [
+        ('last_closing_balance', 'REAL'),
+        ('last_closing_date',    'INTEGER'),
+        ('last_session_id',      'INTEGER'),
+        # 'two_sided' = paired SWIFT + Flex (the original Kilter use-case).
+        # 'one_sided' = Flex-only GL with no SWIFT counterpart (typical
+        # for internal suspense / wallet-settlement GLs). Drives scanner
+        # routing (proof seed + Flex-only delta vs the standard pair flow)
+        # and the review-page UI shape.
+        ('account_recon_type',   "TEXT NOT NULL DEFAULT 'two_sided'"),
+    ])
+    # Per-account continuity tolerance: how much delta-opening vs anchor
+    # mismatch the chain accepts before raising ContinuityBreakError.
+    # 0.01 (one cent / pesewa) is the strict default; bumps go on the
+    # tolerance_rules row for accounts whose feed is known-noisy.
+    _ensure_columns(conn, 'tolerance_rules', [
+        ('continuity_tol_abs', 'REAL NOT NULL DEFAULT 0.01'),
+    ])
+    # session_kind disambiguates the three flows that share the sessions
+    # table: 'recon' (legacy two-sided pair), 'seed' (Day-0 proof anchor),
+    # 'flex_delta' (one-sided daily). Default keeps every existing row
+    # behaving as a recon session.
+    _ensure_columns(conn, 'sessions', [
+        ('session_kind',           "TEXT NOT NULL DEFAULT 'recon'"),
+        ('flex_opening_balance',   'REAL'),
+        ('flex_closing_balance',   'REAL'),
+        ('flex_balance_as_of',     'INTEGER'),
+        ('flex_balance_currency',  'TEXT'),
+    ])
+    # Matching-engine progress tracking. run_matching() stamps
+    # started_at when the engine begins and finished_at when it
+    # commits. The UI uses these to reconnect to in-flight runs after
+    # navigation/refresh — without them, the client's elapsed-timer
+    # resets every time the user moves away and the run-matching
+    # button reappears even though the engine is mid-run on the
+    # server. Both columns are nullable: NULL → never run; started
+    # set + finished NULL → in-flight; both set → completed.
+    _ensure_columns(conn, 'sessions', [
+        ('matching_started_at',  'TEXT'),
+        ('matching_finished_at', 'TEXT'),
     ])
 
 

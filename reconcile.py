@@ -177,6 +177,74 @@ def load_flexcube(path: Path) -> list:
     return txns
 
 
+def read_balance_sheet(path: Path) -> dict | None:
+    """Read the optional `balances` sheet from a Flexcube delta xlsx.
+
+    Returns ``{as_of_date, opening_balance, closing_balance, currency}``
+    when the sheet is present and well-formed, or None when it isn't —
+    callers treat None as "no embedded balance, run without continuity
+    check". Tolerant of extra columns; only the four canonical fields
+    are surfaced.
+
+    The sheet is what the extract script writes alongside acc_entries
+    so each delta is self-describing — no side-car TSV needed for the
+    balance-chain check.
+    """
+    wb = load_workbook(path, read_only=True, data_only=True)
+    try:
+        if 'balances' not in wb.sheetnames:
+            return None
+        ws = wb['balances']
+        rows = list(ws.iter_rows(values_only=True))
+    finally:
+        wb.close()
+
+    if len(rows) < 2:
+        return None
+    headers = [str(h).strip() if h else '' for h in rows[0]]
+    required = {'as_of_date', 'opening_balance', 'closing_balance', 'currency'}
+    if not required.issubset(set(headers)):
+        return None
+    idx = {h: headers.index(h) for h in headers if h}
+    data = rows[1]
+    try:
+        as_of = data[idx['as_of_date']]
+        opening = data[idx['opening_balance']]
+        closing = data[idx['closing_balance']]
+        ccy = data[idx['currency']]
+    except (IndexError, KeyError):
+        return None
+    if opening is None or closing is None:
+        return None
+    return {
+        'as_of_date':      _balance_as_of_to_int(as_of),
+        'opening_balance': float(opening),
+        'closing_balance': float(closing),
+        'currency':        str(ccy or '').strip().upper(),
+    }
+
+
+def _balance_as_of_to_int(v) -> int:
+    """The balances sheet typically writes as_of_date as an ISO string
+    ('2026-04-30') or a Python date — normalise to the YYYYMMDD int
+    shape every other date column in the engine uses."""
+    if v is None or v == '':
+        return 0
+    if isinstance(v, datetime):
+        return int(v.strftime('%Y%m%d'))
+    if hasattr(v, 'year') and hasattr(v, 'month') and hasattr(v, 'day'):
+        return int(f"{v.year:04d}{v.month:02d}{v.day:02d}")
+    s = str(v).strip()
+    for fmt in ('%Y-%m-%d', '%d-%b-%Y', '%d/%m/%Y'):
+        try:
+            return int(datetime.strptime(s, fmt).strftime('%Y%m%d'))
+        except ValueError:
+            pass
+    if s.isdigit() and len(s) == 8:
+        return int(s)
+    return 0
+
+
 def _to_float(x) -> float:
     """Coerce a cell value to a float, treating blanks and non-numerics as 0.0."""
     if x is None or x == '':
@@ -382,6 +450,194 @@ def write_report(matches: list, swift_txns: list, flex_txns: list,
     wb.save(output_path)
 
 
+def write_one_sided_report(matches: list, swift_txns: list, flex_txns: list,
+                           flex_path: Path, output_path: Path,
+                           *, session_meta: dict) -> None:
+    """One-sided session export — same row content as write_report but
+    relabeled for proof seeds and Flex-only deltas. SWIFT-side rows are
+    actually the DR legs of the source file (the engine reuses the
+    swift-shape for the debit side of a one-sided GL); Flex-side rows
+    are the CR legs.
+
+    `session_meta` carries the headline numbers a one-sided session
+    needs in the audit artifact:
+        kind                  'seed' | 'flex_delta'
+        account_label
+        currency
+        period_start          YYYYMMDD int
+        period_end            YYYYMMDD int
+        flex_opening_balance  signed float | None
+        flex_closing_balance  signed float | None
+        anchor_before         signed float | None  (delta only)
+        anchor_after          signed float | None
+        open_items_seeded     int
+        open_items_cleared    int
+        force_accept          bool
+        continuity_delta      float | None  (delta only — actual − expected)
+    """
+    wb = Workbook()
+    wb.remove(wb.active)
+
+    _write_one_sided_summary(wb, matches, swift_txns, flex_txns, flex_path,
+                              session_meta)
+    _write_matched(wb, matches)
+    _write_unmatched_dr_legs(wb, swift_txns)
+    _write_unmatched_cr_legs(wb, flex_txns)
+
+    wb.save(output_path)
+
+
+def _write_one_sided_summary(wb, matches, swift_txns, flex_txns, flex_path, meta):
+    ws = wb.create_sheet('Summary')
+    label_font = Font(bold=True)
+
+    kind = meta.get('kind') or 'flex_delta'
+    title = ('Proof seed summary' if kind == 'seed'
+             else 'Flex delta reconciliation summary')
+
+    swift_total = len(swift_txns)
+    flex_total = len(flex_txns)
+    matched_count = len(matches)
+    tier_counts = Counter(m['tier'] for m in matches)
+
+    unmatched_swift = [s for s in swift_txns if not s['_used']]
+    unmatched_flex = [f for f in flex_txns if not f['_used']]
+    unmatched_swift_value = sum(s['amount'] for s in unmatched_swift)
+    unmatched_flex_value = sum(f['amount'] for f in unmatched_flex)
+
+    def _fmt_period(start, end):
+        def _fd(d):
+            try:
+                return f"{int(d):08d}"
+            except (TypeError, ValueError):
+                return ''
+        if start and end and start != end:
+            return f"{_fd(start)} → {_fd(end)}"
+        return _fd(end or start) or '—'
+
+    def _fmt_signed(amt):
+        if amt is None:
+            return '—'
+        sign = 'D' if amt < 0 else 'C'
+        return f"{sign} {abs(amt):,.2f}"
+
+    rows = [
+        (title, ''),
+        ('', ''),
+        ('Source file',           flex_path.name),
+        ('Account',               meta.get('account_label') or ''),
+        ('Currency',              meta.get('currency') or ''),
+        ('Period',                _fmt_period(meta.get('period_start'),
+                                                meta.get('period_end'))),
+        ('Generated',             datetime.now().strftime('%Y-%m-%d %H:%M:%S')),
+        ('', ''),
+    ]
+
+    if kind == 'seed':
+        rows += [
+            ('Anchor opening',     _fmt_signed(0.0)),
+            ('Anchor closing',     _fmt_signed(meta.get('flex_closing_balance'))),
+            ('', ''),
+        ]
+    else:  # flex_delta
+        rows += [
+            ('Anchor before',      _fmt_signed(meta.get('anchor_before'))),
+            ('File opening',       _fmt_signed(meta.get('flex_opening_balance'))),
+            ('File closing',       _fmt_signed(meta.get('flex_closing_balance'))),
+            ('Anchor after',       _fmt_signed(meta.get('anchor_after'))),
+            ('', ''),
+            # Continuity gate result. delta=0 = perfect chain; non-zero
+            # means force-accepted (operator overrode the break).
+            ('Continuity Δ',
+                ('force-accepted' if meta.get('force_accept')
+                 else (f"{meta.get('continuity_delta'):,.2f}"
+                        if meta.get('continuity_delta') is not None else '0.00'))),
+            ('', ''),
+        ]
+
+    rows += [
+        ('DR legs (swift_txns side)',  swift_total),
+        ('CR legs (flex_txns side)',   flex_total),
+        ('Matched (pairs)',            matched_count),
+        ('', ''),
+        ('  Tier 1 (strictest)',       tier_counts.get(1, 0)),
+        ('  Tier 2 (ref, amt diff)',   tier_counts.get(2, 0)),
+        ('  Tier 3 (amt + date)',      tier_counts.get(3, 0)),
+        ('  Tier 4 (amt ±1 day)',      tier_counts.get(4, 0)),
+        ('', ''),
+        ('Unmatched DR legs',          len(unmatched_swift)),
+        ('Unmatched DR value',         unmatched_swift_value),
+        ('Unmatched CR legs',          len(unmatched_flex)),
+        ('Unmatched CR value',         unmatched_flex_value),
+        ('', ''),
+        ('Open items cleared (carry-forward)',  meta.get('open_items_cleared', 0)),
+        ('Open items seeded (residue)',          meta.get('open_items_seeded', 0)),
+        ('', ''),
+        ('Match rate',
+            f"{(matched_count / max(swift_total, flex_total) * 100) if (swift_total or flex_total) else 0:.1f}%"),
+    ]
+
+    for r_idx, (label, value) in enumerate(rows, start=1):
+        cell = ws.cell(row=r_idx, column=1, value=label)
+        cell.font = label_font if label else Font()
+        if label == title:
+            cell.font = Font(bold=True, size=14)
+        ws.cell(row=r_idx, column=2, value=value)
+        if isinstance(value, float):
+            ws.cell(row=r_idx, column=2).number_format = '#,##0.00'
+
+    ws.column_dimensions['A'].width = 38
+    ws.column_dimensions['B'].width = 40
+
+
+def _write_unmatched_dr_legs(wb, swift_txns):
+    """Same content as _write_unmatched_swift but relabeled — for one-
+    sided sessions the swift_txns table holds the DR legs of the source
+    file (split via _split_flex_for_self_match at ingest time)."""
+    ws = wb.create_sheet('Unmatched DR legs')
+    headers = ('Row #', 'Value date', 'Amount', 'Sign', 'Trn ref',
+                'External ref', 'Booking text 1', 'Booking text 2')
+    _styled_header(ws, list(headers))
+    for r_idx, s in enumerate(
+            (x for x in swift_txns if not x['_used']), start=2):
+        ws.cell(row=r_idx, column=1, value=s['_row_number'])
+        ws.cell(row=r_idx, column=2, value=s['value_date'])
+        ws.cell(row=r_idx, column=3, value=s['amount'])
+        ws.cell(row=r_idx, column=4, value=s['sign'])
+        ws.cell(row=r_idx, column=5, value=s['our_ref'])
+        ws.cell(row=r_idx, column=6, value=s['their_ref'])
+        ws.cell(row=r_idx, column=7, value=s['booking_text_1'])
+        ws.cell(row=r_idx, column=8, value=s['booking_text_2'])
+    ws.column_dimensions['A'].width = 8
+    ws.column_dimensions['B'].width = 12
+    ws.column_dimensions['C'].width = 14
+    ws.column_dimensions['D'].width = 6
+    ws.column_dimensions['E'].width = 20
+
+
+def _write_unmatched_cr_legs(wb, flex_txns):
+    """Same content as _write_unmatched_flex but relabeled."""
+    ws = wb.create_sheet('Unmatched CR legs')
+    headers = ('Row #', 'Trn ref', 'Type', 'Amount', 'Value date',
+                'Booking date', 'Narration', 'External ref', 'User', 'Module')
+    _styled_header(ws, list(headers))
+    for r_idx, f in enumerate(
+            (x for x in flex_txns if not x['_used']), start=2):
+        ws.cell(row=r_idx, column=1, value=f['_row_number'])
+        ws.cell(row=r_idx, column=2, value=f['trn_ref'])
+        ws.cell(row=r_idx, column=3, value=f['type'])
+        ws.cell(row=r_idx, column=4, value=f['amount'])
+        ws.cell(row=r_idx, column=5, value=f['value_date'])
+        ws.cell(row=r_idx, column=6, value=f['booking_date'])
+        ws.cell(row=r_idx, column=7, value=f['narration'])
+        ws.cell(row=r_idx, column=8, value=f['external_ref'])
+        ws.cell(row=r_idx, column=9, value=f['user_id'])
+        ws.cell(row=r_idx, column=10, value=f['module'])
+    ws.column_dimensions['A'].width = 8
+    ws.column_dimensions['B'].width = 22
+    ws.column_dimensions['G'].width = 60
+
+
 def _styled_header(ws, headers: list, row: int = 1):
     """Apply a consistent header band to row 1 of a worksheet."""
     header_font = Font(bold=True, color='FFFFFF')
@@ -457,7 +713,12 @@ def _write_matched(wb, matches):
     for r_idx, m in enumerate(sorted_matches, start=2):
         s = m['swift']
         f = m['flex']
-        ws.cell(row=r_idx, column=1,  value=m['tier'])
+        # tier=0 is the engine convention for carry-forward (counterpart
+        # came from a prior session's open_items, not from this session's
+        # tier 1-6 engine pass). Surface it with a human label so the
+        # export reads "Carry-forward" instead of "0".
+        tier_display = 'Carry-forward' if m['tier'] == 0 else m['tier']
+        ws.cell(row=r_idx, column=1,  value=tier_display)
         ws.cell(row=r_idx, column=2,  value=m['reason'])
         ws.cell(row=r_idx, column=3,  value=s['value_date'])
         ws.cell(row=r_idx, column=4,  value=s['amount'])

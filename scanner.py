@@ -58,12 +58,19 @@ FLEX_SUFFIXES = ('.xlsx', '.xlsm', '.csv', '.txt')
 MESSAGES_DIR = Path(__file__).resolve().parent / 'messages'
 SWIFT_IN = MESSAGES_DIR / 'swift'
 FLEX_IN = MESSAGES_DIR / 'flexcube'
+# Day-0 proof files for one-sided accounts. The scanner picks them up,
+# resolves the account by digit-run in the filename, and runs the
+# proof-seed flow. Only ever seeds an account once (an already-seeded
+# account routes the file to unloaded/already_seeded/).
+PROOFS_IN = MESSAGES_DIR / 'proofs'
 PROCESSED_SWIFT = MESSAGES_DIR / 'processed' / 'swift'
 PROCESSED_FLEX = MESSAGES_DIR / 'processed' / 'flexcube'
+PROCESSED_PROOFS = MESSAGES_DIR / 'processed' / 'proofs'
 UNLOADED_DUPLICATE = MESSAGES_DIR / 'unloaded' / 'duplicate'
 UNLOADED_NO_PARTNER = MESSAGES_DIR / 'unloaded' / 'no_partner'
 UNLOADED_UNREGISTERED = MESSAGES_DIR / 'unloaded' / 'unregistered'
 UNLOADED_MISMATCH = MESSAGES_DIR / 'unloaded' / 'mismatch'
+UNLOADED_ALREADY_SEEDED = MESSAGES_DIR / 'unloaded' / 'already_seeded'
 
 
 @dataclass
@@ -90,9 +97,11 @@ class ScanReport:
 
 
 def ensure_dirs() -> None:
-    for d in (SWIFT_IN, FLEX_IN, PROCESSED_SWIFT, PROCESSED_FLEX,
+    for d in (SWIFT_IN, FLEX_IN, PROOFS_IN,
+              PROCESSED_SWIFT, PROCESSED_FLEX, PROCESSED_PROOFS,
               UNLOADED_DUPLICATE, UNLOADED_NO_PARTNER,
-              UNLOADED_UNREGISTERED, UNLOADED_MISMATCH):
+              UNLOADED_UNREGISTERED, UNLOADED_MISMATCH,
+              UNLOADED_ALREADY_SEEDED):
         d.mkdir(parents=True, exist_ok=True)
 
 
@@ -100,13 +109,26 @@ def scan(user: str = 'auto-scan') -> ScanReport:
     ensure_dirs()
     report = ScanReport()
 
+    proof_files = _list_files(PROOFS_IN, ('.xlsx', '.xlsm'))
     swift_files = _list_files(SWIFT_IN, SWIFT_SUFFIXES)
     flex_files = _list_files(FLEX_IN, FLEX_SUFFIXES)
 
-    # Phase 1: triage by hash (dupes out) and by account registry match.
+    # Phase 0: proofs. Resolve by filename digit-run → account, run
+    # ingest_proof_seed, route to processed/proofs/ on success.
     registry = _load_registry()
+    for p in proof_files:
+        _triage_proof(p, registry, user, report)
+
+    # Reload registry so any anchors set by Phase 0 are visible to the
+    # Phase 1 routing decisions (one_sided + seeded → flex_delta path).
+    registry = _load_registry()
+
+    # Phase 1: triage by hash (dupes out) and by account registry match.
     swift_by_account: dict[tuple, list[Path]] = {}
     flex_by_account: dict[tuple, list[Path]] = {}
+    # Track which flex files belong to one-sided accounts so the pairing
+    # phase skips SWIFT pairing for them and ingests via ingest_flex_only.
+    one_sided_flex: list[tuple[Path, dict]] = []
     # Per-file BYO profile lookup. We populate this in _triage_flex when
     # the file is a CSV matched against an active csv_format_profiles row;
     # _ingest_one reads it back to pass `flex_profile_id` to ingest_pair.
@@ -118,9 +140,16 @@ def scan(user: str = 'auto-scan') -> ScanReport:
     for p in swift_files:
         _triage_swift(p, registry, swift_by_account, report)
     for p in flex_files:
-        _triage_flex(p, registry, flex_by_account, report, profiles, flex_profile_for)
+        _triage_flex(p, registry, flex_by_account, report, profiles,
+                     flex_profile_for, one_sided_flex)
 
-    # Phase 2: pair and ingest.
+    # Phase 2a: one-sided flex deltas — ingest directly, no pairing.
+    for f_path, account in one_sided_flex:
+        _ingest_one_sided_delta(
+            f_path, account, user, report,
+            flex_profile_id=flex_profile_for.get(str(f_path)))
+
+    # Phase 2b: two-sided pairs.
     all_keys = set(swift_by_account) | set(flex_by_account)
     for key in all_keys:
         s_list = sorted(swift_by_account.get(key, []))
@@ -138,6 +167,119 @@ def scan(user: str = 'auto-scan') -> ScanReport:
                   reason=f"No matching SWIFT file for account {key[1]} {key[2]}")
 
     return report
+
+
+import re as _re
+
+# Filename digit run we treat as the account selector for proof files.
+# 8+ consecutive digits is the threshold — the BTW flex_ac_no is 13
+# digits, swift account formats vary 8–18, every real flex_ac_no in
+# the registry is comfortably above 8.
+_DIGIT_RUN = _re.compile(r'\d{8,}')
+
+
+def _triage_proof(path: Path, registry: list[dict], user: str,
+                  report: ScanReport) -> None:
+    """Resolve account from filename digit-run, run ingest_proof_seed,
+    route to processed/ on success or to the appropriate unloaded/
+    bucket on failure. Filename pattern: anything containing the
+    account's flex_ac_no — e.g. `1441000601589_proof_29APR.xlsx`.
+
+    Already-seeded accounts route the file to unloaded/already_seeded/
+    rather than crashing — operators sometimes drop the same proof
+    twice during rollout, and that should land in a clear bucket."""
+    from ingest import (AlreadySeededError, DuplicateFileError, IngestError,
+                          ingest_proof_seed)
+    sha = sha256_of(path)
+    if _hash_already_ingested(sha):
+        _move(path, UNLOADED_DUPLICATE, report, 'proof', 'duplicate',
+              reason=f"SHA-256 already ingested: {sha[:12]}...")
+        return
+
+    # Resolve account by digit-run.
+    digits = _DIGIT_RUN.findall(path.name)
+    account = None
+    for d in digits:
+        match = next((a for a in registry if a['flex_ac_no'] == d), None)
+        if match is not None:
+            account = match
+            break
+    if account is None:
+        _move(path, UNLOADED_UNREGISTERED, report, 'proof', 'unregistered',
+              reason=(f"Filename has no digit run matching a registered "
+                      f"account's flex_ac_no. Rename to include the "
+                      f"flex_ac_no, e.g. '<flex_ac_no>_proof.xlsx'."))
+        return
+
+    if account.get('account_recon_type') != 'one_sided':
+        _move(path, UNLOADED_MISMATCH, report, 'proof', 'mismatch',
+              reason=(f"Account {account['label']!r} is not one-sided. "
+                      "Proof seeding only applies to one-sided GLs."))
+        return
+
+    try:
+        result = ingest_proof_seed(path, account_id=account['id'], user=user,
+                                    flex_filename=path.name)
+    except AlreadySeededError as exc:
+        _move(path, UNLOADED_ALREADY_SEEDED, report, 'proof', 'already_seeded',
+              reason=str(exc))
+        return
+    except DuplicateFileError as exc:
+        _move(path, UNLOADED_DUPLICATE, report, 'proof', 'duplicate',
+              reason=str(exc))
+        return
+    except IngestError as exc:
+        _move(path, UNLOADED_MISMATCH, report, 'proof', 'mismatch',
+              reason=str(exc))
+        return
+
+    _move(path, PROCESSED_PROOFS, report, 'proof', 'ingested',
+          reason=(f"Anchored {account['label']!r} at "
+                  f"{result.flex_rows + result.swift_rows:,} rows · "
+                  f"session {result.session_id}"),
+          session_id=result.session_id)
+    report.sessions_created.append(result.session_id)
+
+
+def _ingest_one_sided_delta(flex_path: Path, account: dict, user: str,
+                             report: ScanReport,
+                             flex_profile_id: int | None = None) -> None:
+    """Run a Flex-only ingest for a one-sided account and route the file
+    to processed/ on success or the appropriate unloaded/ bucket on
+    failure. ContinuityBreakError lands in unloaded/mismatch with a
+    specific delta reason; admin investigates and either fixes the file
+    or uses the force-accept endpoint."""
+    from ingest import (ContinuityBreakError, DuplicateFileError, IngestError,
+                          NotSeededError, ingest_flex_only)
+    try:
+        result = ingest_flex_only(
+            flex_path, account_id=account['id'], user=user,
+            flex_filename=flex_path.name,
+            flex_profile_id=flex_profile_id)
+    except DuplicateFileError as exc:
+        _move(flex_path, UNLOADED_DUPLICATE, report, 'flexcube', 'duplicate',
+              reason=str(exc))
+        return
+    except NotSeededError as exc:
+        _move(flex_path, UNLOADED_MISMATCH, report, 'flexcube', 'mismatch',
+              reason=str(exc))
+        return
+    except ContinuityBreakError as exc:
+        _move(flex_path, UNLOADED_MISMATCH, report, 'flexcube', 'mismatch',
+              reason=str(exc))
+        return
+    except IngestError as exc:
+        _move(flex_path, UNLOADED_MISMATCH, report, 'flexcube', 'mismatch',
+              reason=str(exc))
+        return
+
+    _move(flex_path, PROCESSED_FLEX, report, 'flexcube', 'ingested',
+          reason=(f"One-sided delta — session {result.session_id} · "
+                  f"{result.flex_rows + result.swift_rows:,} rows · "
+                  f"{result.open_items_cleared} carried-forward · "
+                  f"{result.open_items_seeded} new open items"),
+          session_id=result.session_id)
+    report.sessions_created.append(result.session_id)
 
 
 # ---------------------------------------------------------------------------
@@ -182,7 +324,8 @@ def _triage_swift(path: Path, registry: dict, buckets: dict, report: ScanReport)
 
 def _triage_flex(path: Path, registry: dict, buckets: dict, report: ScanReport,
                   profiles: list[dict] | None = None,
-                  profile_for: dict[str, int | None] | None = None) -> None:
+                  profile_for: dict[str, int | None] | None = None,
+                  one_sided_flex: list[tuple[Path, dict]] | None = None) -> None:
     sha = sha256_of(path)
     if _hash_already_ingested(sha):
         _move(path, UNLOADED_DUPLICATE, report, 'flexcube', 'duplicate',
@@ -237,9 +380,35 @@ def _triage_flex(path: Path, registry: dict, buckets: dict, report: ScanReport,
         _move(path, UNLOADED_UNREGISTERED, report, 'flexcube', 'unregistered',
               reason=f"Flexcube GL {ac} ({ccy}) not in accounts registry")
         return
+
+    # One-sided accounts skip SWIFT pairing entirely. The caller drains
+    # them through ingest_flex_only with a continuity check, which is a
+    # different shape than two-sided pair ingestion. We still capture
+    # the BYO profile id (mobile-money wallets are typically one-sided
+    # and may use a profile to load the GL).
+    account = _find_account_in_registry(registry, ac, ccy)
+    if (account is not None
+            and account.get('account_recon_type') == 'one_sided'
+            and one_sided_flex is not None):
+        one_sided_flex.append((path, account))
+        if profile is not None and profile_for is not None:
+            profile_for[str(path)] = int(profile['id'])
+        return
+
     buckets.setdefault(key, []).append(path)
     if profile is not None and profile_for is not None:
         profile_for[str(path)] = int(profile['id'])
+
+
+def _find_account_in_registry(registry: list[dict], flex_ac_no: str,
+                                ccy: str) -> dict | None:
+    """Fetch the full account dict (recon_type included) keyed by
+    (flex_ac_no, currency). Mirror of the lookup used by the registry-
+    key resolver but returns the row, not just the key tuple."""
+    for r in registry:
+        if r['flex_ac_no'] == flex_ac_no and r['currency'] == ccy:
+            return r
+    return None
 
 
 def _ingest_one(swift_path: Path, flex_path: Path, user: str, report: ScanReport,
@@ -327,8 +496,9 @@ def _load_registry() -> list[dict]:
     conn = get_conn()
     try:
         return [dict(r) for r in conn.execute(
-            "SELECT id, swift_account, flex_ac_no, currency, label FROM accounts "
-            "WHERE active=1"
+            "SELECT id, swift_account, flex_ac_no, currency, label, "
+            "       account_recon_type, last_closing_balance "
+            "FROM accounts WHERE active=1"
         ).fetchall()]
     finally:
         conn.close()
@@ -402,15 +572,19 @@ def _apply_profile_fallbacks_to_meta(meta: dict, profile_row: dict) -> dict:
 
 
 def _registry_key_from_swift(registry: list[dict], swift_account: str, ccy: str):
+    acc_n = swift_account.strip()
+    ccy_n = ccy.strip().upper()
     for r in registry:
-        if r['swift_account'] == swift_account and r['currency'] == ccy:
+        if r['swift_account'].strip() == acc_n and r['currency'].strip().upper() == ccy_n:
             return (r['swift_account'], r['flex_ac_no'], r['currency'])
     return None
 
 
 def _registry_key_from_flex(registry: list[dict], flex_ac_no: str, ccy: str):
+    ac_n = flex_ac_no.strip()
+    ccy_n = ccy.strip().upper()
     for r in registry:
-        if r['flex_ac_no'] == flex_ac_no and r['currency'] == ccy:
+        if r['flex_ac_no'].strip() == ac_n and r['currency'].strip().upper() == ccy_n:
             return (r['swift_account'], r['flex_ac_no'], r['currency'])
     return None
 

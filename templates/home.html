@@ -128,9 +128,9 @@
 <div class="stats" id="kpis">
   <a class="stat stat-kpi accent-success" href="/reports" title="Open the reports hub">
     <svg class="kpi-spark" id="kpi-tier1-spark" viewBox="0 0 72 28" preserveAspectRatio="none"></svg>
-    <div class="label">Auto-match rate · 14d</div>
+    <div class="label">Auto-reconciled · 14d</div>
     <div class="value loading" id="kpi-tier1">—</div>
-    <div class="hint" id="kpi-tier1-hint">Tier 1 confirmed / total decided</div>
+    <div class="hint" id="kpi-tier1-hint">Rows cleared / rows ingested</div>
   </a>
   <a class="stat stat-kpi accent-warn" href="/open-items-view?status=open" title="Open the open-items list, oldest first">
     <div class="label">Oldest open break</div>
@@ -527,13 +527,15 @@ function renderKpis(kpis) {
     return;
   }
 
-  // Tier-1 rate. NULL when no decisions in window — surface the dash.
-  if (kpis.tier1_rate == null) {
+  // Row reconciliation rate. NULL when no rows ingested in window.
+  if (kpis.row_recon_rate == null) {
     _set(tier1, '—');
-    tier1Hint.textContent = 'No decisions in last 14 days';
+    tier1Hint.textContent = 'No sessions in last 14 days';
   } else {
-    _set(tier1, kpis.tier1_rate + '%');
-    tier1Hint.textContent = `${kpis.total_decided_14d} confirmed in last 14 days`;
+    _set(tier1, kpis.row_recon_rate + '%');
+    const cleared = (kpis.row_recon_cleared || 0).toLocaleString();
+    const total   = (kpis.row_recon_total   || 0).toLocaleString();
+    tier1Hint.textContent = `${cleared} of ${total} rows cleared`;
   }
 
   _set(oldest, kpis.oldest_open_days == null ? '—' : kpis.oldest_open_days + 'd');

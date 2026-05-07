@@ -8,7 +8,7 @@
     <h1>Cash accounts</h1>
     <div class="subtitle">Registered nostro / GL pairs. Used to auto-label sessions on upload and pair files on scan.</div>
   </div>
-  <button class="btn btn-primary" onclick="document.getElementById('new-account').open = true">+ New cash account</button>
+  <button class="btn btn-primary" onclick="openNewAccount()">+ New cash account</button>
 </div>
 
 <!-- Summary strip — one chip per access area + a Total chip. Populated
@@ -26,9 +26,15 @@
   </div>
 </div>
 
-<details id="new-account" style="margin-top:20px">
-  <summary>Register a new cash account</summary>
-  <div class="card" style="margin-top:8px">
+<!-- New-cash-account modal. Opens centred over the page from the
+     "+ New cash account" button so the form is immediately visible
+     instead of expanding at the bottom of a long registry table. -->
+<div id="new-account-modal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.55);z-index:100;align-items:flex-start;justify-content:center;padding:50px 20px;overflow-y:auto">
+  <div class="card" style="max-width:760px;width:100%;margin:0">
+    <div class="card-head">
+      <h2>Register a new cash account</h2>
+      <button class="btn btn-ghost btn-sm" onclick="closeNewAccount()">Close</button>
+    </div>
     <div class="card-body">
       <form id="new-form" class="form-grid">
         <div class="field" style="grid-column:1/-1"><label>Account type</label>
@@ -39,6 +45,17 @@
           <span class="hint" style="font-size:var(--t-small);color:var(--c-text-muted)">
             Mobile wallets reuse the same recon engine; the wallet-specific
             fields below let the BYO loader route statements correctly.
+          </span>
+        </div>
+        <div class="field" style="grid-column:1/-1"><label>Recon mode</label>
+          <select class="input" name="account_recon_type" id="new-recon-type" onchange="onReconTypeChange()">
+            <option value="two_sided">Two-sided — pair SWIFT statement against Flex GL (correspondent nostros)</option>
+            <option value="one_sided">One-sided — Flex GL only, no SWIFT counterpart (suspense / wallet GLs / internal-only)</option>
+          </select>
+          <span class="hint" style="font-size:var(--t-small);color:var(--c-text-muted)">
+            One-sided accounts use the proof-seed + balance-chain flow:
+            anchor on Day 0, then each daily Flex delta's opening must
+            match the previous day's closing.
           </span>
         </div>
         <div class="field"><label>Access area</label>
@@ -63,7 +80,7 @@
           </select>
           <span class="hint" style="font-size:var(--t-small);color:var(--c-text-muted)">Manage list in <a href="/currencies-admin">Currencies</a></span>
         </div>
-        <div class="field"><label><span id="new-swift-label">SWIFT account (Their side)</span></label><input class="input" name="swift_account" id="new-swift" placeholder="e.g. 0120730006000" required></div>
+        <div class="field" id="new-swift-field"><label><span id="new-swift-label">SWIFT account (Their side)</span></label><input class="input" name="swift_account" id="new-swift" placeholder="e.g. 0120730006000"></div>
         <div class="field"><label><span id="new-flex-label">Flexcube GL (Our side)</span></label><input class="input" name="flex_ac_no" id="new-flex" placeholder="e.g. 4441001259366" required></div>
 
         <!-- Mobile-money-only fields. Hidden until account_type=mobile_wallet. -->
@@ -86,14 +103,15 @@
         </div>
 
         <div class="field" style="grid-column:1/-1"><label>Notes</label><input class="input" name="notes"></div>
-        <div style="grid-column:1/-1">
+        <div style="grid-column:1/-1;display:flex;gap:10px;align-items:center">
           <button type="submit" class="btn btn-primary">Register</button>
+          <button type="button" class="btn btn-ghost" onclick="closeNewAccount()">Cancel</button>
           <span class="status" id="new-status"></span>
         </div>
       </form>
     </div>
   </div>
-</details>
+</div>
 
 <!-- Edit modal -->
 <div id="edit-modal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.55);z-index:100;align-items:flex-start;justify-content:center;padding:50px 20px;overflow-y:auto">
@@ -139,6 +157,67 @@
           <button type="submit" class="btn btn-primary" id="edit-submit">Save changes</button>
           <button type="button" class="btn btn-ghost" onclick="closeEdit()">Cancel</button>
           <span class="status" id="edit-status"></span>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Seed-proof modal (one-sided accounts) -->
+<div id="seed-proof-modal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.55);z-index:100;align-items:flex-start;justify-content:center;padding:50px 20px;overflow-y:auto">
+  <div class="card" style="max-width:560px;width:100%;margin:0">
+    <div class="card-head">
+      <h2>Seed proof — anchor the balance chain</h2>
+      <button class="btn btn-ghost btn-sm" onclick="closeSeedProof()">Close</button>
+    </div>
+    <div class="card-body">
+      <div id="seed-proof-account" class="muted" style="margin-bottom:12px"></div>
+      <p style="font-size:var(--t-small);color:var(--c-text-muted);margin-top:0">
+        Upload the proof xlsx for this account. The Day-0 balance chain
+        starts at 0; the proof's net (credits − debits) becomes the
+        anchor. Subsequent daily Flex deltas must open at this value to
+        be accepted. Re-seeding is refused — clear the anchor first if
+        the wrong proof was loaded.
+      </p>
+      <form id="seed-proof-form" enctype="multipart/form-data">
+        <input type="hidden" name="account_id">
+        <div class="field"><label>Proof file (.xlsx)</label>
+          <input class="input" type="file" name="file" accept=".xlsx,.xlsm" required>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;margin-top:14px">
+          <button type="submit" class="btn btn-primary" id="seed-proof-submit">Upload &amp; seed</button>
+          <button type="button" class="btn btn-ghost" onclick="closeSeedProof()">Cancel</button>
+          <span class="status" id="seed-proof-status"></span>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Clear-anchor modal (admin only) -->
+<div id="clear-anchor-modal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.55);z-index:100;align-items:flex-start;justify-content:center;padding:50px 20px;overflow-y:auto">
+  <div class="card" style="max-width:520px;width:100%;margin:0">
+    <div class="card-head">
+      <h2>Clear anchor — reset the balance chain</h2>
+      <button class="btn btn-ghost btn-sm" onclick="closeClearAnchor()">Close</button>
+    </div>
+    <div class="card-body">
+      <div id="clear-anchor-account" class="muted" style="margin-bottom:12px"></div>
+      <p style="font-size:var(--t-small);color:var(--c-text-muted);margin-top:0">
+        This resets the account to "not seeded" so a fresh proof can be
+        loaded. Prior seed/delta sessions and their open items stay in
+        place — only the anchor is wiped. The reason is recorded in the
+        audit log.
+      </p>
+      <form id="clear-anchor-form">
+        <input type="hidden" name="account_id">
+        <div class="field"><label>Reason *</label>
+          <textarea class="input" name="reason" rows="3" required placeholder="e.g. wrong proof file uploaded; reloading correct one"></textarea>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;margin-top:14px">
+          <button type="submit" class="btn btn-danger-soft" id="clear-anchor-submit">Clear anchor</button>
+          <button type="button" class="btn btn-ghost" onclick="closeClearAnchor()">Cancel</button>
+          <span class="status" id="clear-anchor-status"></span>
         </div>
       </form>
     </div>
@@ -264,6 +343,61 @@ function render() {
     return '';
   }
 
+  // anchorCell renders the account's balance-chain status. NULL anchor
+  // is "Not seeded" with a CTA; a set anchor renders the value + as-of
+  // date so an operator can spot a stale chain at a glance. The
+  // rolling-state footnote (open items + last session) makes the
+  // cross-session continuity visible without drilling into a session.
+  function anchorCell(a) {
+    let head;
+    if (a.last_closing_balance === null || a.last_closing_balance === undefined) {
+      head = '<span class="badge badge-warn" title="No proof seed yet — load one before the first daily delta">Not seeded</span>';
+    } else {
+      const bal = Number(a.last_closing_balance);
+      const sign = bal < 0 ? 'D' : 'C';
+      const abs = Math.abs(bal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const asOf = a.last_closing_date ? String(a.last_closing_date) : '';
+      const asOfFmt = asOf.length === 8 ? `${asOf.slice(0,4)}-${asOf.slice(4,6)}-${asOf.slice(6,8)}` : asOf;
+      head = `<span class="badge badge-success" title="Balance chain anchor — next delta's opening must match">${sign} ${abs}</span>${
+        asOfFmt ? `<div class="muted" style="font-size:var(--t-micro);margin-top:2px">as of ${esc(asOfFmt)}</div>` : ''}`;
+    }
+    // Rolling-state footnote: open items count + last session ref.
+    const oi = Number(a.open_items_count || 0);
+    const lastId = a.last_session_id;
+    const lastKind = a.last_session_kind;
+    if (oi > 0 || lastId) {
+      const oiPart = oi > 0 ? `<a href="/open-items-view?account_id=${a.id}">${oi.toLocaleString()} open</a>` : '';
+      const sessPart = lastId ? `<a href="/sessions/${lastId}/review" title="Last ${esc(lastKind || 'session')}">#${lastId}</a>` : '';
+      const sep = (oiPart && sessPart) ? ' · ' : '';
+      head += `<div class="muted" style="font-size:var(--t-micro);margin-top:4px">${oiPart}${sep}${sessPart}</div>`;
+    }
+    return head;
+  }
+
+  // actionsCell renders the per-row action buttons. An unseeded account
+  // shows "Seed proof"; a seeded account shows "Edit" + (admin-only)
+  // "Clear anchor". Two-sided accounts that don't need a seed only see
+  // Edit — the seed/clear-anchor flow is intentionally limited to
+  // one-sided accounts for now (Phase 4 will extend to two-sided).
+  function actionsCell(a) {
+    const buttons = [];
+    // Ledger link is always visible — even for two-sided accounts —
+    // because it's the rolling-state view: anchor + open items + the
+    // chronological session chain. Renders for unseeded accounts too
+    // (they just show "no sessions yet").
+    buttons.push(`<a class="btn btn-ghost btn-sm" href="/accounts/${a.id}/ledger-page" title="Per-account session timeline + open items">Ledger</a>`);
+    if (canEdit) buttons.push(`<button class="btn btn-ghost btn-sm" onclick="openEdit(${a.id})">Edit</button>`);
+    const oneSided = a.account_recon_type === 'one_sided';
+    const seeded = a.last_closing_balance !== null && a.last_closing_balance !== undefined;
+    if (canEdit && oneSided && !seeded) {
+      buttons.push(`<button class="btn btn-primary btn-sm" onclick="openSeedProof(${a.id})">Seed proof</button>`);
+    }
+    if (canEdit && oneSided && seeded) {
+      buttons.push(`<button class="btn btn-ghost btn-sm" onclick="openClearAnchor(${a.id})" title="Reset the balance chain">Clear anchor</button>`);
+    }
+    return buttons.join(' ');
+  }
+
   // bankAvatar renders a 30px round badge with two-letter initials
   // from BIC (or shortname fallback). Colour is picked from an 8-tone
   // palette via a tiny string-hash so the same bank lands on the
@@ -331,7 +465,8 @@ function render() {
             <th>SWIFT acct (Their)</th>
             <th>Flex GL (Our)</th>
             <th style="width:70px">CCY</th>
-            <th style="width:80px"></th>
+            <th style="width:160px">Anchor</th>
+            <th style="width:120px"></th>
           </tr>
         </thead>
         <tbody>
@@ -342,13 +477,17 @@ function render() {
                   ${bankAvatar(a.bic, a.shortname)}
                   <span class="acct-cell__name">${esc(a.shortname || '')}</span>
                 </span>
+                ${a.account_recon_type === 'one_sided'
+                  ? '<span class="badge badge-info" style="margin-left:6px;font-size:var(--t-micro)" title="One-sided GL — Flex only, no SWIFT counterpart">1-sided</span>'
+                  : ''}
               </td>
               <td>${esc(a.label)}${a.notes ? `<br><span class="muted" style="font-size:var(--t-small)">${esc(a.notes)}</span>` : ''}</td>
               <td class="muted"><code>${esc(a.bic || '')}</code></td>
-              <td class="muted"><code>${esc(a.swift_account)}</code></td>
+              <td class="muted"><code>${a.swift_account ? esc(a.swift_account) : '<span class="muted">—</span>'}</code></td>
               <td class="muted"><code>${esc(a.flex_ac_no)}</code></td>
               <td><span class="badge badge-neutral">${esc(a.currency)}</span></td>
-              <td>${canEdit ? `<button class="btn btn-ghost btn-sm" onclick="openEdit(${a.id})">Edit</button>` : ''}</td>
+              <td>${anchorCell(a)}</td>
+              <td>${actionsCell(a)}</td>
             </tr>`).join('')}
         </tbody>
       </table>
@@ -376,6 +515,124 @@ function openEdit(id) {
 function closeEdit() {
   document.getElementById('edit-modal').style.display = 'none';
 }
+
+// New-account modal open/close. The form lives in a modal popup so it's
+// always centered and immediately visible — beats the previous <details>
+// expander which was easy to miss at the bottom of a long registry table.
+function openNewAccount() {
+  // Reset the form state so a previous failure or partial entry doesn't
+  // bleed into the next one.
+  const form = document.getElementById('new-form');
+  if (form) form.reset();
+  // Re-apply the recon-type / account-type field visibility rules so
+  // the form opens in a consistent state.
+  if (typeof onTypeChange === 'function') onTypeChange();
+  if (typeof onReconTypeChange === 'function') onReconTypeChange();
+  document.getElementById('new-status').textContent = '';
+  document.getElementById('new-account-modal').style.display = 'flex';
+}
+
+function closeNewAccount() {
+  document.getElementById('new-account-modal').style.display = 'none';
+}
+
+// --- Seed proof / clear anchor flows ---------------------------------------
+// One-sided accounts use a Day-0 proof to anchor the balance chain. After
+// seeding, daily Flex deltas continuity-check against the anchor; admin can
+// clear the anchor (audit-logged with reason) to retire a bad seed.
+
+function openSeedProof(id) {
+  const a = accountsCache.find(x => x.id === id);
+  if (!a) return;
+  document.getElementById('seed-proof-account').innerHTML =
+    `<strong>${esc(a.label)}</strong> · <code>${esc(a.flex_ac_no)}</code> · ${esc(a.currency)}`;
+  const form = document.getElementById('seed-proof-form');
+  form.reset();
+  form.account_id.value = id;
+  document.getElementById('seed-proof-status').textContent = '';
+  document.getElementById('seed-proof-modal').style.display = 'flex';
+}
+
+function closeSeedProof() {
+  document.getElementById('seed-proof-modal').style.display = 'none';
+}
+
+document.getElementById('seed-proof-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const id = fd.get('account_id');
+  // Strip account_id from the multipart payload — the URL carries it.
+  const upload = new FormData();
+  upload.append('file', fd.get('file'));
+  const status = document.getElementById('seed-proof-status');
+  const btn = document.getElementById('seed-proof-submit');
+  btn.disabled = true;
+  status.className = 'status';
+  status.textContent = 'Parsing & seeding (large proofs take a moment)…';
+  try {
+    const r = await fetch(`/accounts/${id}/seed-proof`, {
+      method: 'POST',
+      body: upload,
+    });
+    if (!r.ok) {
+      const detail = (await r.json().catch(()=>({}))).detail || `HTTP ${r.status}`;
+      throw new Error(detail);
+    }
+    const result = await r.json();
+    status.className = 'status success';
+    status.textContent = `Seeded session #${result.session_id} · ${result.flex_rows + result.swift_rows} rows · ${result.open_items_seeded} open items`;
+    setTimeout(() => { closeSeedProof(); load(); }, 1200);
+  } catch (err) {
+    status.className = 'status error';
+    status.textContent = err.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+function openClearAnchor(id) {
+  const a = accountsCache.find(x => x.id === id);
+  if (!a) return;
+  const bal = a.last_closing_balance;
+  document.getElementById('clear-anchor-account').innerHTML =
+    `<strong>${esc(a.label)}</strong> — current anchor: <code>${bal == null ? '—' : Number(bal).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</code>`;
+  const form = document.getElementById('clear-anchor-form');
+  form.reset();
+  form.account_id.value = id;
+  document.getElementById('clear-anchor-status').textContent = '';
+  document.getElementById('clear-anchor-modal').style.display = 'flex';
+}
+
+function closeClearAnchor() {
+  document.getElementById('clear-anchor-modal').style.display = 'none';
+}
+
+document.getElementById('clear-anchor-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const id = fd.get('account_id');
+  const status = document.getElementById('clear-anchor-status');
+  const btn = document.getElementById('clear-anchor-submit');
+  btn.disabled = true;
+  status.className = 'status';
+  status.textContent = 'Clearing…';
+  try {
+    const r = await fetch(`/accounts/${id}/clear-anchor`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: fd.get('reason') }),
+    });
+    if (!r.ok) throw new Error((await r.json().catch(()=>({}))).detail || `HTTP ${r.status}`);
+    status.className = 'status success';
+    status.textContent = 'Anchor cleared.';
+    setTimeout(() => { closeClearAnchor(); load(); }, 600);
+  } catch (err) {
+    status.className = 'status error';
+    status.textContent = err.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 document.getElementById('edit-form').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -433,12 +690,31 @@ function onTypeChange() {
   document.getElementById('new-provider').required = isMM;
 }
 
+function onReconTypeChange() {
+  // One-sided accounts skip the SWIFT pairing entirely — the GL exists
+  // alone in Kilter's data model. Hide the SWIFT field, mark it
+  // not-required, and submit it as empty so the server picks up the
+  // empty-string sentinel that satisfies the NOT NULL + UNIQUE column
+  // without forcing a fake BIC pair.
+  const isOneSided = document.getElementById('new-recon-type').value === 'one_sided';
+  const swiftField = document.getElementById('new-swift-field');
+  const swiftInput = document.getElementById('new-swift');
+  swiftField.style.display = isOneSided ? 'none' : '';
+  swiftInput.required = !isOneSided;
+  if (isOneSided) swiftInput.value = '';
+}
+
 document.getElementById('new-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const fd = new FormData(e.target);
   const payload = Object.fromEntries(fd.entries());
   payload.currency = (payload.currency || '').toUpperCase();
   for (const k of ['bic', 'notes', 'shortname', 'access_area']) if (!payload[k]) payload[k] = null;
+  // One-sided accounts: SWIFT slot is the empty-string sentinel that
+  // satisfies the NOT NULL + UNIQUE column without forcing a fake BIC pair.
+  if (payload.account_recon_type === 'one_sided') {
+    payload.swift_account = '';
+  }
   // Mobile-money-only fields: drop them from the payload when this is a
   // cash_nostro account, otherwise null-empty strings so the server's
   // strict validation accepts them as 'unset'.
@@ -458,10 +734,10 @@ document.getElementById('new-form').addEventListener('submit', async (e) => {
     if (!r.ok) throw new Error((await r.json()).detail || 'Failed');
     e.target.reset();
     onTypeChange();   // reset visibility of mm fields after the form clears
+    onReconTypeChange();  // reset SWIFT field visibility
     status.className = 'status success';
     status.textContent = 'Registered.';
-    document.getElementById('new-account').open = false;
-    load();
+    setTimeout(() => { closeNewAccount(); load(); }, 600);
   } catch (err) {
     status.className = 'status error';
     status.textContent = err.message;

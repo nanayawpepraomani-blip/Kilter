@@ -43,7 +43,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
-from reconcile import write_report
+from reconcile import write_report, write_one_sided_report
 from db import get_conn, init_db
 from ingest import ingest_pair, IngestError, DuplicateFileError
 from scanner import scan, ensure_dirs
@@ -664,6 +664,14 @@ def enroll_complete(payload: EnrollCompletePayload):
             (payload.username, now),
         )
         conn.commit()
+        # Clean up the first_login.txt hint file now that enrollment is done.
+        try:
+            from pathlib import Path as _Path
+            _fl = _Path(__file__).resolve().parent / "first_login.txt"
+            if _fl.exists():
+                _fl.unlink()
+        except OSError:
+            pass
         return {"ok": True, "username": payload.username, "recovery_codes": recovery_codes}
     finally:
         conn.close()
@@ -677,8 +685,10 @@ def review(request: Request, session_id: int):
     happen JS-side: review.html immediately hits GET /sessions/{id},
     which IS auth-and-scope-protected, and the fetch wrapper in
     base.html bounces on 401 to /login?next=…."""
-    return templates.TemplateResponse(request, "review.html",
+    resp = templates.TemplateResponse(request, "review.html",
                                       {"session_id": session_id})
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    return resp
 
 
 @app.get("/cash-accounts")
@@ -1387,9 +1397,6 @@ def dashboard_kpis(scope: Optional[List[str]] = Depends(active_scope)):
             f"WHERE {where} {account_filter}"
         )
 
-        # Tier-1 hit rate over the trailing 14 days. Same window the trend
-        # chart uses, so the KPI matches whatever the operator is staring
-        # at. confirmed-only — rejected tier-1 doesn't count toward "easy".
         from datetime import timedelta as _td
         cutoff = (_dt.utcnow() - _td(days=14)).isoformat()
         decided = conn.execute(
@@ -1404,6 +1411,40 @@ def dashboard_kpis(scope: Optional[List[str]] = Depends(active_scope)):
             round(100.0 * tier_counts.get(1, 0) / total_decided, 1)
             if total_decided else None
         )
+
+        # Row-level reconciliation rate: (total rows in 14d sessions − open items
+        # from those sessions) / total rows. Each assignment covers one row on
+        # each side, so total rows = flex_rows + swift_rows for those sessions.
+        # Excludes proof/seed sessions (session_kind != 'recon') to avoid
+        # inflating the denominator with anchor-only rows.
+        row_cutoff = (_dt.utcnow() - _td(days=14)).isoformat()
+        recon_sess_subq = (
+            f"SELECT s.id FROM sessions s LEFT JOIN accounts a ON a.id = s.account_id "
+            f"WHERE s.created_at >= '{row_cutoff}' "
+            f"AND s.session_kind NOT IN ('seed','proof') "
+            f"AND {where} {account_filter}"
+        )
+        total_flex = conn.execute(
+            f"SELECT COUNT(*) FROM flex_txns WHERE session_id IN ({recon_sess_subq})",
+            scope_params,
+        ).fetchone()[0]
+        total_swift = conn.execute(
+            f"SELECT COUNT(*) FROM swift_txns WHERE session_id IN ({recon_sess_subq})",
+            scope_params,
+        ).fetchone()[0]
+        open_from_period = conn.execute(
+            f"SELECT COUNT(*) FROM open_items oi "
+            f"LEFT JOIN accounts a ON a.id = oi.account_id "
+            f"WHERE oi.status='open' AND oi.src_session_id IN ({recon_sess_subq}) "
+            f"AND {where}",
+            (*scope_params, *scope_params),
+        ).fetchone()[0]
+        total_period_rows = total_flex + total_swift
+        row_recon_rate = (
+            round(100.0 * (total_period_rows - open_from_period) / total_period_rows, 1)
+            if total_period_rows else None
+        )
+        row_recon_cleared = total_period_rows - open_from_period
 
         # Oldest open item — a single max() lookup. NULL when no open items.
         oldest_row = conn.execute(
@@ -1445,6 +1486,9 @@ def dashboard_kpis(scope: Optional[List[str]] = Depends(active_scope)):
             'oldest_open_days': oldest_open_days,
             'sla_breached': sla_breached,
             'total_open_items': total_open,
+            'row_recon_rate': row_recon_rate,
+            'row_recon_cleared': row_recon_cleared,
+            'row_recon_total': total_period_rows,
         }
     finally:
         conn.close()
@@ -1716,6 +1760,18 @@ def get_session(session_id: int,
             "flex_total":  one("SELECT COUNT(*) FROM flex_txns WHERE session_id=?", (session_id,)),
         }
 
+        # Pending count broken down by tier — drives the bulk-confirm
+        # button label in the Review queue ("Auto-confirm Tier 1 (N)").
+        # Cheap: same indexed scan as counts.pending, just grouped.
+        pending_by_tier: dict[str, int] = {}
+        for r in conn.execute(
+            "SELECT tier, COUNT(*) AS n FROM assignments "
+            "WHERE session_id=? AND status='pending' GROUP BY tier",
+            (session_id,),
+        ).fetchall():
+            pending_by_tier[str(r['tier'])] = r['n']
+        counts["pending_by_tier"] = pending_by_tier
+
         # Totals drive the reconcile panel — SWIFT credits/debits and Flex credits/debits
         # split into "all" and "confirmed" (cleared) buckets.
         totals = {
@@ -1752,8 +1808,58 @@ def get_session(session_id: int,
                 "JOIN assignments a ON a.session_id=ft.session_id AND a.flex_row=ft.row_number "
                 "WHERE ft.session_id=? AND ft.type='DR' AND a.status='confirmed'",
                 (session_id,)),
+            # Match-rate inputs. "Matched" rows are anything the engine
+            # has proposed (confirmed + pending) regardless of whether
+            # the human has signed off. Rejected rows are explicitly
+            # NOT matches. Used by the review-page "Match rate" tile so
+            # ops can see "engine paired 78.5% of today's rows" right
+            # after Run matching finishes.
+            "matched_swift_rows": one(
+                "SELECT COUNT(DISTINCT swift_row) FROM assignments "
+                "WHERE session_id=? AND status IN ('confirmed','pending') "
+                "AND swift_row > 0",
+                (session_id,)),
+            "matched_flex_rows": one(
+                "SELECT COUNT(DISTINCT flex_row) FROM assignments "
+                "WHERE session_id=? AND status IN ('confirmed','pending') "
+                "AND flex_row > 0",
+                (session_id,)),
+            # Distinguishes "carry-forward only" from "engine has run".
+            # The run-matching panel stays visible when this is zero even
+            # if hasAssignments is true (all rows came from auto_carry).
+            "engine_assignments": one(
+                "SELECT COUNT(*) FROM assignments "
+                "WHERE session_id=? AND source != 'auto_carry'",
+                (session_id,)),
         }
-        return {**dict(s), "counts": counts, "totals": totals}
+        # Continuity link — for any session that has an account_id, find
+        # the immediately-prior session on the same account so the
+        # review page can render a "Continues from session #N · closing
+        # X as of DATE" breadcrumb. Makes the chain between yesterday's
+        # close and today's open visible without forcing the operator to
+        # navigate to the sessions list.
+        prev_session = None
+        if s['account_id'] is not None:
+            prev_row = conn.execute(
+                "SELECT id, session_kind, "
+                "       COALESCE(flex_closing_balance, "
+                "                CASE WHEN closing_balance_sign='D' "
+                "                     THEN -COALESCE(closing_balance_amount, 0) "
+                "                     ELSE  COALESCE(closing_balance_amount, 0) END) "
+                "       AS prev_closing_balance, "
+                "       COALESCE(closing_balance_date, flex_balance_as_of) "
+                "       AS prev_closing_date, "
+                "       created_at "
+                "FROM sessions "
+                "WHERE account_id=? AND id<? "
+                "ORDER BY id DESC LIMIT 1",
+                (s['account_id'], session_id),
+            ).fetchone()
+            if prev_row is not None:
+                prev_session = dict(prev_row)
+
+        return {**dict(s), "counts": counts, "totals": totals,
+                "prev_session": prev_session}
     finally:
         conn.close()
 
@@ -1807,8 +1913,8 @@ def session_register(session_id: int, user: dict = Depends(current_user)):
                 'amount': r['amount'],
                 'sign': r['sign'],
                 'ref': r['our_ref'],
-                'description': (r['booking_text_1'] or '') + (
-                    ' · ' + r['booking_text_2'] if r['booking_text_2'] else ''),
+                'description': _dedupe_swift_description(
+                    r['booking_text_1'], r['booking_text_2']),
                 'status': (a['status'] if a else 'unmatched'),
                 'tier':  (a['tier'] if a else None),
                 'partner_row': (a['flex_row'] if a else None),
@@ -1842,11 +1948,24 @@ def session_register(session_id: int, user: dict = Depends(current_user)):
 
 @app.get("/sessions/{session_id}/queue")
 def get_queue(session_id: int,
+              limit: int = 50,
+              offset: int = 0,
               user: dict = Depends(current_user),
               scope: Optional[List[str]] = Depends(active_scope)):
+    """Pending assignments for the review queue.
+
+    Paginated: default 50 per page, max 500. Returns
+    ``{items, total, limit, offset}`` so the UI can stream pages as
+    the operator advances. Without pagination, a session with 16k+
+    pending assignments takes minutes to load (N+3 queries per row);
+    with pagination + bulk-fetch the first card lands in <1 s.
+
+    The JS keeps backward compat by detecting the response shape: a
+    bare list (legacy) is treated as a single full page; the new
+    object form unlocks pagination.
+    """
     conn = get_conn()
     try:
-        # Scope-check the parent session before exposing its queue.
         scope_where, scope_params = _scope_clause(scope, alias='a')
         owned = conn.execute(
             "SELECT s.id FROM sessions s LEFT JOIN accounts a ON a.id = s.account_id "
@@ -1855,54 +1974,129 @@ def get_queue(session_id: int,
         ).fetchone()
         if owned is None:
             raise HTTPException(404, "Session not found")
+
+        # Sanitize pagination params — caller-supplied bounds prevent
+        # an enormous limit from re-introducing the timeout.
+        limit = max(1, min(int(limit or 50), 500))
+        offset = max(0, int(offset or 0))
+
+        total = conn.execute(
+            "SELECT COUNT(*) FROM assignments "
+            "WHERE session_id=? AND status='pending'",
+            (session_id,),
+        ).fetchone()[0]
+
         assignments = conn.execute(
             "SELECT * FROM assignments WHERE session_id=? AND status='pending' "
-            "ORDER BY tier, id",
-            (session_id,),
+            "ORDER BY tier, id LIMIT ? OFFSET ?",
+            (session_id, limit, offset),
         ).fetchall()
+        if not assignments:
+            return {"items": [], "total": total,
+                    "limit": limit, "offset": offset}
+
+        # Bulk-fetch supporting data instead of N+1: pull every swift /
+        # flex / candidate / comment-count row touched by this page in
+        # one shot, key into in-memory dicts. Cuts ~200 round-trips per
+        # 50-row page down to 4 — visible in load time on big sessions.
+        swift_ids = {a['swift_row'] for a in assignments if a['swift_row']}
+        flex_ids  = {a['flex_row']  for a in assignments if a['flex_row']}
+        a_ids     = [a['id'] for a in assignments]
+
+        swift_by_row = {}
+        if swift_ids:
+            placeholders = ','.join('?' * len(swift_ids))
+            for r in conn.execute(
+                f"SELECT * FROM swift_txns WHERE session_id=? AND row_number IN ({placeholders})",
+                (session_id, *swift_ids),
+            ).fetchall():
+                swift_by_row[r['row_number']] = dict(r)
+
+        flex_by_row = {}
+        if flex_ids:
+            placeholders = ','.join('?' * len(flex_ids))
+            for r in conn.execute(
+                f"SELECT * FROM flex_txns WHERE session_id=? AND row_number IN ({placeholders})",
+                (session_id, *flex_ids),
+            ).fetchall():
+                flex_by_row[r['row_number']] = dict(r)
+
+        # Competing candidates: anything that paired with this swift/flex
+        # row but isn't the assignment we picked. Capped at COMPETING_CAP
+        # per (assignment, side) — on real BTW data each row averages
+        # ~650 competing candidates, and pulling all of them for a 50-
+        # row page = 65k rows = several seconds. The UI only shows the
+        # first few "alternatives" by default, so capping is invisible
+        # to the operator. The cap is enforced via two windowed queries
+        # (one per side) instead of a single OR — the (session_id,
+        # swift_row) index hits cleanly, vs the OR which forces a full
+        # session-id scan.
+        COMPETING_CAP = 5
+        competing_by_swift: dict[int, list] = {}
+        competing_by_flex:  dict[int, list] = {}
+        if swift_ids:
+            for sw_id in swift_ids:
+                rows = conn.execute(
+                    "SELECT * FROM candidates "
+                    "WHERE session_id=? AND swift_row=? "
+                    "ORDER BY tier, ABS(amount_diff) LIMIT ?",
+                    (session_id, sw_id, COMPETING_CAP + 1),
+                ).fetchall()
+                competing_by_swift[sw_id] = [dict(r) for r in rows]
+        if flex_ids:
+            for fx_id in flex_ids:
+                rows = conn.execute(
+                    "SELECT * FROM candidates "
+                    "WHERE session_id=? AND flex_row=? "
+                    "ORDER BY tier, ABS(amount_diff) LIMIT ?",
+                    (session_id, fx_id, COMPETING_CAP + 1),
+                ).fetchall()
+                competing_by_flex[fx_id] = [dict(r) for r in rows]
+
+        comment_counts = {}
+        if a_ids:
+            placeholders = ','.join('?' * len(a_ids))
+            for r in conn.execute(
+                f"SELECT target_id, COUNT(*) AS n FROM break_comments "
+                f"WHERE target_type='assignment' AND target_id IN ({placeholders}) "
+                f"GROUP BY target_id",
+                a_ids,
+            ).fetchall():
+                comment_counts[r['target_id']] = r['n']
 
         out = []
         for a in assignments:
-            swift = conn.execute(
-                "SELECT * FROM swift_txns WHERE session_id=? AND row_number=?",
-                (session_id, a['swift_row']),
-            ).fetchone()
-            flex = conn.execute(
-                "SELECT * FROM flex_txns WHERE session_id=? AND row_number=?",
-                (session_id, a['flex_row']),
-            ).fetchone()
-            competing = conn.execute(
-                "SELECT c.*, "
-                "  CASE WHEN c.swift_row=? THEN 'alt_flex' ELSE 'alt_swift' END AS side "
-                "FROM candidates c "
-                "WHERE c.session_id=? AND (c.swift_row=? OR c.flex_row=?) "
-                "  AND NOT (c.swift_row=? AND c.flex_row=?) "
-                "ORDER BY c.tier, ABS(c.amount_diff)",
-                (a['swift_row'], session_id, a['swift_row'], a['flex_row'],
-                 a['swift_row'], a['flex_row']),
-            ).fetchall()
-
-            comment_count = conn.execute(
-                "SELECT COUNT(*) AS n FROM break_comments "
-                "WHERE target_type='assignment' AND target_id=?",
-                (a['id'],),
-            ).fetchone()['n']
+            sw_competing = competing_by_swift.get(a['swift_row'], [])
+            fx_competing = competing_by_flex.get(a['flex_row'], [])
+            # Drop the chosen pair from each side's competing list and
+            # tag remaining rows with which side is the alt.
+            comp = []
+            for c in sw_competing:
+                if c['swift_row'] == a['swift_row'] and c['flex_row'] == a['flex_row']:
+                    continue
+                comp.append({**c, 'side': 'alt_flex'})
+            for c in fx_competing:
+                if c['swift_row'] == a['swift_row'] and c['flex_row'] == a['flex_row']:
+                    continue
+                # Avoid double-listing if a candidate already showed up
+                # via the swift-side scan.
+                if any(x['id'] == c['id'] for x in comp):
+                    continue
+                comp.append({**c, 'side': 'alt_swift'})
             out.append({
                 "assignment_id": a['id'],
                 "tier": a['tier'],
                 "reason": a['reason'],
                 "amount_diff": a['amount_diff'],
-                "swift": dict(swift) if swift else None,
-                "flex": dict(flex) if flex else None,
-                "competing": [dict(c) for c in competing],
-                # Case-management fields. None / 'normal' on rows that
-                # haven't been touched — UI renders defaults.
+                "swift": swift_by_row.get(a['swift_row']),
+                "flex":  flex_by_row.get(a['flex_row']),
+                "competing": comp,
                 "assignee":     a['assignee'] if 'assignee' in a.keys() else None,
                 "due_date":     a['due_date'] if 'due_date' in a.keys() else None,
                 "priority":     (a['priority'] if 'priority' in a.keys() else None) or 'normal',
-                "comment_count": comment_count,
+                "comment_count": comment_counts.get(a['id'], 0),
             })
-        return out
+        return {"items": out, "total": total, "limit": limit, "offset": offset}
     finally:
         conn.close()
 
@@ -2099,6 +2293,73 @@ def post_decision(
         conn.close()
 
 
+class BulkConfirmPayload(BaseModel):
+    tier: int = 1
+
+
+@app.post("/sessions/{session_id}/bulk-confirm")
+def post_bulk_confirm(
+    session_id: int,
+    payload: BulkConfirmPayload,
+    user: dict = Depends(require_role('ops', 'admin')),
+):
+    """Bulk-confirm all pending assignments at a given tier. Hard-capped
+    at Tier 1 (strict ref+amount) per Ecobank Ghana ops policy: lower
+    tiers (e.g. Tier 3 amount+date) produce too many false candidates
+    on busy days for unattended bulk clearance. Honors REQUIRE_APPROVAL
+    by sending each row to pending_approval instead of confirmed."""
+    if payload.tier != 1:
+        raise HTTPException(400, "Bulk confirm is only allowed at tier 1")
+
+    username = user['username']
+    now = datetime.utcnow().isoformat()
+    conn = get_conn()
+    try:
+        _assert_session_not_locked(conn, session_id)
+        rows = conn.execute(
+            "SELECT id, swift_row, flex_row, tier FROM assignments "
+            "WHERE session_id=? AND status='pending' AND tier=?",
+            (session_id, payload.tier),
+        ).fetchall()
+        if not rows:
+            return {"updated": 0, "status_set": "confirmed", "tier": payload.tier}
+
+        target_status = 'pending_approval' if REQUIRE_APPROVAL else 'confirmed'
+        ids = [r['id'] for r in rows]
+        placeholders = ','.join('?' * len(ids))
+        conn.execute(
+            f"UPDATE assignments SET status=?, decided_by=?, decided_at=? "
+            f"WHERE id IN ({placeholders})",
+            (target_status, username, now, *ids),
+        )
+        if target_status == 'pending_approval':
+            conn.executemany(
+                "INSERT INTO approval_requests (assignment_id, requested_by, requested_at) "
+                "VALUES (?, ?, ?)",
+                [(aid, username, now) for aid in ids],
+            )
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (session_id, 'decision_bulk_confirm', username, now,
+             json.dumps({
+                 "tier": payload.tier,
+                 "count": len(ids),
+                 "status_set": target_status,
+                 "assignment_ids": ids[:200],  # cap audit blob; full count above
+             })),
+        )
+        conn.commit()
+        pending_remaining = conn.execute(
+            "SELECT COUNT(*) FROM assignments WHERE session_id=? AND status='pending'",
+            (session_id,),
+        ).fetchone()[0]
+        return {"updated": len(ids), "status_set": target_status, "tier": payload.tier,
+                "pending_remaining": pending_remaining}
+    finally:
+        conn.close()
+
+
 # ---------------------------------------------------------------------------
 # POST /sessions/{id}/assignments/{id}/approve  (two-person approval gate)
 # GET  /sessions/{id}/pending-approvals
@@ -2194,6 +2455,248 @@ def list_pending_approvals(
 # POST /sessions/{id}/close
 # ---------------------------------------------------------------------------
 
+class RunMatchingPayload(BaseModel):
+    """Stage flags for the matching pass. All default OFF except the
+    tier-driven engine itself. Operator opts in to additional stages
+    via the UI (e.g. carry-forward as a separate explicit step)."""
+    carry_forward: bool = False
+    splits: bool = False
+    m2n: bool = False
+    auto_rules: bool = True
+    seed_residue: bool = True
+
+
+@app.post("/sessions/{session_id}/run-matching")
+def run_session_matching(session_id: int,
+                          payload: RunMatchingPayload | None = None,
+                          user: dict = Depends(current_user)):
+    """Run the tier-driven matching engine on a loaded session.
+    Defaults: tier-driven matching ONLY (no carry-forward, no splits,
+    no M:N). Operator opts in to other stages via the body flags or
+    triggers them as separate explicit steps (e.g. carry-forward via
+    POST /sessions/{id}/carry-forward).
+
+    The ingest endpoints (proof seed, flex delta, pair) load rows
+    only — never auto-match. This endpoint is the explicit "apply"
+    step the operator triggers via the review page."""
+    from ingest import IngestError, run_matching
+    p = payload or RunMatchingPayload()
+    try:
+        result = run_matching(
+            session_id, user=user['username'],
+            carry_forward=p.carry_forward, splits=p.splits, m2n=p.m2n,
+            auto_rules=p.auto_rules, seed_residue=p.seed_residue,
+        )
+    except IngestError as exc:
+        raise HTTPException(400, str(exc))
+    return {
+        'session_id':            result.session_id,
+        'candidates_proposed':   result.candidates_proposed,
+        'pending_assignments':   result.pending_assignments,
+        'splits_proposed':       result.splits_proposed,
+        'm2n_proposed':          result.m2n_proposed,
+        'open_items_carried':    result.open_items_carried,
+        'open_items_seeded':     result.open_items_seeded,
+        'auto_confirmed':        result.auto_confirmed,
+        'started_at':            result.started_at,
+        'finished_at':           result.finished_at,
+        'elapsed_seconds':       result.elapsed_seconds,
+    }
+
+
+@app.post("/sessions/{session_id}/carry-forward")
+def push_carry_forward(session_id: int,
+                        user: dict = Depends(current_user)):
+    """Push carry-forward open items: clear today's free DR/CR rows
+    against PRIOR open items (from earlier sessions) using the
+    ref+amount linkage. Standalone — operator triggers AFTER reviewing
+    in-session tier matches, so they can decide which step happens
+    first in their workflow.
+
+    Idempotent: rows already claimed by an existing assignment are
+    skipped, so re-running this is a no-op once everything that can
+    carry-forward has done so."""
+    from ingest import IngestError, run_matching
+    try:
+        # Reuse run_matching's plumbing but only enable carry-forward.
+        # Disable everything else (no new tier proposals, no splits,
+        # no m2n, no residue seed) so this stage does ONLY the
+        # carry-forward clear and nothing else.
+        result = run_matching(
+            session_id, user=user['username'],
+            carry_forward=True, splits=False, m2n=False,
+            auto_rules=False, seed_residue=False,
+        )
+    except IngestError as exc:
+        raise HTTPException(400, str(exc))
+    return {
+        'session_id':         result.session_id,
+        'open_items_carried': result.open_items_carried,
+        'started_at':         result.started_at,
+        'finished_at':        result.finished_at,
+        'elapsed_seconds':    result.elapsed_seconds,
+    }
+
+
+@app.post("/sessions/{session_id}/match-preview")
+def preview_session_matching(session_id: int,
+                              user: dict = Depends(current_user)):
+    """Dry-run: evaluate the current tier set against the loaded
+    session WITHOUT writing any assignments. Returns projected counts
+    per tier so the operator can decide whether to apply, tweak the
+    tiers, or skip.
+
+    Computes the same candidate set as run_matching would (using the
+    account's match_tiers), runs `resolve()` to pick winners, then
+    returns the breakdown — no DB writes."""
+    from ingest import IngestError
+    from open_items import load_tolerance, load_match_tiers
+    from recon_engine import propose_candidates, resolve
+    from collections import Counter
+    conn = get_conn()
+    try:
+        sess = conn.execute(
+            "SELECT id, account_id, session_kind FROM sessions WHERE id=?",
+            (session_id,),
+        ).fetchone()
+        if sess is None:
+            raise HTTPException(404, "Session not found")
+
+        # Same input shape the real run_matching uses, minus the
+        # claim-skip filter — preview shows what the engine WOULD
+        # propose against the full free pool (not just what's left
+        # after prior assignments). This way ops can see the full
+        # impact of their tier set even on a session that's been
+        # partly matched.
+        swift_rows = [dict(r) for r in conn.execute(
+            "SELECT * FROM swift_txns WHERE session_id=?", (session_id,)
+        ).fetchall()]
+        flex_rows = [dict(r) for r in conn.execute(
+            "SELECT * FROM flex_txns WHERE session_id=?", (session_id,)
+        ).fetchall()]
+        for r in swift_rows: r['_row_number'] = r['row_number']
+        for r in flex_rows:  r['_row_number'] = r['row_number']
+
+        tol = load_tolerance(conn, sess['account_id'])
+        kind = sess['session_kind']
+        recon_type = 'one_sided' if kind in ('seed', 'flex_delta') else 'two_sided'
+        tiers = load_match_tiers(conn, sess['account_id'], recon_type)
+        enabled_tier_count = sum(1 for t in tiers if t.enabled)
+
+        if not enabled_tier_count:
+            return {
+                'session_id': session_id,
+                'enabled_tiers': 0,
+                'message': 'No enabled tiers for this account. Configure tiers on the Matching tiers page first.',
+                'candidates_proposed': 0,
+                'pairs_resolved': 0,
+                'projected_match_rate_pct': 0.0,
+                'projected_auto_confirmed': 0,
+                'projected_pending': 0,
+                'per_tier': [],
+            }
+
+        candidates = propose_candidates(swift_rows, flex_rows, tol=tol,
+                                        tiers=tiers, recon_type=recon_type)
+        resolution = resolve(candidates, swift_rows, flex_rows)
+        # Per-tier breakdown (count + auto-confirm flag from the tier).
+        tier_by_num = {}
+        for t in tiers:
+            num = t.legacy_tier if t.legacy_tier is not None else t.priority
+            tier_by_num[num] = t
+        counts_by_tier = Counter(a.tier for a in resolution.assignments)
+        per_tier_rows = []
+        projected_auto = 0
+        projected_pending = 0
+        for num, n in sorted(counts_by_tier.items()):
+            t = tier_by_num.get(num)
+            auto = bool(t.auto_confirm) if t else False
+            if auto: projected_auto += n
+            else:    projected_pending += n
+            per_tier_rows.append({
+                'tier': num,
+                'name': t.name if t else f'Tier {num}',
+                'count': n,
+                'auto_confirm': auto,
+            })
+        total_rows = len(swift_rows) + len(flex_rows)
+        # Match rate (one-sided convention: count distinct rows on each
+        # side that ended up in an assignment).
+        matched_swift = len({a.swift_row for a in resolution.assignments
+                             if a.swift_row > 0})
+        matched_flex  = len({a.flex_row  for a in resolution.assignments
+                             if a.flex_row > 0})
+        rate = (matched_swift + matched_flex) / total_rows * 100 if total_rows else 0.0
+        return {
+            'session_id': session_id,
+            'recon_type': recon_type,
+            'enabled_tiers': enabled_tier_count,
+            'rows_loaded': {'swift': len(swift_rows), 'flex': len(flex_rows)},
+            'candidates_proposed': len(candidates),
+            'pairs_resolved': len(resolution.assignments),
+            'projected_match_rate_pct': round(rate, 1),
+            'projected_auto_confirmed': projected_auto,
+            'projected_pending': projected_pending,
+            'per_tier': per_tier_rows,
+        }
+    finally:
+        conn.close()
+
+
+class ForceAcceptDeltaPayload(BaseModel):
+    """Body for the force-accept endpoint. The reason is mandatory and
+    flows into the audit log; force_accept_url-style flows that omit
+    a reason are refused at the API layer."""
+    file_path: str
+    reason: str
+
+
+@app.post("/accounts/{account_id}/force-accept-delta")
+async def force_accept_delta(
+    account_id: int,
+    file: UploadFile = File(...),
+    reason: str = Form(...),
+    user: dict = Depends(require_role('admin')),
+):
+    """Admin-only override: ingest a one-sided delta whose stated
+    opening balance disagrees with the account's anchor. Multipart
+    upload — file + reason. The reason is required (refused if blank)
+    and recorded in the audit log alongside the anchor jump.
+
+    Use after investigating a continuity break and confirming the
+    file is what the bank intended (e.g. a corrected re-issue from the
+    counterparty). The anchor advances to the file's stated closing
+    regardless of the gap; the operator owns the consequence.
+    """
+    from ingest import (ContinuityBreakError, DuplicateFileError, IngestError,
+                          NotSeededError, ingest_flex_only)
+    if not file.filename:
+        raise HTTPException(400, "No file uploaded.")
+    reason = (reason or '').strip()
+    if not reason:
+        raise HTTPException(400,
+            "A reason is required for force-accept — it goes into the "
+            "audit log alongside the anchor jump.")
+
+    dest = UPLOAD_DIR / f"force_{account_id}_{int(datetime.utcnow().timestamp())}_{Path(file.filename).name}"
+    with dest.open('wb') as f:
+        while chunk := await file.read(UPLOAD_CHUNK_BYTES):
+            f.write(chunk)
+    try:
+        result = ingest_flex_only(
+            dest, account_id=account_id, user=user['username'],
+            flex_filename=file.filename,
+            force_accept=True, force_reason=reason)
+    except DuplicateFileError as exc:
+        raise HTTPException(409, str(exc))
+    except NotSeededError as exc:
+        raise HTTPException(400, str(exc))
+    except IngestError as exc:
+        # Includes parse errors, currency mismatch, multi-account, etc.
+        raise HTTPException(400, str(exc))
+    return _serialise_ingest_result(result)
+
+
 @app.post("/sessions/{session_id}/close")
 def close_session_endpoint(session_id: int,
                            user: dict = Depends(require_role('ops', 'admin'))):
@@ -2246,22 +2749,160 @@ def export_session(session_id: int, user: dict = Depends(current_user)):
         swift_by_row = {s['_row_number']: s for s in swift_txns}
         flex_by_row = {f['_row_number']: f for f in flex_txns}
 
+        # Bulk-load open_items referenced by carry-forward assignments
+        # so the export can show the prior-session counterpart instead
+        # of dropping the row. Carry-forward writes assignments with
+        # one side = 0 (placeholder) and source='auto_carry' — without
+        # this lookup the JOIN-style match-by-row drops every Tier-1
+        # carry-forward clear, leaving the Matched sheet empty even
+        # when the engine cleared everything.
+        carry_oi_ids = [a['open_item_id'] for a in confirmed
+                        if a['open_item_id'] is not None]
+        oi_by_id: dict[int, dict] = {}
+        if carry_oi_ids:
+            placeholders = ','.join('?' * len(carry_oi_ids))
+            for oi in conn.execute(
+                f"SELECT * FROM open_items WHERE id IN ({placeholders})",
+                carry_oi_ids,
+            ).fetchall():
+                oi_by_id[oi['id']] = dict(oi)
+
+        def _flex_from_open_item(oi: dict) -> dict:
+            return {
+                '_source': 'flexcube_carry',
+                '_row_number': oi['src_row_number'],
+                '_used': False,
+                'trn_ref': oi.get('ref'),
+                'ac_branch': None, 'ac_no': None,
+                'booking_date': oi.get('value_date'),
+                'value_date': oi.get('value_date'),
+                'type': oi.get('sign'),  # 'CR' / 'DR'
+                'narration': oi.get('narration'),
+                'amount': oi.get('amount'),
+                'ccy': None, 'module': None,
+                'external_ref': None, 'user_id': None,
+            }
+
+        def _swift_from_open_item(oi: dict) -> dict:
+            return {
+                '_source': 'swift_carry',
+                '_row_number': oi['src_row_number'],
+                '_used': False,
+                'value_date': oi.get('value_date'),
+                'amount': oi.get('amount'),
+                'sign': oi.get('sign'),  # 'C' / 'D'
+                'origin': None, 'type': None, 'status': None,
+                'book_date': None, 'our_ref': oi.get('ref'),
+                'their_ref': None,
+                'booking_text_1': oi.get('narration'),
+                'booking_text_2': None,
+            }
+
         matches = []
         for a in confirmed:
-            s = swift_by_row.get(a['swift_row'])
-            f = flex_by_row.get(a['flex_row'])
-            if s is None or f is None:
-                continue  # shouldn't happen; skip defensively
-            s['_used'] = True
-            f['_used'] = True
+            is_carry = a['open_item_id'] is not None
+            if is_carry:
+                oi = oi_by_id.get(a['open_item_id'])
+                if oi is None:
+                    continue
+                # The 0-side comes from the prior session's open_item;
+                # the non-zero side is a real row in this session.
+                if a['swift_row'] == 0 and a['flex_row'] != 0:
+                    s = _swift_from_open_item(oi)
+                    f = flex_by_row.get(a['flex_row'])
+                    if f is not None:
+                        f['_used'] = True
+                elif a['flex_row'] == 0 and a['swift_row'] != 0:
+                    s = swift_by_row.get(a['swift_row'])
+                    f = _flex_from_open_item(oi)
+                    if s is not None:
+                        s['_used'] = True
+                else:
+                    continue
+                if s is None or f is None:
+                    continue
+            else:
+                s = swift_by_row.get(a['swift_row'])
+                f = flex_by_row.get(a['flex_row'])
+                if s is None or f is None:
+                    continue
+                s['_used'] = True
+                f['_used'] = True
             matches.append({'swift': s, 'flex': f, 'tier': a['tier'], 'reason': a['reason']})
 
         out_name = f"session_{session_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
         out_path = EXPORT_DIR / out_name
-        write_report(
-            matches, swift_txns, flex_txns,
-            Path(sess['swift_filename']), Path(sess['flex_filename']), out_path,
-        )
+        # Dispatch by session_kind. Two-sided 'recon' sessions keep the
+        # historical four-sheet layout; one-sided 'seed' / 'flex_delta'
+        # sessions get the relabeled writer with anchor + period +
+        # carry-forward + open-items info that the legacy writer didn't
+        # know how to surface.
+        kind = sess['session_kind'] if 'session_kind' in sess.keys() else 'recon'
+        if kind in ('seed', 'flex_delta'):
+            # Pull the open-items roll-up from the audit log entry the
+            # ingest path / run_matching emits — that's where the
+            # carried + seeded counts live (the session row carries
+            # cumulative totals only).
+            audit = conn.execute(
+                "SELECT details FROM audit_log "
+                "WHERE session_id=? AND action IN ('flex_delta_loaded', "
+                "      'flex_delta_force_accepted', 'session_matched') "
+                "ORDER BY id DESC LIMIT 5",
+                (session_id,),
+            ).fetchall()
+            seeded = cleared = 0
+            anchor_before = anchor_after = None
+            file_opening = None
+            force_accept = False
+            for a in audit:
+                try:
+                    details = json.loads(a['details'])
+                except Exception:
+                    continue
+                if 'open_items_seeded' in details and not seeded:
+                    seeded = details['open_items_seeded']
+                if 'open_items_carried' in details and not cleared:
+                    cleared = details['open_items_carried']
+                if details.get('anchor_before') is not None and anchor_before is None:
+                    anchor_before = details['anchor_before']
+                if details.get('anchor_after') is not None and anchor_after is None:
+                    anchor_after = details['anchor_after']
+                if details.get('opening_balance') is not None and file_opening is None:
+                    file_opening = details['opening_balance']
+                if details.get('force_accept'):
+                    force_accept = True
+            # Continuity gate delta: file.opening − prior_anchor.
+            # 0 = clean chain; non-zero only when force-accepted (the
+            # ingest path raises ContinuityBreakError and skips the
+            # session entirely otherwise).
+            continuity_delta = None
+            if file_opening is not None and anchor_before is not None:
+                continuity_delta = round(float(file_opening) - float(anchor_before), 4)
+            session_meta = {
+                'kind':                 kind,
+                'account_label':        sess['account_label'],
+                'currency':             sess['flex_currency'] or sess['flex_balance_currency'],
+                'period_start':         sess['opening_balance_date'],
+                'period_end':           sess['closing_balance_date'],
+                'flex_opening_balance': sess['flex_opening_balance'],
+                'flex_closing_balance': sess['flex_closing_balance'],
+                'anchor_before':        anchor_before,
+                'anchor_after':         anchor_after,
+                'open_items_seeded':    seeded,
+                'open_items_cleared':   cleared,
+                'force_accept':         force_accept,
+                'continuity_delta':     continuity_delta,
+            }
+            write_one_sided_report(
+                matches, swift_txns, flex_txns,
+                Path(sess['flex_filename']), out_path,
+                session_meta=session_meta,
+            )
+        else:
+            write_report(
+                matches, swift_txns, flex_txns,
+                Path(sess['swift_filename']), Path(sess['flex_filename']), out_path,
+            )
 
         now = datetime.utcnow().isoformat()
         conn.execute(
@@ -2314,6 +2955,7 @@ def get_audit(session_id: int,
 
 ACCOUNT_TYPES = ('cash_nostro', 'mobile_wallet')
 MOBILE_MONEY_PROVIDERS = ('mpesa', 'mtn_momo', 'airtel_money', 'orange_money', 'tigo_pesa', 'other')
+ACCOUNT_RECON_TYPES = ('two_sided', 'one_sided')
 
 
 class AccountPayload(BaseModel):
@@ -2321,7 +2963,10 @@ class AccountPayload(BaseModel):
     shortname: Optional[str] = None
     access_area: Optional[str] = None
     bic: Optional[str] = None
-    swift_account: str
+    # one-sided accounts have no SWIFT counterpart; the form passes ''
+    # (the empty-string sentinel that satisfies the NOT NULL + UNIQUE
+    # column without forcing a fake BIC pair).
+    swift_account: Optional[str] = None
     flex_ac_no: str
     currency: str
     notes: Optional[str] = None
@@ -2332,6 +2977,11 @@ class AccountPayload(BaseModel):
     provider: Optional[str] = None
     msisdn: Optional[str] = None
     short_code: Optional[str] = None
+    # Recon mode. 'two_sided' (default) = paired SWIFT + Flex (existing
+    # behaviour). 'one_sided' = Flex-only GL with no SWIFT counterpart;
+    # the scanner skips SWIFT pairing and applies the proof-seed +
+    # continuity-chain flow.
+    account_recon_type: Optional[str] = 'two_sided'
 
 
 @app.get("/accounts")
@@ -2364,24 +3014,178 @@ def list_accounts(account_type: Optional[str] = None,
             f"ORDER BY COALESCE(access_area, 'zzz'), COALESCE(shortname, label)",
             (*params, *extra_params),
         ).fetchall()
-        return [dict(r) for r in rows]
+        accounts = [dict(r) for r in rows]
+        # Rolling-state enrichment: open-items count + most recent
+        # session per account. Lets the cash-accounts UI show
+        # "17,997 open items · last delta session #115 · 30-APR" per
+        # account without each row firing its own request.
+        if accounts:
+            ids = [a['id'] for a in accounts]
+            placeholders = ','.join('?' * len(ids))
+            oi_counts = {r[0]: r[1] for r in conn.execute(
+                f"SELECT account_id, COUNT(*) FROM open_items "
+                f"WHERE status='open' AND account_id IN ({placeholders}) "
+                f"GROUP BY account_id", ids).fetchall()}
+            latest = {r['account_id']: dict(r) for r in conn.execute(
+                f"SELECT s.account_id, s.id, s.session_kind, s.created_at, "
+                f"       s.closing_balance_date, s.flex_balance_as_of "
+                f"FROM sessions s "
+                f"JOIN ( "
+                f"  SELECT account_id, MAX(id) AS max_id "
+                f"  FROM sessions WHERE account_id IN ({placeholders}) "
+                f"  GROUP BY account_id "
+                f") m ON m.account_id = s.account_id AND m.max_id = s.id",
+                ids).fetchall()}
+            for a in accounts:
+                a['open_items_count'] = oi_counts.get(a['id'], 0)
+                last = latest.get(a['id'])
+                if last:
+                    a['last_session_id']        = last['id']
+                    a['last_session_kind']      = last['session_kind']
+                    a['last_session_as_of']     = (last['closing_balance_date']
+                                                     or last['flex_balance_as_of'])
+                else:
+                    a['last_session_id']        = None
+                    a['last_session_kind']      = None
+                    a['last_session_as_of']     = None
+        return accounts
     finally:
         conn.close()
+
+
+class AccessAreaPayload(BaseModel):
+    name: str
+    parent: Optional[str] = None
+
+
+class AccessAreaPatchPayload(BaseModel):
+    name: Optional[str] = None
+    parent: Optional[str] = None
+    active: Optional[int] = None
 
 
 @app.get("/access-areas")
-def list_access_areas(user: dict = Depends(current_user)):
+def list_access_areas(include_inactive: bool = False,
+                      with_usage: bool = False,
+                      user: dict = Depends(current_user)):
     """Used to populate the Access area dropdown. Ops and admin both see this
-    so account creation/edit screens can bind to the same registry."""
+    so account creation/edit screens can bind to the same registry.
+
+    include_inactive — admin admin-page toggle to surface deactivated rows.
+    with_usage — adds an `accounts_count` column derived from a join on
+    `accounts.access_area`. Off by default because the count costs an extra
+    query; the admin page opts in."""
     conn = get_conn()
     try:
+        where = "" if include_inactive else "WHERE active=1"
         rows = conn.execute(
-            "SELECT id, name, parent, active FROM access_areas "
-            "WHERE active=1 ORDER BY name"
+            f"SELECT id, name, parent, active, created_at, created_by "
+            f"FROM access_areas {where} ORDER BY name"
         ).fetchall()
-        return [dict(r) for r in rows]
+        out = [dict(r) for r in rows]
+        if with_usage:
+            counts = {r['name']: r['n'] for r in conn.execute(
+                "SELECT access_area AS name, COUNT(*) AS n FROM accounts "
+                "WHERE active=1 AND access_area IS NOT NULL "
+                "GROUP BY access_area"
+            ).fetchall()}
+            for o in out:
+                o['accounts_count'] = counts.get(o['name'], 0)
+        return out
     finally:
         conn.close()
+
+
+@app.post("/access-areas")
+def create_access_area(payload: AccessAreaPayload,
+                       user: dict = Depends(require_role('admin'))):
+    name = (payload.name or '').strip()
+    if not name:
+        raise HTTPException(400, "name is required.")
+    parent = (payload.parent or '').strip() or None
+    conn = get_conn()
+    try:
+        now = datetime.utcnow().isoformat()
+        try:
+            cur = conn.execute(
+                "INSERT INTO access_areas (name, parent, active, created_at, created_by) "
+                "VALUES (?,?,1,?,?)",
+                (name, parent, now, user['username']),
+            )
+        except Exception as exc:
+            if 'UNIQUE' in str(exc):
+                raise HTTPException(409, f"Access area {name!r} already exists.")
+            raise
+        new_id = cur.lastrowid
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (NULL, 'access_area_created', ?, ?, ?)",
+            (user['username'], now, json.dumps({"id": new_id, "name": name,
+                                                  "parent": parent})),
+        )
+        conn.commit()
+        return {"id": new_id, "name": name, "parent": parent, "active": 1}
+    finally:
+        conn.close()
+
+
+@app.patch("/access-areas/{area_id}")
+def update_access_area(area_id: int, payload: AccessAreaPatchPayload,
+                       user: dict = Depends(require_role('admin'))):
+    """Rename, reparent, or activate/deactivate. Renames do NOT cascade to
+    existing accounts.access_area strings (the link is by name, not by FK).
+    The admin UI flags this so the operator knows to update affected
+    accounts manually if they care about historical visibility."""
+    conn = get_conn()
+    try:
+        existing = conn.execute(
+            "SELECT * FROM access_areas WHERE id=?", (area_id,)
+        ).fetchone()
+        if existing is None:
+            raise HTTPException(404, f"Access area id={area_id} not found.")
+        fields, values = [], []
+        changes: dict = {}
+        if payload.name is not None:
+            new_name = payload.name.strip()
+            if not new_name:
+                raise HTTPException(400, "name cannot be blank.")
+            fields.append("name=?"); values.append(new_name)
+            changes['name'] = new_name
+        if payload.parent is not None:
+            new_parent = payload.parent.strip() or None
+            fields.append("parent=?"); values.append(new_parent)
+            changes['parent'] = new_parent
+        if payload.active is not None:
+            fields.append("active=?"); values.append(int(payload.active))
+            changes['active'] = int(payload.active)
+        if not fields:
+            raise HTTPException(400, "No fields to update.")
+        values.append(area_id)
+        try:
+            conn.execute(
+                f"UPDATE access_areas SET {', '.join(fields)} WHERE id=?", values,
+            )
+        except Exception as exc:
+            if 'UNIQUE' in str(exc):
+                raise HTTPException(409, f"Another access area already has that name.")
+            raise
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (NULL, 'access_area_updated', ?, ?, ?)",
+            (user['username'], datetime.utcnow().isoformat(),
+             json.dumps({"id": area_id, "previous_name": existing['name'],
+                          "changes": changes})),
+        )
+        conn.commit()
+        row = conn.execute("SELECT * FROM access_areas WHERE id=?", (area_id,)).fetchone()
+        return dict(row)
+    finally:
+        conn.close()
+
+
+@app.get("/access-areas-admin")
+def access_areas_admin_page(request: Request):
+    return templates.TemplateResponse(request, "access_areas_admin.html")
 
 
 # ---------------------------------------------------------------------------
@@ -3633,9 +4437,20 @@ def create_account(payload: AccountPayload, user: dict = Depends(require_role('a
     account_type = (payload.account_type or 'cash_nostro').strip()
     if account_type not in ACCOUNT_TYPES:
         raise HTTPException(400, f"account_type must be one of {ACCOUNT_TYPES}")
+    recon_type = (payload.account_recon_type or 'two_sided').strip()
+    if recon_type not in ACCOUNT_RECON_TYPES:
+        raise HTTPException(400,
+            f"account_recon_type must be one of {ACCOUNT_RECON_TYPES}")
     provider = (payload.provider or '').strip() or None
     msisdn = (payload.msisdn or '').strip() or None
     short_code = (payload.short_code or '').strip() or None
+    # one-sided accounts: SWIFT slot is the empty-string sentinel.
+    # two-sided: must have a real SWIFT account.
+    swift_account = (payload.swift_account or '').strip()
+    if recon_type == 'two_sided' and not swift_account:
+        raise HTTPException(400,
+            "Two-sided accounts require a SWIFT account number. Set "
+            "account_recon_type='one_sided' for Flex-only GLs.")
 
     if account_type == 'mobile_wallet':
         if provider is None:
@@ -3670,12 +4485,12 @@ def create_account(payload: AccountPayload, user: dict = Depends(require_role('a
             cur = conn.execute(
                 "INSERT INTO accounts (label, shortname, access_area, bic, swift_account, "
                 "flex_ac_no, currency, notes, created_at, created_by, "
-                "account_type, provider, msisdn, short_code) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "account_type, provider, msisdn, short_code, account_recon_type) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (payload.label, payload.shortname, payload.access_area, payload.bic,
-                 payload.swift_account, payload.flex_ac_no, payload.currency,
+                 swift_account, payload.flex_ac_no, payload.currency,
                  payload.notes, now, username,
-                 account_type, provider, msisdn, short_code),
+                 account_type, provider, msisdn, short_code, recon_type),
             )
         except Exception as exc:
             if 'UNIQUE' in str(exc):
@@ -3688,11 +4503,138 @@ def create_account(payload: AccountPayload, user: dict = Depends(require_role('a
             (username, now, json.dumps({
                 "account_id": cur.lastrowid, "label": payload.label,
                 "account_type": account_type, "provider": provider,
+                "account_recon_type": recon_type,
             })),
         )
         conn.commit()
         return {"id": cur.lastrowid, "label": payload.label,
-                "account_type": account_type}
+                "account_type": account_type,
+                "account_recon_type": recon_type}
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 — proof seeding + clear-anchor admin actions.
+# ---------------------------------------------------------------------------
+
+def _serialise_ingest_result(r) -> dict:
+    """Tiny helper used by both seed-proof and (later) one-sided delta
+    endpoints so the JSON shape is consistent."""
+    return {
+        'session_id': r.session_id,
+        'swift_rows': r.swift_rows,
+        'flex_rows':  r.flex_rows,
+        'pending_assignments': r.pending_assignments,
+        'open_items_seeded':   r.open_items_seeded,
+        'open_items_cleared':  r.open_items_cleared,
+        'account_label':       r.account_label,
+        'currency':            r.currency,
+    }
+
+
+@app.post("/accounts/{account_id}/seed-proof")
+async def seed_proof_for_account(
+    account_id: int,
+    file: UploadFile = File(...),
+    user: dict = Depends(require_role('admin')),
+):
+    """Anchor the account's balance chain by loading a Day-0 proof
+    file. Admin-only. Single multipart upload — proof shape is
+    auto-detected by `proof_loader.load_proof`.
+
+    Refuses if the account is already seeded (must clear-anchor first),
+    if the file's SHA-256 has already been ingested, or if the proof
+    file's currency disagrees with the account.
+    """
+    from ingest import (AlreadySeededError, DuplicateFileError, IngestError,
+                          ingest_proof_seed)
+    if not file.filename:
+        raise HTTPException(400, "No file uploaded.")
+
+    # Stash the upload to a temp path so the proof loader can openpyxl-read
+    # from disk (it needs random access; can't be streamed).
+    dest = UPLOAD_DIR / f"proof_{account_id}_{int(datetime.utcnow().timestamp())}_{Path(file.filename).name}"
+    with dest.open('wb') as f:
+        while chunk := await file.read(UPLOAD_CHUNK_BYTES):
+            f.write(chunk)
+
+    try:
+        result = ingest_proof_seed(dest, account_id, user=user['username'],
+                                    flex_filename=file.filename)
+    except AlreadySeededError as exc:
+        raise HTTPException(409, str(exc))
+    except DuplicateFileError as exc:
+        raise HTTPException(409, str(exc))
+    except IngestError as exc:
+        raise HTTPException(400, str(exc))
+    return _serialise_ingest_result(result)
+
+
+class ClearAnchorPayload(BaseModel):
+    reason: str
+
+
+@app.post("/accounts/{account_id}/clear-anchor")
+def clear_account_anchor(
+    account_id: int,
+    payload: ClearAnchorPayload,
+    user: dict = Depends(require_role('admin')),
+):
+    """Reset an account's balance chain — wipes last_closing_balance /
+    date / session_id back to NULL so a fresh proof can seed it again.
+    Admin-only and requires a non-empty reason which is recorded in the
+    audit log alongside the prior anchor value, so the chain history
+    stays auditable.
+
+    Crucially, this does NOT delete the prior seed/delta sessions or
+    their open items — those stay intact for historical reporting. Only
+    the *anchor* is reset; if a new proof is loaded afterwards, it
+    creates a new seed session and starts a fresh chain.
+    """
+    reason = (payload.reason or '').strip()
+    if not reason:
+        raise HTTPException(400,
+            "A reason is required when clearing an account's anchor — "
+            "it goes into the audit log so the chain reset is traceable.")
+
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            "SELECT id, label, last_closing_balance, last_closing_date, last_session_id "
+            "FROM accounts WHERE id=? AND active=1",
+            (account_id,),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(404, "Account not found or inactive.")
+        prior = dict(row)
+        if prior['last_closing_balance'] is None:
+            raise HTTPException(409,
+                f"Account {prior['label']!r} is not seeded — there is no "
+                "anchor to clear.")
+
+        now = datetime.utcnow().isoformat()
+        conn.execute(
+            "UPDATE accounts SET last_closing_balance=NULL, last_closing_date=NULL, "
+            "last_session_id=NULL WHERE id=?", (account_id,))
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (NULL, 'account_anchor_cleared', ?, ?, ?)",
+            (user['username'], now, json.dumps({
+                'account_id': account_id,
+                'account_label': prior['label'],
+                'prior_anchor': prior['last_closing_balance'],
+                'prior_anchor_date': prior['last_closing_date'],
+                'prior_anchor_session_id': prior['last_session_id'],
+                'reason': reason,
+            })),
+        )
+        conn.commit()
+        return {
+            'account_id': account_id,
+            'cleared': True,
+            'prior_anchor': prior['last_closing_balance'],
+        }
     finally:
         conn.close()
 
@@ -3896,7 +4838,8 @@ def list_open_items(
 
         rows = conn.execute(
             f"SELECT oi.*, a.shortname AS account_shortname, a.label AS account_label, "
-            f"       a.access_area AS account_access_area, a.currency AS account_currency "
+            f"       a.access_area AS account_access_area, a.currency AS account_currency, "
+            f"       a.account_recon_type AS account_recon_type "
             f"FROM open_items oi LEFT JOIN accounts a ON a.id = oi.account_id "
             f"WHERE {' AND '.join(where)} "
             f"ORDER BY oi.opened_at LIMIT ?",
@@ -3913,6 +4856,61 @@ def list_open_items(
             item['age_days'] = age_days
             item['age_bucket'] = _age_bucket(age_days)
             out.append(item)
+        return out
+    finally:
+        conn.close()
+
+
+@app.get("/open-items/by-account")
+def open_items_by_account(
+    status: str = 'open',
+    user: dict = Depends(current_user),
+    scope: Optional[List[str]] = Depends(active_scope),
+):
+    """Per-account roll-up for the Open Items directory view. Returns
+    one row per account that has at least one open item in the given
+    status, with: count, total amount, currency, recon_type, and an
+    aging-bucket histogram. Drives the cash-account directory cards
+    on the Open Items page so the operator can scan all accounts at
+    a glance and drill into a specific one."""
+    conn = get_conn()
+    try:
+        scope_sql, scope_params = _scope_clause(scope, alias='a')
+        rows = conn.execute(
+            f"SELECT oi.account_id, oi.amount, oi.opened_at, oi.source_side, "
+            f"       a.shortname, a.label, a.currency, a.account_recon_type, a.access_area "
+            f"FROM open_items oi JOIN accounts a ON a.id = oi.account_id "
+            f"WHERE oi.status = ? AND {scope_sql} AND a.id IS NOT NULL",
+            (status, *scope_params),
+        ).fetchall()
+        now = datetime.utcnow()
+        by_account: dict[int, dict] = {}
+        for r in rows:
+            aid = r['account_id']
+            d = by_account.get(aid)
+            if d is None:
+                d = {
+                    'account_id': aid,
+                    'shortname': r['shortname'],
+                    'label': r['label'],
+                    'currency': r['currency'],
+                    'recon_type': r['account_recon_type'],
+                    'access_area': r['access_area'],
+                    'count': 0,
+                    'total_amount': 0.0,
+                    'buckets': {'0-7': 0, '8-30': 0, '31-90': 0, '90+': 0},
+                    'by_side': {'swift': 0, 'flex': 0},
+                }
+                by_account[aid] = d
+            d['count'] += 1
+            d['total_amount'] += r['amount'] or 0
+            b = _age_bucket(_age_in_days(r['opened_at'], now))
+            d['buckets'][b] += 1
+            d['by_side'][r['source_side']] = d['by_side'].get(r['source_side'], 0) + 1
+        # Round totals + sort by count desc so busiest accounts surface first.
+        out = sorted(by_account.values(), key=lambda d: -d['count'])
+        for d in out:
+            d['total_amount'] = round(d['total_amount'], 2)
         return out
     finally:
         conn.close()
@@ -4342,9 +5340,13 @@ def split_group_decision(
         if not rows:
             raise HTTPException(404, "No pending assignments found for this split group")
 
-        new_status = 'confirmed' if payload.action == 'confirm' else 'rejected'
         now = datetime.utcnow().isoformat()
         ids = [r['id'] for r in rows]
+
+        if payload.action == 'confirm' and REQUIRE_APPROVAL:
+            new_status = 'pending_approval'
+        else:
+            new_status = 'confirmed' if payload.action == 'confirm' else 'rejected'
 
         for aid in ids:
             conn.execute(
@@ -4355,10 +5357,18 @@ def split_group_decision(
                 "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
                 "VALUES (?, ?, ?, ?, ?)",
                 (session_id, f"split_group_{payload.action}", user['username'], now,
-                 json.dumps({"split_group_id": group_id, "assignment_id": aid})),
+                 json.dumps({"split_group_id": group_id, "assignment_id": aid,
+                             "status_set": new_status})),
+            )
+        if new_status == 'pending_approval':
+            conn.executemany(
+                "INSERT INTO approval_requests (assignment_id, requested_by, requested_at) "
+                "VALUES (?, ?, ?)",
+                [(aid, user['username'], now) for aid in ids],
             )
         conn.commit()
-        return {"split_group_id": group_id, "action": payload.action, "count": len(ids)}
+        return {"split_group_id": group_id, "action": payload.action,
+                "status_set": new_status, "count": len(ids)}
     finally:
         conn.close()
 
@@ -4529,6 +5539,654 @@ def put_tolerance(account_id: int, payload: TolerancePayload,
                 "updated_at": now, "updated_by": user['username']}
     finally:
         conn.close()
+
+
+# --- /match-tiers — visual rule builder backend ----------------------------
+# Replaces the hardcoded T1-T4 engine logic (now data-driven via
+# the match_tiers table). Each tier is a list of conditions (AND'd);
+# the engine walks tiers by priority and emits the first match. See
+# recon_engine.CONDITION_OPS for the supported operators and
+# project_visual_tier_builder.md memory for the full plan.
+
+VALID_RECON_TYPES = {'one_sided', 'two_sided', 'mobile_money', 'cards'}
+
+# Mirror of recon_engine.CONDITION_OPS keys — kept here to validate
+# inbound payloads without importing the engine module on every request.
+VALID_CONDITION_KEYS = {
+    'amount.equal_within_tol', 'amount.exact',
+    'value_date.equal', 'value_date.within_days',
+    'sign.mirror',
+    'ref.in_other_narration', 'ref.symmetric_in_narration',
+    'narration.contains', 'field.equal',
+}
+
+
+class MatchTierConditionPayload(BaseModel):
+    field: str
+    op: str
+    params: Optional[dict] = None
+
+
+class MatchTierPayload(BaseModel):
+    account_id: Optional[int] = None  # NULL = default for recon_type
+    recon_type: str
+    name: str
+    priority: int
+    conditions: list[MatchTierConditionPayload]
+    enabled: bool = True
+    auto_confirm: bool = False
+
+
+def _validate_tier_payload(p: MatchTierPayload) -> None:
+    if p.recon_type not in VALID_RECON_TYPES:
+        raise HTTPException(400, f"recon_type must be one of {sorted(VALID_RECON_TYPES)}")
+    if not p.name.strip():
+        raise HTTPException(400, "name is required")
+    if not p.conditions:
+        raise HTTPException(400, "tier must have at least one condition")
+    for c in p.conditions:
+        key = f"{c.field}.{c.op}"
+        if key not in VALID_CONDITION_KEYS:
+            raise HTTPException(400, f"unknown condition '{key}' — must be one of {sorted(VALID_CONDITION_KEYS)}")
+
+
+def _serialize_tier(row) -> dict:
+    """DB row → JSON-friendly dict, parsing conditions_json."""
+    d = dict(row)
+    try:
+        d['conditions'] = json.loads(d.pop('conditions_json'))
+    except Exception:
+        d['conditions'] = []
+    d['enabled'] = bool(d['enabled'])
+    d['auto_confirm'] = bool(d['auto_confirm'])
+    return d
+
+
+@app.get("/match-tiers")
+def list_match_tiers(
+    account_id: Optional[int] = None,
+    recon_type: Optional[str] = None,
+    user: dict = Depends(current_user),
+):
+    """List tier definitions. Filter by account_id (use 0 or omit for
+    defaults — i.e. account_id IS NULL) and/or recon_type. Ordered by
+    priority so the UI renders them in evaluation order."""
+    conn = get_conn()
+    try:
+        where = []
+        params: list = []
+        if account_id is not None:
+            if account_id == 0:
+                where.append("account_id IS NULL")
+            else:
+                where.append("account_id = ?"); params.append(account_id)
+        if recon_type is not None:
+            if recon_type not in VALID_RECON_TYPES:
+                raise HTTPException(400, f"recon_type must be one of {sorted(VALID_RECON_TYPES)}")
+            where.append("recon_type = ?"); params.append(recon_type)
+        sql = "SELECT * FROM match_tiers"
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY priority, id"
+        rows = conn.execute(sql, params).fetchall()
+        return [_serialize_tier(r) for r in rows]
+    finally:
+        conn.close()
+
+
+@app.get("/match-tiers/{tier_id}")
+def get_match_tier(tier_id: int, user: dict = Depends(current_user)):
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT * FROM match_tiers WHERE id=?", (tier_id,)).fetchone()
+        if row is None:
+            raise HTTPException(404, "Tier not found")
+        return _serialize_tier(row)
+    finally:
+        conn.close()
+
+
+@app.post("/match-tiers")
+def create_match_tier(payload: MatchTierPayload,
+                       user: dict = Depends(require_role('admin'))):
+    _validate_tier_payload(payload)
+    now = datetime.utcnow().isoformat()
+    conds = [c.model_dump(exclude_none=True) for c in payload.conditions]
+    conn = get_conn()
+    try:
+        cur = conn.execute(
+            "INSERT INTO match_tiers (account_id, recon_type, name, priority, "
+            "  conditions_json, enabled, auto_confirm, legacy_tier, created_at, created_by) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)",
+            (payload.account_id, payload.recon_type, payload.name.strip(),
+             payload.priority, json.dumps(conds),
+             1 if payload.enabled else 0,
+             1 if payload.auto_confirm else 0,
+             now, user['username']),
+        )
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (NULL, 'match_tier_created', ?, ?, ?)",
+            (user['username'], now, json.dumps({
+                'tier_id': cur.lastrowid, **payload.model_dump(exclude_none=True),
+            })),
+        )
+        conn.commit()
+        return {"id": cur.lastrowid}
+    finally:
+        conn.close()
+
+
+class MatchTierUpdatePayload(BaseModel):
+    name: Optional[str] = None
+    priority: Optional[int] = None
+    conditions: Optional[list[MatchTierConditionPayload]] = None
+    enabled: Optional[bool] = None
+    auto_confirm: Optional[bool] = None
+
+
+@app.put("/match-tiers/{tier_id}")
+def update_match_tier(tier_id: int, payload: MatchTierUpdatePayload,
+                      user: dict = Depends(require_role('admin'))):
+    """Partial update — any field set on the payload overwrites; others
+    keep their existing value. Common use: flip `enabled` to mute a
+    tier without changing its conditions."""
+    conn = get_conn()
+    try:
+        existing = conn.execute("SELECT * FROM match_tiers WHERE id=?", (tier_id,)).fetchone()
+        if existing is None:
+            raise HTTPException(404, "Tier not found")
+
+        sets = []
+        params: list = []
+        if payload.name is not None:
+            if not payload.name.strip():
+                raise HTTPException(400, "name cannot be blank")
+            sets.append("name=?"); params.append(payload.name.strip())
+        if payload.priority is not None:
+            sets.append("priority=?"); params.append(payload.priority)
+        if payload.conditions is not None:
+            if not payload.conditions:
+                raise HTTPException(400, "tier must have at least one condition")
+            for c in payload.conditions:
+                key = f"{c.field}.{c.op}"
+                if key not in VALID_CONDITION_KEYS:
+                    raise HTTPException(400, f"unknown condition '{key}'")
+            conds = [c.model_dump(exclude_none=True) for c in payload.conditions]
+            sets.append("conditions_json=?"); params.append(json.dumps(conds))
+        if payload.enabled is not None:
+            sets.append("enabled=?"); params.append(1 if payload.enabled else 0)
+        if payload.auto_confirm is not None:
+            sets.append("auto_confirm=?"); params.append(1 if payload.auto_confirm else 0)
+
+        if not sets:
+            return _serialize_tier(existing)
+        now = datetime.utcnow().isoformat()
+        sets.append("updated_at=?"); params.append(now)
+        params.append(tier_id)
+        conn.execute(f"UPDATE match_tiers SET {', '.join(sets)} WHERE id=?", params)
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (NULL, 'match_tier_updated', ?, ?, ?)",
+            (user['username'], now, json.dumps({
+                'tier_id': tier_id,
+                'changes': payload.model_dump(exclude_none=True),
+            })),
+        )
+        conn.commit()
+        return _serialize_tier(conn.execute(
+            "SELECT * FROM match_tiers WHERE id=?", (tier_id,)
+        ).fetchone())
+    finally:
+        conn.close()
+
+
+class MatchTierReorderPayload(BaseModel):
+    """Bulk priority update — list of tier_ids in the desired order.
+    Each tier's priority is rewritten to its 1-indexed position."""
+    tier_ids: list[int]
+
+
+@app.post("/match-tiers/reorder")
+def reorder_match_tiers(payload: MatchTierReorderPayload,
+                         user: dict = Depends(require_role('admin'))):
+    """Bulk-rewrite priorities so the engine evaluates tiers in the
+    order the operator dragged them. Wrapped in a single transaction
+    so a partial reorder can never leave the table half-changed."""
+    if not payload.tier_ids:
+        return {"updated": 0}
+    conn = get_conn()
+    try:
+        existing = conn.execute(
+            f"SELECT id FROM match_tiers WHERE id IN ({','.join('?' * len(payload.tier_ids))})",
+            payload.tier_ids,
+        ).fetchall()
+        existing_ids = {r['id'] for r in existing}
+        missing = [tid for tid in payload.tier_ids if tid not in existing_ids]
+        if missing:
+            raise HTTPException(400, f"Unknown tier ids: {missing}")
+        now = datetime.utcnow().isoformat()
+        for new_priority, tier_id in enumerate(payload.tier_ids, start=1):
+            conn.execute(
+                "UPDATE match_tiers SET priority=?, updated_at=? WHERE id=?",
+                (new_priority, now, tier_id),
+            )
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (NULL, 'match_tier_reordered', ?, ?, ?)",
+            (user['username'], now, json.dumps({'order': payload.tier_ids})),
+        )
+        conn.commit()
+        return {"updated": len(payload.tier_ids)}
+    finally:
+        conn.close()
+
+
+@app.delete("/match-tiers/{tier_id}")
+def delete_match_tier(tier_id: int,
+                       user: dict = Depends(require_role('admin'))):
+    """Hard-delete a tier. The seeded defaults (legacy_tier IS NOT NULL)
+    are deletable too — the engine just falls back to whatever rows
+    remain for that recon_type. To restore defaults, re-run init_db."""
+    conn = get_conn()
+    try:
+        existing = conn.execute("SELECT * FROM match_tiers WHERE id=?", (tier_id,)).fetchone()
+        if existing is None:
+            raise HTTPException(404, "Tier not found")
+        now = datetime.utcnow().isoformat()
+        conn.execute("DELETE FROM match_tiers WHERE id=?", (tier_id,))
+        conn.execute(
+            "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
+            "VALUES (NULL, 'match_tier_deleted', ?, ?, ?)",
+            (user['username'], now, json.dumps({
+                'tier_id': tier_id,
+                'snapshot': _serialize_tier(existing),
+            })),
+        )
+        conn.commit()
+        return {"deleted": tier_id}
+    finally:
+        conn.close()
+
+
+# --- Sample-pair API for the visual rule builder ---------------------------
+# The builder needs real example rows side-by-side so the operator can
+# click fields and see green/red feedback. We pull a known-good cleared
+# pair and 2-3 decoy pairs (rows that look similar by amount+date but
+# AREN'T the same transaction) from existing assignments + open_items.
+# Falls back to synthetic samples if no real data exists yet.
+
+@app.get("/match-tier-samples")
+def match_tier_sample_pairs(
+    account_id: Optional[int] = None,
+    recon_type: str = 'one_sided',
+    user: dict = Depends(current_user),
+):
+    """Return one cleared pair + a small set of decoy pairs for the
+    visual rule builder. Cleared pair = a real confirmed match (likely
+    a carry-forward Tier 1). Decoys = pairs that share amount+date but
+    have different ref linkage (showing why amount+date alone is unsafe)."""
+    if recon_type not in VALID_RECON_TYPES:
+        raise HTTPException(400, f"recon_type must be one of {sorted(VALID_RECON_TYPES)}")
+    conn = get_conn()
+    try:
+        # Find an account to source samples from. If account_id is given
+        # and has data, use it; otherwise pick any account whose recon
+        # type matches and has at least one confirmed assignment.
+        target_account = None
+        if account_id is not None:
+            target_account = conn.execute(
+                "SELECT id, label, shortname, account_recon_type FROM accounts WHERE id=?",
+                (account_id,),
+            ).fetchone()
+        if target_account is None:
+            target_account = conn.execute(
+                "SELECT a.id, a.label, a.shortname, a.account_recon_type "
+                "FROM accounts a JOIN sessions s ON s.account_id=a.id "
+                "JOIN assignments asg ON asg.session_id=s.id "
+                "WHERE a.account_recon_type=? AND asg.status='confirmed' "
+                "LIMIT 1",
+                (recon_type,),
+            ).fetchone()
+        if target_account is None:
+            return {
+                'account': None,
+                'cleared_pair': None,
+                'decoys': [],
+                'message': f'No {recon_type} accounts have confirmed matches yet — '
+                           'load a session and run matching first to populate sample data.',
+            }
+
+        # Cleared pair: prefer a carry-forward (open_item_id IS NOT NULL)
+        # so we have a real prior CR + today DR pair with proven linkage.
+        cleared_row = conn.execute(
+            "SELECT a.swift_row, a.flex_row, a.session_id, a.tier, a.reason, a.open_item_id "
+            "FROM assignments a JOIN sessions s ON s.id=a.session_id "
+            "WHERE s.account_id=? AND a.status='confirmed' "
+            "AND a.open_item_id IS NOT NULL "
+            "ORDER BY a.id DESC LIMIT 1",
+            (target_account['id'],),
+        ).fetchone()
+        if cleared_row is None:
+            # Fall back to any confirmed in-session pair (both sides in
+            # this session's tables).
+            cleared_row = conn.execute(
+                "SELECT a.swift_row, a.flex_row, a.session_id, a.tier, a.reason, a.open_item_id "
+                "FROM assignments a JOIN sessions s ON s.id=a.session_id "
+                "WHERE s.account_id=? AND a.status='confirmed' "
+                "AND a.swift_row > 0 AND a.flex_row > 0 "
+                "ORDER BY a.id DESC LIMIT 1",
+                (target_account['id'],),
+            ).fetchone()
+
+        cleared_pair = None
+        if cleared_row is not None:
+            cleared_pair = _build_sample_pair(conn, cleared_row, kind='cleared')
+
+        # Decoys: pull 3 other DR rows from the same account's history
+        # whose amount matches a CR somewhere in open_items but which
+        # WERE NOT actually cleared together. Each decoy is a (DR, CR)
+        # pair that shares amount+date but has different ref linkage —
+        # the exact false-positive case the policy is designed to avoid.
+        decoys = _find_decoy_pairs(conn, target_account['id'], limit=3,
+                                    exclude_assignment_id=None)
+
+        return {
+            'account': {
+                'id': target_account['id'],
+                'label': target_account['label'],
+                'shortname': target_account['shortname'],
+                'recon_type': target_account['account_recon_type'],
+            },
+            'cleared_pair': cleared_pair,
+            'decoys': decoys,
+        }
+    finally:
+        conn.close()
+
+
+def _build_sample_pair(conn, asg_row, kind: str) -> dict:
+    """Materialize a (DR/swift, CR/flex) sample pair from an assignment row.
+    Handles carry-forward (one side = 0, counterpart in open_items)."""
+    swift_data = None
+    flex_data = None
+    if asg_row['swift_row'] and asg_row['swift_row'] > 0:
+        s = conn.execute(
+            "SELECT * FROM swift_txns WHERE session_id=? AND row_number=?",
+            (asg_row['session_id'], asg_row['swift_row']),
+        ).fetchone()
+        if s is not None:
+            swift_data = dict(s)
+    if asg_row['flex_row'] and asg_row['flex_row'] > 0:
+        f = conn.execute(
+            "SELECT * FROM flex_txns WHERE session_id=? AND row_number=?",
+            (asg_row['session_id'], asg_row['flex_row']),
+        ).fetchone()
+        if f is not None:
+            flex_data = dict(f)
+    # Fill from open_item if either side was a carry-forward placeholder.
+    if asg_row['open_item_id']:
+        oi = conn.execute(
+            "SELECT * FROM open_items WHERE id=?", (asg_row['open_item_id'],),
+        ).fetchone()
+        if oi is not None:
+            oi = dict(oi)
+            if swift_data is None and oi['source_side'] == 'swift':
+                swift_data = {
+                    'row_number': oi['src_row_number'],
+                    'value_date': oi['value_date'],
+                    'amount': oi['amount'],
+                    'sign': oi['sign'],
+                    'our_ref': oi['ref'],
+                    'their_ref': None,
+                    'booking_text_1': oi['narration'],
+                    'booking_text_2': None,
+                    '_carry_forward': True,
+                }
+            if flex_data is None and oi['source_side'] == 'flex':
+                flex_data = {
+                    'row_number': oi['src_row_number'],
+                    'trn_ref': oi['ref'],
+                    'value_date': oi['value_date'],
+                    'booking_date': oi['value_date'],
+                    'type': oi['sign'],
+                    'narration': oi['narration'],
+                    'amount': oi['amount'],
+                    'module': None,
+                    'user_id': None,
+                    'external_ref': None,
+                    '_carry_forward': True,
+                }
+    return {
+        'kind': kind,
+        'tier': asg_row['tier'],
+        'reason': asg_row['reason'],
+        'swift': swift_data,
+        'flex': flex_data,
+    }
+
+
+@app.get("/match-tiers/{tier_id}/impact")
+def match_tier_impact(tier_id: int,
+                       lookback_sessions: int = 10,
+                       user: dict = Depends(current_user)):
+    """Historical replay: 'if I flipped this tier, how many recent
+    pairs would land differently?' Walks the last N sessions for the
+    tier's recon_type, evaluates each existing assignment's pair
+    against the tier's conditions, and reports:
+      - matched_today: pairs where the tier's conditions all pass on
+        the actual confirmed/pending pair (would still match)
+      - excluded_today: pairs where conditions DON'T all pass
+        (the tier would no longer claim them)
+      - newly_matchable: free DR/CR rows in those sessions where the
+        tier's conditions WOULD pass (not implemented in this MVP —
+        the historical row pool is too large to scan exhaustively
+        without a candidate cache)
+
+    Lightweight enough to run on demand from the tier list page; not a
+    substitute for re-running the full engine."""
+    from recon_engine import (
+        CONDITION_OPS, _ref_in_narration, _flex_ref_in_swift_narration,
+        MIRROR_SIGN, normalize_ref, Tolerance,
+    )
+    conn = get_conn()
+    try:
+        tier = conn.execute(
+            "SELECT * FROM match_tiers WHERE id=?", (tier_id,),
+        ).fetchone()
+        if tier is None:
+            raise HTTPException(404, "Tier not found")
+        try:
+            conditions = json.loads(tier['conditions_json']) or []
+        except Exception:
+            conditions = []
+
+        # Pick recent sessions matching this tier's recon_type. We map
+        # recon_type back to session_kind: one_sided → seed/flex_delta;
+        # two_sided → recon. Ignore tier rows with no recon_type.
+        kinds = {'one_sided': ('seed','flex_delta'),
+                 'two_sided': ('recon',),
+                 'mobile_money': ('mobile_money',),
+                 'cards': ('cards',)}.get(tier['recon_type'], ())
+        if not kinds:
+            return {'tier_id': tier_id, 'sessions_scanned': 0,
+                    'matched_today': 0, 'excluded_today': 0,
+                    'message': f"No sessions to scan for recon_type '{tier['recon_type']}'."}
+
+        ph = ','.join('?' * len(kinds))
+        sessions = conn.execute(
+            f"SELECT id FROM sessions WHERE session_kind IN ({ph}) "
+            f"ORDER BY id DESC LIMIT ?",
+            (*kinds, max(1, min(lookback_sessions, 50))),
+        ).fetchall()
+        if not sessions:
+            return {'tier_id': tier_id, 'sessions_scanned': 0,
+                    'matched_today': 0, 'excluded_today': 0,
+                    'message': "No sessions of this recon_type yet."}
+
+        session_ids = [s['id'] for s in sessions]
+        sph = ','.join('?' * len(session_ids))
+        assignments = conn.execute(
+            f"SELECT a.session_id, a.swift_row, a.flex_row, a.tier, a.status, a.open_item_id "
+            f"FROM assignments a "
+            f"WHERE a.session_id IN ({sph}) AND a.status IN ('pending','confirmed') "
+            f"AND a.swift_row > 0 AND a.flex_row > 0",
+            session_ids,
+        ).fetchall()
+
+        tol = Tolerance()
+        matched = excluded = 0
+        for asg in assignments:
+            s = conn.execute(
+                "SELECT * FROM swift_txns WHERE session_id=? AND row_number=?",
+                (asg['session_id'], asg['swift_row']),
+            ).fetchone()
+            f = conn.execute(
+                "SELECT * FROM flex_txns WHERE session_id=? AND row_number=?",
+                (asg['session_id'], asg['flex_row']),
+            ).fetchone()
+            if s is None or f is None:
+                continue
+            s = dict(s); f = dict(f)
+            s_ref = (s.get('our_ref') or '').strip()
+            s_norm = normalize_ref(s_ref)
+            s_has_ref = len(s_norm) >= tol.min_ref_len
+            ref_one_way = bool(s_has_ref and _ref_in_narration(s_ref, f))
+            ref_other = _flex_ref_in_swift_narration(f, s, tol.min_ref_len)
+            ctx = {
+                'amount_match': tol.amount_ok(s.get('amount') or 0, f.get('amount') or 0),
+                'ref_hit':      ref_one_way or ref_other,
+                'ref_one_way':  ref_one_way,
+                'same_date':    bool(s.get('value_date')) and f.get('value_date') == s.get('value_date'),
+                'sign_mirror':  MIRROR_SIGN.get(s.get('sign')) == f.get('type'),
+            }
+            ok = True
+            for c in conditions:
+                op_fn = CONDITION_OPS.get(f"{c.get('field','')}.{c.get('op','')}")
+                if op_fn is None or not op_fn(s, f, c.get('params') or {}, ctx):
+                    ok = False; break
+            if ok: matched += 1
+            else:  excluded += 1
+        return {
+            'tier_id': tier_id,
+            'tier_name': tier['name'],
+            'sessions_scanned': len(session_ids),
+            'pairs_evaluated': matched + excluded,
+            'matched_today': matched,
+            'excluded_today': excluded,
+            'enabled': bool(tier['enabled']),
+            'auto_confirm': bool(tier['auto_confirm']),
+        }
+    finally:
+        conn.close()
+
+
+class MatchTierEvalPayload(BaseModel):
+    """Used by the visual rule builder to ask the engine 'would this set
+    of conditions pass for this (DR, CR) pair?' — one call per pair as
+    the operator clicks fields on/off. The server uses the same
+    CONDITION_OPS the real engine uses, so the green/red feedback in
+    the UI matches what would happen at run_matching time."""
+    swift: dict
+    flex: dict
+    conditions: list[MatchTierConditionPayload]
+
+
+@app.post("/match-tier-eval")
+def evaluate_match_tier(payload: MatchTierEvalPayload,
+                         user: dict = Depends(current_user)):
+    """Evaluate each condition individually against the (DR, CR) pair.
+    Returns the same condition list with `passes: bool` added to each.
+    `all_pass` is the AND of every condition (= would-this-tier-fire)."""
+    from recon_engine import (
+        CONDITION_OPS, _ref_in_narration, _flex_ref_in_swift_narration,
+        MIRROR_SIGN, normalize_ref, Tolerance,
+    )
+    s = payload.swift or {}
+    f = payload.flex or {}
+    tol = Tolerance()
+
+    s_ref = (s.get('our_ref') or '').strip()
+    s_norm = normalize_ref(s_ref)
+    s_has_ref = len(s_norm) >= tol.min_ref_len
+
+    amount_match = tol.amount_ok(s.get('amount') or 0, f.get('amount') or 0)
+    ref_one_way = bool(s_has_ref and _ref_in_narration(s_ref, f))
+    ref_other = _flex_ref_in_swift_narration(f, s, tol.min_ref_len)
+    ref_hit = ref_one_way or ref_other
+    same_date = bool(s.get('value_date')) and f.get('value_date') == s.get('value_date')
+    sign_mirror = MIRROR_SIGN.get(s.get('sign')) == f.get('type')
+    ctx = {
+        'amount_match': amount_match,
+        'ref_hit':      ref_hit,
+        'ref_one_way':  ref_one_way,
+        'same_date':    same_date,
+        'sign_mirror':  sign_mirror,
+    }
+    out = []
+    all_pass = True
+    for c in payload.conditions:
+        key = f"{c.field}.{c.op}"
+        op_fn = CONDITION_OPS.get(key)
+        passes = bool(op_fn(s, f, c.params or {}, ctx)) if op_fn is not None else False
+        if not passes:
+            all_pass = False
+        out.append({**c.model_dump(exclude_none=True), 'passes': passes})
+    return {'conditions': out, 'all_pass': all_pass}
+
+
+def _find_decoy_pairs(conn, account_id: int, limit: int,
+                      exclude_assignment_id: Optional[int]) -> list:
+    """Find DR rows from this account that have a same-amount, same-date
+    CR available (anywhere in the account's open_items or history) but
+    where the engine chose NOT to pair them — usually because the refs
+    don't link. These are the false-positive case the operator needs
+    to see in the rule builder."""
+    decoys = []
+    drs = conn.execute(
+        "SELECT s.session_id, s.row_number, s.value_date, s.amount, s.sign, "
+        "       s.our_ref, s.booking_text_1, s.booking_text_2 "
+        "FROM swift_txns s JOIN sessions sess ON sess.id=s.session_id "
+        "WHERE sess.account_id=? AND s.sign='D' "
+        "ORDER BY RANDOM() LIMIT ?",
+        (account_id, max(limit * 5, 15)),
+    ).fetchall()
+    for dr in drs:
+        if len(decoys) >= limit:
+            break
+        # Find a CR (in open_items, source_side='flex') with same amount
+        # and date but different ref token.
+        cr = conn.execute(
+            "SELECT id, src_row_number, src_session_id, value_date, amount, "
+            "       sign, ref, narration "
+            "FROM open_items "
+            "WHERE account_id=? AND source_side='flex' AND sign='CR' "
+            "AND ABS(amount - ?) < 0.01 "
+            "AND ref != COALESCE(?, '') AND ref NOT LIKE '%' || COALESCE(?, '') || '%' "
+            "LIMIT 1",
+            (account_id, dr['amount'], dr['our_ref'] or '', dr['our_ref'] or ''),
+        ).fetchone()
+        if cr is None:
+            continue
+        decoys.append({
+            'kind': 'decoy',
+            'note': 'Same amount and similar date, but no ref linkage — '
+                    'pairing these would be a false positive.',
+            'swift': dict(dr),
+            'flex': {
+                'row_number': cr['src_row_number'],
+                'trn_ref': cr['ref'],
+                'value_date': cr['value_date'],
+                'booking_date': cr['value_date'],
+                'type': cr['sign'],
+                'narration': cr['narration'],
+                'amount': cr['amount'],
+                'module': None, 'user_id': None,
+                'external_ref': None,
+                '_carry_forward': True,
+            },
+        })
+    return decoys
 
 
 # --- /auto-cat-rules --------------------------------------------------------
@@ -4806,6 +6464,69 @@ def open_items_page(request: Request):
     return templates.TemplateResponse(request, "open_items.html")
 
 
+@app.get("/accounts/{account_id}/ledger")
+def account_ledger(account_id: int,
+                    user: dict = Depends(current_user),
+                    scope: Optional[List[str]] = Depends(active_scope)):
+    """Per-account chronological session timeline. Returns the list of
+    every session for an account ordered by id, with the anchor
+    progression and per-session counts so the UI can show the rolling
+    chain: seed → delta → delta → … with each step's opening / closing
+    visible at a glance.
+
+    Pairs with `/accounts/{id}/ledger-page` (the HTML view) — this
+    endpoint is the data layer."""
+    conn = get_conn()
+    try:
+        _assert_account_in_scope(conn, account_id, scope)
+        acct = conn.execute(
+            "SELECT id, label, shortname, currency, account_type, "
+            "       account_recon_type, last_closing_balance, "
+            "       last_closing_date, last_session_id "
+            "FROM accounts WHERE id=? AND active=1", (account_id,),
+        ).fetchone()
+        if acct is None:
+            raise HTTPException(404, "Account not found.")
+
+        sessions = [dict(r) for r in conn.execute(
+            "SELECT s.id, s.session_kind, s.status, s.created_at, "
+            "       s.created_by, s.flex_filename, s.swift_filename, "
+            "       s.opening_balance_amount, s.opening_balance_sign, "
+            "       s.opening_balance_date, "
+            "       s.closing_balance_amount, s.closing_balance_sign, "
+            "       s.closing_balance_date, "
+            "       s.flex_opening_balance, s.flex_closing_balance, "
+            "       s.flex_balance_as_of, s.flex_balance_currency, "
+            "       s.locked_at, "
+            "       (SELECT COUNT(*) FROM swift_txns WHERE session_id=s.id) AS swift_count, "
+            "       (SELECT COUNT(*) FROM flex_txns  WHERE session_id=s.id) AS flex_count, "
+            "       (SELECT COUNT(*) FROM assignments WHERE session_id=s.id AND status='confirmed') AS confirmed, "
+            "       (SELECT COUNT(*) FROM assignments WHERE session_id=s.id AND status='pending')   AS pending "
+            "FROM sessions s "
+            "WHERE s.account_id=? "
+            "ORDER BY s.id ASC", (account_id,),
+        ).fetchall()]
+
+        open_items = conn.execute(
+            "SELECT COUNT(*) FROM open_items WHERE account_id=? AND status='open'",
+            (account_id,),
+        ).fetchone()[0]
+
+        return {
+            "account": dict(acct),
+            "sessions": sessions,
+            "open_items_count": open_items,
+        }
+    finally:
+        conn.close()
+
+
+@app.get("/accounts/{account_id}/ledger-page")
+def account_ledger_page(request: Request, account_id: int):
+    return templates.TemplateResponse(request, "account_ledger.html",
+                                       {"account_id": account_id})
+
+
 @app.get("/accounts/{account_id}/status-page")
 def account_status_page(request: Request, account_id: int):
     return templates.TemplateResponse(request, "account_status.html",
@@ -4815,6 +6536,14 @@ def account_status_page(request: Request, account_id: int):
 @app.get("/tolerance-admin")
 def tolerance_admin_page(request: Request):
     return templates.TemplateResponse(request, "tolerance_admin.html")
+
+
+@app.get("/matching-tiers")
+def matching_tiers_page(request: Request):
+    """Visual rule builder: list, edit, mute, and create matching tiers
+    against side-by-side real example pairs. Replaces the static tier
+    reference table on the tolerance page."""
+    return templates.TemplateResponse(request, "matching_tiers.html")
 
 
 # ---------------------------------------------------------------------------
@@ -6317,4 +8046,32 @@ def _flex_row_to_dict(r) -> dict:
         'ccy': r['ccy'], 'module': r['module'], 'external_ref': r['external_ref'],
         'user_id': r['user_id'],
     }
+
+
+def _dedupe_swift_description(text1: str | None, text2: str | None) -> str:
+    """Combine the two booking-text fields into a single non-redundant
+    string for the register UI. The original code blindly joined them
+    with ' · ', but in real BTW data booking_text_1 is a truncated
+    prefix of booking_text_2 — so the rendered cell ended up showing
+    the same prose twice (once half-cut, once full). Pick whichever is
+    longer when one contains the other; only join when both carry
+    distinct content."""
+    a = (text1 or '').strip()
+    b = (text2 or '').strip()
+    if not a and not b:
+        return ''
+    if not a:
+        return b
+    if not b:
+        return a
+    if a == b:
+        return a
+    # Prefix / contains check — case-insensitive because the two
+    # variants sometimes differ on capitalisation alone.
+    a_lo, b_lo = a.lower(), b.lower()
+    if a_lo in b_lo:
+        return b
+    if b_lo in a_lo:
+        return a
+    return f"{a} · {b}"
 

@@ -6,80 +6,112 @@
 <div class="page-head">
   <div>
     <h1>Open items</h1>
-    <div class="subtitle">Single-sided entries carried across sessions. Clear, recategorize, or write off.</div>
+    <div class="subtitle">Single-sided entries carried across sessions. Pick an account to clear, recategorize, or write off its open items.</div>
   </div>
 </div>
 
-<!-- Summary strip — counts split by ageing bucket. Each chip is a
-     clickable filter shortcut that sets min_age_days + re-runs the
-     query so the operator can drill from "5 over 30 days" straight
-     into the filtered list. Populated by renderSummary() after items
-     load; uses the same row data as the Items table below. -->
-<div class="summary-strip" id="summary-strip"></div>
-
-<div class="card">
-  <div class="card-head">
-    <h2>Filters</h2>
+<!-- DIRECTORY VIEW — shown by default. One card per account that has
+     open items, so the operator can scan all accounts at a glance and
+     drill into a specific one. Search box filters cards by name. -->
+<div id="directory-view">
+  <div class="card">
+    <div class="card-body" style="display:flex;align-items:center;gap:14px;padding:16px 20px">
+      <span style="font-size:18px">🔍</span>
+      <input id="dir-search" type="search" class="input"
+             placeholder="Search accounts by name or shortname…"
+             style="flex:1;font-size:var(--t-body)">
+      <span class="muted" id="dir-count" style="white-space:nowrap">—</span>
+    </div>
   </div>
-  <div class="card-body">
-    <div class="form-grid" style="grid-template-columns: repeat(5, 1fr); gap: 12px;">
-      <div class="field">
-        <label>Account</label>
-        <select id="f-account" class="input"><option value="">All accounts</option></select>
-      </div>
-      <div class="field">
-        <label>Status</label>
-        <select id="f-status" class="input">
-          <option value="open" selected>Open</option>
-          <option value="cleared">Cleared</option>
-          <option value="written_off">Written off</option>
-        </select>
-      </div>
-      <div class="field">
-        <label>Category</label>
-        <select id="f-category" class="input">
-          <option value="">All</option>
-          <option value="timing_diff">Timing difference</option>
-          <option value="fx_mismatch">FX mismatch</option>
-          <option value="internal_journal">Internal journal</option>
-          <option value="reversal_pending">Reversal pending</option>
-          <option value="bank_error">Bank error</option>
-          <option value="genuine_break">Genuine break</option>
-          <option value="uncategorized">Uncategorized</option>
-        </select>
-      </div>
-      <div class="field">
-        <label>Min age (days)</label>
-        <input id="f-age" type="number" min="0" class="input" placeholder="0">
-      </div>
-      <div class="field" style="align-self: end;">
-        <button id="f-apply" class="btn btn-primary">Apply</button>
+  <div id="dir-cards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px;margin-top:16px">
+    <div class="card" style="padding:24px;text-align:center;color:var(--c-text-muted)">Loading accounts…</div>
+  </div>
+</div>
+
+<!-- ITEMS VIEW — shown when an account is selected (?account_id=X).
+     Existing per-account view: aging summary, filters, items table. -->
+<div id="items-view" style="display:none">
+  <div style="margin-bottom:14px">
+    <a href="#" id="dir-back" class="btn btn-ghost" style="font-size:var(--t-small)">← Back to all accounts</a>
+  </div>
+
+  <div class="card" style="margin-bottom:14px">
+    <div class="card-body" style="padding:16px 20px;display:flex;align-items:center;gap:16px">
+      <div style="flex:1">
+        <div style="font-size:var(--t-3);font-weight:700" id="iv-acct-name">—</div>
+        <div class="muted" style="font-size:var(--t-small);margin-top:2px" id="iv-acct-meta">—</div>
       </div>
     </div>
   </div>
-</div>
 
-<div class="stats" id="aging-stats" style="margin-top: 24px;"></div>
+  <!-- Summary strip — counts split by ageing bucket. Clickable shortcut
+       to set min_age_days. -->
+  <div class="summary-strip" id="summary-strip"></div>
 
-<div class="card" style="margin-top: 24px;">
-  <div class="card-head">
-    <h2>Items</h2>
-    <span class="hint" id="item-count">—</span>
+  <div class="card">
+    <div class="card-head">
+      <h2>Filters</h2>
+    </div>
+    <div class="card-body">
+      <div class="form-grid" style="grid-template-columns: repeat(4, 1fr); gap: 12px;">
+        <div class="field">
+          <label>Status</label>
+          <select id="f-status" class="input">
+            <option value="open" selected>Open</option>
+            <option value="cleared">Cleared</option>
+            <option value="written_off">Written off</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Category</label>
+          <select id="f-category" class="input">
+            <option value="">All</option>
+            <option value="timing_diff">Timing difference</option>
+            <option value="fx_mismatch">FX mismatch</option>
+            <option value="internal_journal">Internal journal</option>
+            <option value="reversal_pending">Reversal pending</option>
+            <option value="bank_error">Bank error</option>
+            <option value="genuine_break">Genuine break</option>
+            <option value="uncategorized">Uncategorized</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Min age (days)</label>
+          <input id="f-age" type="number" min="0" class="input" placeholder="0">
+        </div>
+        <div class="field" style="align-self: end;">
+          <button id="f-apply" class="btn btn-primary">Apply</button>
+        </div>
+      </div>
+    </div>
   </div>
-  <div class="card-body tight">
-    <table class="table" id="items-table">
-      <thead>
-        <tr>
-          <th>Account</th><th>Side</th><th>Value date</th>
-          <th class="num">Amount</th><th>Sign</th>
-          <th>Ref / narration</th>
-          <th>Category</th><th>Age</th><th>Action</th>
-        </tr>
-      </thead>
-      <tbody id="items-body">
-        <tr class="empty-row"><td colspan="9">Loading…</td></tr>
-      </tbody>
-    </table>
+
+  <!-- Hidden — kept so loadItems() can read the value. The selected
+       account_id is set when the operator clicks a card. -->
+  <select id="f-account" style="display:none"><option value=""></option></select>
+
+  <div class="stats" id="aging-stats" style="margin-top: 24px;"></div>
+
+  <div class="card" style="margin-top: 24px;">
+    <div class="card-head">
+      <h2>Items</h2>
+      <span class="hint" id="item-count">—</span>
+    </div>
+    <div class="card-body tight">
+      <table class="table" id="items-table">
+        <thead>
+          <tr>
+            <th>Account</th><th>Side</th><th>Value date</th>
+            <th class="num">Amount</th><th>Sign</th>
+            <th>Ref / narration</th>
+            <th>Category</th><th>Age</th><th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="items-body">
+          <tr class="empty-row"><td colspan="9">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 </div>
 
@@ -204,6 +236,102 @@
       state.accounts.map(a => `<option value="${a.id}">${esc(a.shortname || a.label)} (${esc(a.currency)})</option>`).join('');
   }
 
+  // --- Directory view: per-account cards --------------------------------
+
+  // Cached per-account roll-up so the search filter runs client-side
+  // without re-hitting the server on every keystroke.
+  let dirRollup = [];
+
+  async function loadDirectory() {
+    const r = await fetch('/open-items/by-account?status=open');
+    const host = document.getElementById('dir-cards');
+    if (!r.ok) {
+      host.innerHTML = '<div class="card" style="padding:24px;color:var(--c-danger)">Failed to load accounts</div>';
+      return;
+    }
+    dirRollup = await r.json();
+    renderDirectory();
+  }
+
+  function renderDirectory() {
+    const host = document.getElementById('dir-cards');
+    const countEl = document.getElementById('dir-count');
+    const q = (document.getElementById('dir-search').value || '').trim().toLowerCase();
+    const visible = q
+      ? dirRollup.filter(d =>
+          (d.shortname || '').toLowerCase().includes(q) ||
+          (d.label || '').toLowerCase().includes(q))
+      : dirRollup;
+    countEl.textContent = visible.length === dirRollup.length
+      ? `${dirRollup.length} account${dirRollup.length === 1 ? '' : 's'} with open items`
+      : `${visible.length} of ${dirRollup.length} match`;
+    if (!visible.length) {
+      host.innerHTML = `<div class="card" style="padding:24px;text-align:center;color:var(--c-text-muted)">${
+        dirRollup.length ? 'No accounts match the search.' : 'No accounts have open items right now.'
+      }</div>`;
+      return;
+    }
+    host.innerHTML = visible.map(d => {
+      const recon = d.recon_type === 'one_sided'
+        ? '<span class="badge badge-warn" style="font-size:var(--t-micro)">one-sided</span>'
+        : '<span class="badge badge-info" style="font-size:var(--t-micro)">two-sided</span>';
+      const b = d.buckets || {};
+      const buckets = [
+        {label: '0–7d',   n: b['0-7']  || 0, color: 'var(--c-success)'},
+        {label: '8–30d',  n: b['8-30'] || 0, color: '#d97706'},
+        {label: '31–90d', n: b['31-90']|| 0, color: '#ea580c'},
+        {label: '90d+',   n: b['90+']  || 0, color: '#dc2626'},
+      ];
+      const totalFmt = (d.total_amount || 0).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+      return `
+        <a href="?account_id=${d.account_id}" data-account-id="${d.account_id}" class="dir-card" style="display:block;text-decoration:none;color:inherit">
+          <div class="card" style="padding:16px;cursor:pointer;border:1px solid var(--c-border);transition:border-color 0.15s,box-shadow 0.15s;height:100%">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px">
+              <div style="min-width:0;flex:1">
+                <div style="font-weight:600;font-size:var(--t-body);overflow:hidden;text-overflow:ellipsis">${esc(d.shortname || d.label || '')}</div>
+                <div class="muted" style="font-size:var(--t-micro);margin-top:2px;overflow:hidden;text-overflow:ellipsis">${esc(d.label || '')}</div>
+              </div>
+              ${recon}
+            </div>
+            <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:14px 0 10px">
+              <div>
+                <div style="font-size:var(--t-2);font-weight:700">${d.count.toLocaleString()}</div>
+                <div class="muted" style="font-size:var(--t-micro)">open items</div>
+              </div>
+              <div style="text-align:right">
+                <div style="font-size:var(--t-body);font-weight:600">${esc(d.currency || '')} ${totalFmt}</div>
+                <div class="muted" style="font-size:var(--t-micro)">total amount</div>
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;font-size:var(--t-micro)">
+              ${buckets.map(bk => `
+                <div style="flex:1;text-align:center;padding:4px 6px;border-radius:4px;background:var(--c-surface-2)">
+                  <div style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${bk.color};margin-right:4px"></div>
+                  <strong>${bk.n}</strong>
+                  <div class="muted" style="font-size:9px;margin-top:1px">${bk.label}</div>
+                </div>`).join('')}
+            </div>
+          </div>
+        </a>`;
+    }).join('');
+  }
+
+  function showDirectoryView() {
+    document.getElementById('directory-view').style.display = '';
+    document.getElementById('items-view').style.display = 'none';
+  }
+
+  function showItemsView(account) {
+    document.getElementById('directory-view').style.display = 'none';
+    document.getElementById('items-view').style.display = '';
+    if (account) {
+      document.getElementById('iv-acct-name').textContent = account.shortname || account.label || '';
+      const reconLabel = account.recon_type === 'one_sided' ? 'one-sided GL' : 'two-sided';
+      const meta = [account.label, account.currency, reconLabel, `${account.count.toLocaleString()} open items`].filter(Boolean).join(' · ');
+      document.getElementById('iv-acct-meta').textContent = meta;
+    }
+  }
+
   // renderSummary builds the page-level chip strip — total +
   // ageing-bucket counts. Each bucket chip is a clickable filter
   // shortcut: click "31–90 days" → set min_age_days=31 and re-query.
@@ -320,10 +448,24 @@
       body.innerHTML = '<tr class="empty-row"><td colspan="9">No items match these filters</td></tr>';
       return;
     }
-    body.innerHTML = rows.map(r => `
+    body.innerHTML = rows.map(r => {
+      // Side label: on one-sided GLs (BTW etc.) the "swift" / "flex"
+      // storage side is purely an internal engine convention — both
+      // legs are Flexcube. Translate to operator-facing DR/CR. On
+      // two-sided accounts the SWIFT vs Flexcube distinction is real.
+      const isOneSided = r.account_recon_type === 'one_sided';
+      let sideLabel, sideClass;
+      if (isOneSided) {
+        if (r.source_side === 'swift') { sideLabel = 'Flexcube · DR'; sideClass = 'badge-warn'; }
+        else                            { sideLabel = 'Flexcube · CR'; sideClass = 'badge-success'; }
+      } else {
+        if (r.source_side === 'swift') { sideLabel = 'SWIFT';    sideClass = 'badge-info'; }
+        else                            { sideLabel = 'Flexcube'; sideClass = 'badge-neutral'; }
+      }
+      return `
       <tr>
         <td>${esc(r.account_shortname || r.account_label || '')}</td>
-        <td><span class="badge ${r.source_side === 'swift' ? 'badge-info' : 'badge-neutral'}">${esc(r.source_side)}</span></td>
+        <td><span class="badge ${sideClass}">${sideLabel}</span></td>
         <td>${fmtDate(r.value_date)}</td>
         <td class="num">${fmtAmount(r.amount)}</td>
         <td>${signPill(r.sign)}</td>
@@ -348,7 +490,8 @@
             ${r.acknowledged_by ? '<span class="badge badge-info">Acknowledged</span>' : ''}
           ` : `<span class="muted">${esc(r.status)}</span>`}
         </td>
-      </tr>`).join('');
+      </tr>`;
+    }).join('');
   }
 
   document.addEventListener('click', (ev) => {
@@ -393,10 +536,42 @@
 
   document.getElementById('f-apply').onclick = loadItems;
 
+  // Search input — filter directory cards client-side as the operator types.
+  document.getElementById('dir-search').addEventListener('input', renderDirectory);
+
+  // "Back to all accounts" — clear the URL query, refresh the directory,
+  // and swap views. History.pushState so browser back also returns here.
+  document.getElementById('dir-back').addEventListener('click', (ev) => {
+    ev.preventDefault();
+    history.pushState(null, '', location.pathname);
+    showDirectoryView();
+    loadDirectory();
+  });
+
+  // Card click intercept — push the account_id into the URL without a
+  // full reload, then swap to items view. Lets browser back return to
+  // the directory naturally.
+  document.getElementById('dir-cards').addEventListener('click', (ev) => {
+    const a = ev.target.closest('a.dir-card');
+    if (!a) return;
+    ev.preventDefault();
+    const aid = a.dataset.accountId;
+    history.pushState(null, '', `?account_id=${aid}`);
+    enterItemsViewFromUrl();
+  });
+
+  window.addEventListener('popstate', () => {
+    // Browser back/forward — re-evaluate which view to show.
+    if (new URLSearchParams(location.search).get('account_id')) {
+      enterItemsViewFromUrl();
+    } else {
+      showDirectoryView();
+      if (!dirRollup.length) loadDirectory();
+    }
+  });
+
   // Deeplink: lift filter values out of the query string so dashboard
-  // tiles + risk-callout buttons land on a pre-filtered list. Done in
-  // sequence with loadAccounts so the f-account <select> is populated
-  // before we try to set its value.
+  // tiles + risk-callout buttons land on a pre-filtered list.
   function applyQueryFilters() {
     const qs = new URLSearchParams(location.search);
     const map = {
@@ -412,7 +587,29 @@
       if (el) el.value = v;
     }
   }
-  loadAccounts().then(() => { applyQueryFilters(); loadItems(); });
+
+  function enterItemsViewFromUrl() {
+    const aid = new URLSearchParams(location.search).get('account_id');
+    const acct = dirRollup.find(d => String(d.account_id) === String(aid));
+    showItemsView(acct);
+    document.getElementById('f-account').innerHTML = `<option value="${aid}">${esc(acct?.shortname || '')}</option>`;
+    document.getElementById('f-account').value = aid;
+    applyQueryFilters();
+    loadItems();
+  }
+
+  // Boot: always load the directory roll-up first (cheap — one query
+  // grouping by account). Then choose the view based on whether the
+  // URL has ?account_id=…
+  (async function boot() {
+    await loadAccounts();
+    await loadDirectory();
+    if (new URLSearchParams(location.search).get('account_id')) {
+      enterItemsViewFromUrl();
+    } else {
+      showDirectoryView();
+    }
+  })();
 
   document.body.dataset.nav = 'open-items';
 

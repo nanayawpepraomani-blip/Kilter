@@ -330,3 +330,95 @@ def test_m2n_asymmetric_2x3_shape():
     assert len(out[0].swift_rows) == 2
     assert len(out[0].flex_rows) == 3
     assert out[0].tier == 6
+
+
+# ---------------------------------------------------------------------------
+# BTW pattern — symmetric ref matching
+# ---------------------------------------------------------------------------
+# In the 2026 BTW data, the DR side and CR side don't share `our_ref`/`trn_ref`
+# directly: the DR's own_ref is its settlement-side identifier (e.g. H9859…),
+# but the wallet ref the CR carries (H26ZEXA…) appears in the DR's narration.
+# The original (one-way) ref check missed this entirely. These tests pin the
+# symmetric behaviour so the BTW pattern matches at Tier 1.
+
+def test_btw_symmetric_ref_dr_narration_carries_cr_ref():
+    """DR's narration embeds the CR's trn_ref → engine should treat
+    that as a ref hit and emit a Tier 1 match."""
+    swift = [{
+        '_source': 'swift', '_row_number': 1, '_used': False,
+        'value_date': 20260430, 'amount': 470.0, 'sign': 'D',
+        'origin': 'Our', 'type': 'Other', 'status': 'Unmatched',
+        'book_date': 20260430,
+        'our_ref': 'H9859fe261200002',     # settlement-side ref
+        'their_ref': '',
+        'booking_text_1': 'Settlement for succ Txn dd 29APR26 Bank2W',
+        'booking_text_2': ('Settlement for succ Txn dd 29APR26 Bank2Wallet '
+                           '233554447280 H26ZEXA261181CG3 |USERID:EKAKRONG|'),
+    }]
+    flex = [_flex(2, 'H26ZEXA261181CG3', 470.0, type_='CR',
+                   value_date=20260429,
+                   narration='Bank2Wallet 233554447280 |USERID:W3S_GH|')]
+    cands = propose_candidates(swift, flex)
+    res = resolve(cands, swift, flex)
+    assert len(res.assignments) == 1
+    a = res.assignments[0]
+    # Tier 1 — ref hit (CR's trn_ref appears in DR's narration) +
+    # exact amount + close-date (within ±1 day band).
+    assert a.tier == 1
+
+
+def test_btw_symmetric_ref_no_phantom_match_without_overlap():
+    """Guard against the symmetric ref check inventing matches that
+    shouldn't happen. Two unrelated rows whose narrations share only
+    English boilerplate (no digit-bearing token overlap) must NOT
+    pair as a ref hit."""
+    swift = [{
+        '_source': 'swift', '_row_number': 1, '_used': False,
+        'value_date': 20260430, 'amount': 999.0, 'sign': 'D',
+        'origin': 'Our', 'type': 'Other', 'status': 'Unmatched',
+        'book_date': 20260430,
+        'our_ref': 'X' * 8,
+        'their_ref': '',
+        'booking_text_1': 'Settlement for succ Txn dd somewhere',
+        'booking_text_2': 'Bank2Wallet for some other purpose',
+    }]
+    flex = [_flex(2, 'COMPLETELYDIFFERENT', 100.0, type_='CR',
+                   value_date=20260429,
+                   narration='unrelated narration nothing in common')]
+    cands = propose_candidates(swift, flex)
+    res = resolve(cands, swift, flex)
+    # Amounts and refs disagree — no candidate should be emitted at
+    # any tier.
+    assert len(res.assignments) == 0
+
+
+def test_btw_pattern_at_scale_indexed_engine_finishes_quickly():
+    """Sanity: 2,000 swift × 2,000 flex with BTW-shape narration must
+    finish in well under 5 seconds. Guards against accidental
+    re-introduction of the O(N×M) inner loop."""
+    import time
+    swift = []
+    flex = []
+    for i in range(2000):
+        wallet_ref = f'H26ZEXA26119{i:04X}'
+        swift.append({
+            '_source': 'swift', '_row_number': i + 1, '_used': False,
+            'value_date': 20260430, 'amount': 100.0 + i, 'sign': 'D',
+            'origin': 'Our', 'type': 'Other', 'status': 'Unmatched',
+            'book_date': 20260430,
+            'our_ref': f'H9859fe2612{i:05X}',
+            'their_ref': '',
+            'booking_text_1': 'Settlement for succ Txn',
+            'booking_text_2': f'Settlement for succ Txn dd 29APR26 {wallet_ref}',
+        })
+        flex.append(_flex(10000 + i, wallet_ref, 100.0 + i, type_='CR',
+                          value_date=20260429,
+                          narration=f'Bank2Wallet 23355{i:07d} |USERID:W3S_GH|'))
+    t0 = time.time()
+    cands = propose_candidates(swift, flex)
+    res = resolve(cands, swift, flex)
+    elapsed = time.time() - t0
+    assert elapsed < 5.0, f'Engine took {elapsed:.2f}s — indexing regressed'
+    # Every pair has matching wallet ref + amount → 2,000 Tier 1 matches.
+    assert len(res.assignments) == 2000
+    assert all(a.tier == 1 for a in res.assignments)

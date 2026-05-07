@@ -10,7 +10,37 @@
   </div>
 </div>
 
+<!-- Matching tier reference. Read-only — these are the engine's
+     classification rules, hard-coded in recon_engine._classify, and
+     surfaced here so operators can see exactly which conditions
+     produce which tier without reading the source. The per-account
+     tolerances below modify what counts as "ref hit", "amount match",
+     and "close date". -->
 <div class="card">
+  <div class="card-head">
+    <h2>Matching tiers</h2>
+    <span class="hint">Engine logic — not user-editable. Tolerances below modify the inputs. Click a row to expand the operator-facing explanation.</span>
+  </div>
+  <div class="card-body tight">
+    <table class="table" id="tier-table">
+      <thead>
+        <tr>
+          <th style="width:60px">Tier</th>
+          <th>Plain-language summary</th>
+          <th style="width:120px">Pairing</th>
+          <th style="width:160px">Confidence</th>
+          <th style="width:160px"></th>
+        </tr>
+      </thead>
+      <tbody id="tier-table-body"></tbody>
+    </table>
+    <div style="padding:12px 16px;color:var(--c-text-muted);font-size:var(--t-small);border-top:1px solid var(--c-border);background:var(--c-surface-2)">
+      Resolution order: when one row qualifies for multiple tiers, the engine keeps the strongest (lowest tier number) and breaks ties on the smallest amount difference. Per-account thresholds (next card) tune <code>amount_tol_abs</code>, <code>amount_tol_pct</code>, <code>date_tol_days</code>, <code>min_ref_len</code> and <code>fx_tol_bps</code>.
+    </div>
+  </div>
+</div>
+
+<div class="card" style="margin-top:24px;">
   <div class="card-head"><h2>Account tolerance rules</h2><span class="hint">Edit per-account from the account status page</span></div>
   <div class="card-body tight">
     <table class="table" id="tol-table">
@@ -73,6 +103,78 @@
 </dialog>
 
 <script>
+  // Tier reference content — kept in sync with review.html's TIER_INFO.
+  // If you change one, change the other. (Two surfaces, same wording.)
+  const TIER_INFO = {
+    1: {title:'Strong match — reference linkage + amount',
+        pairing:'1:1', conf:'Highest', badge:'badge-success',
+        summary:"A reference number on one side appears in the other side's narration, the amounts are equal (within tolerance), and the signs mirror (one DR, one CR).",
+        look_for:["Wallet reference (e.g. the 12-digit number after \"Bank2Wallet\") on both legs","TRN ref (e.g. H26ZEXA…) from one side that shows up in the other side's narration","Same amount and same value date"],
+        why:"The reference linkage proves the two legs belong to the same transaction — safe to auto-confirm in bulk."},
+    2: {title:'Reference matches, amounts differ',
+        pairing:'1:1', conf:'High', badge:'badge-info',
+        summary:'A reference linkage exists between the two sides, but the amounts are NOT equal beyond tolerance — usually FX, a partial settlement, or a fee.',
+        look_for:['Same wallet ref or TRN ref on both legs','Amount difference — could be FX, a partial settlement, or a deducted fee','Words like "fee", "charge", "FX", or partial-amount language in the narration'],
+        why:'The ref linkage is strong evidence the legs are related — but the amount mismatch needs human eyes to confirm whether it is a legitimate adjustment or a real break.'},
+    3: {title:'Same amount, same day, no ref link',
+        pairing:'1:1', conf:'Medium', badge:'badge-warn',
+        summary:'A DR and CR with the same amount and same value date, signs mirror — but the engine could NOT find any reference number tying the two legs together.',
+        look_for:['Wallet phone number (12-digit) on both sides — does it match?',"TRN ref appearing in the other side's narration (engine may have missed a substring)","Posting pattern — DR usually by EKAKRONG (settlement bot), CR by a wallet user (W3S_GH, etc.)"],
+        why:'On a busy GL there are often dozens of debits and credits at common amounts (470.00, 1,000.00). Without a reference linking them, the engine guessed based on amount + date. Often right, but not safe to auto-confirm.'},
+    4: {title:'Same amount, off by one day, no ref link',
+        pairing:'1:1', conf:'Lower', badge:'badge-warn',
+        summary:'Same conditions as Tier 3 (no ref linkage, mirror sign, amount within tolerance) but the value dates are off by one calendar day.',
+        look_for:['Cross-day pairings happen when a settlement file cuts at midnight or T+1 effective dating is in play','Date drift on top of "no ref link" makes coincidence more likely — read the narration carefully'],
+        why:'Date drift on top of no ref link increases the chance the engine paired two unrelated transactions. Confirm only if the wallet ref or TRN clearly matches on inspection.'},
+    5: {title:'Split (1:N or N:1)',
+        pairing:'1:N or N:1', conf:'Aggregate', badge:'badge-neutral',
+        summary:'One leg on this side equals the SUM of multiple legs on the other side. For example: one settlement DR covering three wallet credits.',
+        look_for:['All N legs share a reference token with the single side (settlement batch ID, sweep ref, etc.)',"Sum of the N legs equals the single side's amount within tolerance",'Same value date across the group'],
+        why:'Real splits happen frequently in batch settlements. Confirm only when the N legs are clearly part of the same logical batch (shared ref, posting user, or narration pattern).'},
+    6: {title:'Many-to-many group',
+        pairing:'M:N', conf:'Aggregate', badge:'badge-neutral',
+        summary:'A group of DRs and a group of CRs whose totals match within a small date window — typical netting or sweep cycles.',
+        look_for:['Sum of the DR group equals sum of the CR group within tolerance','Group is bounded (max 3 rows per side) to keep the search predictable','Common ref token across the group (sweep batch ID, netting cycle ID)'],
+        why:'These are usually netting / sweep transactions. Confirm only after eyeballing makes the group logically consistent — same wallet pool, same settlement cycle, etc.'},
+  };
+
+  function renderTierTable() {
+    const body = document.getElementById('tier-table-body');
+    if (!body) return;
+    const rows = [];
+    for (const [tier, info] of Object.entries(TIER_INFO)) {
+      rows.push(`
+        <tr>
+          <td><span class="badge ${info.badge}">${tier}</span></td>
+          <td><strong>${esc(info.title)}</strong><div class="muted" style="font-size:var(--t-small);margin-top:2px">${esc(info.summary)}</div></td>
+          <td><code>${esc(info.pairing)}</code></td>
+          <td>${esc(info.conf)}</td>
+          <td><button class="btn btn-sm btn-ghost" type="button" onclick="toggleTierDetail(${tier})" id="tier-toggle-${tier}">What to look for ▾</button></td>
+        </tr>
+        <tr id="tier-detail-${tier}" style="display:none">
+          <td colspan="5" style="background:var(--c-surface-2);padding:12px 16px">
+            <div style="font-weight:600;font-size:var(--t-small);color:var(--c-text-muted);margin-bottom:4px">What to look for when reviewing</div>
+            <ul style="margin:0 0 10px 18px;padding:0;font-size:var(--t-small)">
+              ${info.look_for.map(item => `<li>${esc(item)}</li>`).join('')}
+            </ul>
+            <div style="font-size:var(--t-small);color:var(--c-text-muted)"><strong>Why this confidence — ${esc(info.conf)}.</strong> ${esc(info.why)}</div>
+          </td>
+        </tr>`);
+    }
+    body.innerHTML = rows.join('');
+  }
+
+  function toggleTierDetail(tier) {
+    const row = document.getElementById(`tier-detail-${tier}`);
+    const btn = document.getElementById(`tier-toggle-${tier}`);
+    if (!row) return;
+    const open = row.style.display !== 'none';
+    row.style.display = open ? 'none' : 'table-row';
+    if (btn) btn.textContent = open ? 'What to look for ▾' : 'What to look for ▴';
+  }
+  window.toggleTierDetail = toggleTierDetail;
+  renderTierTable();
+
   async function loadTolerance() {
     const [accounts] = await Promise.all([fetch('/accounts').then(r => r.json())]);
     const body = document.getElementById('tol-body');

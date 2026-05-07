@@ -1,0 +1,603 @@
+{% extends "base.html" %}
+{% block title %}Matching tiers — Kilter{% endblock %}
+{% block crumbs %}<span class="current">Matching tiers</span>{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Matching tiers</h1>
+    <div class="subtitle">
+      The engine walks tiers in priority order. The first tier whose
+      conditions all pass for a (DR, CR) pair wins. Mute, edit, or
+      create new tiers — engine picks them up on the next run.
+    </div>
+  </div>
+</div>
+
+<!-- Recon-type tabs. Default tiers are scoped per recon_type (one-sided,
+     two-sided, mobile money, cards). Per-account overrides come later
+     via the account picker. -->
+<div class="card" style="margin-bottom:14px">
+  <div class="card-body" style="display:flex;align-items:center;gap:14px;padding:14px 18px">
+    <span class="muted" style="font-size:var(--t-small)">Showing default tiers for:</span>
+    <div id="recon-tabs" style="display:flex;gap:8px;flex:1">
+      <button class="recon-tab active" data-recon="one_sided">One-sided GL</button>
+      <button class="recon-tab" data-recon="two_sided">Two-sided (SWIFT vs Flexcube)</button>
+      <button class="recon-tab" data-recon="mobile_money">Mobile money</button>
+      <button class="recon-tab" data-recon="cards">Cards</button>
+    </div>
+    <button id="btn-new-tier" class="btn btn-primary">+ New tier</button>
+  </div>
+</div>
+
+<div id="tiers-list">
+  <div class="card" style="padding:24px;text-align:center;color:var(--c-text-muted)">Loading tiers…</div>
+</div>
+
+<!-- Builder modal: side-by-side sample data + click-to-include fields -->
+<dialog id="builder-modal" style="border:1px solid var(--c-border);border-radius:var(--radius-lg);padding:0;max-width:1200px;width:95%;max-height:92vh">
+  <div style="display:flex;flex-direction:column;height:90vh">
+    <div style="padding:18px 24px;border-bottom:1px solid var(--c-border);display:flex;align-items:center;gap:14px">
+      <div style="flex:1">
+        <h2 id="builder-title" style="margin:0;font-size:var(--t-2)">New tier</h2>
+        <div class="muted" style="font-size:var(--t-small);margin-top:2px">
+          Click a field on either panel to include it in the rule.
+          Green = both sides agree; red = they disagree (don't include).
+        </div>
+      </div>
+      <button id="builder-close" type="button" class="btn btn-ghost">Close</button>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 380px;gap:0;flex:1;overflow:hidden">
+      <!-- Sample panels + decoys -->
+      <div style="overflow-y:auto;padding:18px 24px;border-right:1px solid var(--c-border)">
+        <div id="builder-cleared" style="margin-bottom:18px"></div>
+        <div id="builder-decoys"></div>
+      </div>
+
+      <!-- Right: form + selected conditions -->
+      <div style="overflow-y:auto;padding:18px 20px;background:var(--c-surface-2)">
+        <div style="margin-bottom:14px">
+          <label style="font-size:var(--t-small);font-weight:600;display:block;margin-bottom:4px">Tier name</label>
+          <input id="b-name" class="input" placeholder="e.g. Strong match — wallet ref">
+        </div>
+        <div style="display:flex;gap:12px;margin-bottom:14px">
+          <div style="flex:1">
+            <label style="font-size:var(--t-small);font-weight:600;display:block;margin-bottom:4px">Priority</label>
+            <input id="b-priority" type="number" class="input" value="10" min="1" style="width:100%">
+          </div>
+          <div style="flex:1;display:flex;align-items:end;gap:6px">
+            <label style="display:flex;align-items:center;gap:6px;font-size:var(--t-small)">
+              <input type="checkbox" id="b-enabled" checked> Enabled
+            </label>
+          </div>
+        </div>
+        <div style="margin-bottom:14px">
+          <label style="display:flex;align-items:center;gap:8px;font-size:var(--t-small)">
+            <input type="checkbox" id="b-auto-confirm">
+            <span>
+              Auto-confirm matches at this tier
+              <span class="muted" style="display:block;font-size:var(--t-micro);margin-top:2px">Per Ecobank policy: only safe at strict ref+amount tiers</span>
+            </span>
+          </label>
+        </div>
+
+        <div style="margin-top:18px">
+          <div style="font-size:var(--t-small);font-weight:600;margin-bottom:6px">Selected conditions <span class="muted">(all must pass)</span></div>
+          <div id="b-conditions" style="border:1px solid var(--c-border);border-radius:6px;background:white;min-height:120px;padding:10px">
+            <div class="muted" style="font-size:var(--t-small);text-align:center;padding:24px 0">Click a field on the left to add a condition</div>
+          </div>
+        </div>
+
+        <div id="b-summary" style="margin-top:14px;font-size:var(--t-small);color:var(--c-text-muted)">—</div>
+
+        <div style="display:flex;gap:8px;margin-top:18px">
+          <button id="b-cancel" type="button" class="btn btn-default" style="flex:1">Cancel</button>
+          <button id="b-save" type="button" class="btn btn-primary" style="flex:1">Save tier</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</dialog>
+
+<style>
+  .recon-tab {
+    background:transparent;border:1px solid var(--c-border);
+    padding:6px 14px;border-radius:6px;cursor:pointer;
+    font-size:var(--t-small);font-weight:500;color:var(--c-text-muted);
+  }
+  .recon-tab.active {
+    background:var(--c-primary);color:white;border-color:var(--c-primary);
+  }
+  .tier-card {
+    background:white;border:1px solid var(--c-border);border-radius:6px;
+    padding:14px 18px;margin-bottom:10px;display:flex;align-items:center;gap:14px;
+  }
+  .tier-card.disabled { opacity:0.55; background:var(--c-surface-2); }
+  .tier-priority {
+    background:var(--c-primary);color:white;width:32px;height:32px;
+    border-radius:50%;display:flex;align-items:center;justify-content:center;
+    font-weight:700;font-size:var(--t-small);flex-shrink:0;
+  }
+  .tier-card.disabled .tier-priority { background:var(--c-text-muted); }
+  .tier-card .drag-handle {
+    cursor:grab;color:var(--c-text-muted);font-size:18px;
+    user-select:none;letter-spacing:-2px;padding:0 4px;
+  }
+  .tier-card.dragging { opacity:0.4; }
+  .tier-card.drop-target { border-top:3px solid var(--c-primary); }
+
+  .sample-pair-card {
+    border:1px solid var(--c-border);border-radius:8px;overflow:hidden;
+    background:white;margin-bottom:14px;
+  }
+  .sample-pair-head {
+    padding:10px 14px;background:var(--c-surface-2);border-bottom:1px solid var(--c-border);
+    display:flex;align-items:center;gap:10px;font-size:var(--t-small);
+  }
+  .sample-pair-head .badge { font-weight:600 }
+  .sample-pair-grid {
+    display:grid;grid-template-columns:140px 1fr 1fr;gap:0;
+  }
+  .sp-field-label {
+    padding:8px 12px;border-top:1px solid var(--c-border);background:var(--c-surface-2);
+    font-size:var(--t-small);font-weight:600;color:var(--c-text-muted);
+    display:flex;align-items:center;
+  }
+  .sp-field-cell {
+    padding:8px 12px;border-top:1px solid var(--c-border);border-left:1px solid var(--c-border);
+    cursor:pointer;font-size:var(--t-small);transition:background 0.1s;
+    display:flex;align-items:center;
+    word-break:break-word;
+  }
+  .sp-field-cell:hover { background:var(--c-surface-2); }
+  .sp-field-cell.cell-pass { background:#d1fae5; color:#065f46; font-weight:500; }
+  .sp-field-cell.cell-fail { background:#fee2e2; color:#991b1b; font-weight:500; }
+  .sp-field-cell.cell-mono { font-family:var(--font-mono);font-size:var(--t-micro); }
+
+  .cond-chip {
+    display:inline-flex;align-items:center;gap:6px;
+    padding:4px 10px;border-radius:999px;font-size:var(--t-small);
+    background:#dbeafe;color:#1e40af;margin:4px 4px 0 0;
+  }
+  .cond-chip button {
+    background:transparent;border:0;color:inherit;cursor:pointer;font-size:14px;
+    padding:0 0 0 4px;line-height:1;
+  }
+  .cond-chip.fail { background:#fee2e2;color:#991b1b }
+</style>
+
+<script>
+  // State
+  let currentRecon = 'one_sided';
+  let currentTiers = [];
+  let editingTierId = null;
+  let sampleData = null;
+  let selectedConditions = [];   // [{field, op, params?}]
+
+  // --- TIER LIST ----------------------------------------------------------
+
+  async function loadTiers() {
+    const r = await fetch(`/match-tiers?recon_type=${currentRecon}&account_id=0`);
+    if (!r.ok) {
+      document.getElementById('tiers-list').innerHTML =
+        '<div class="card" style="padding:24px;color:var(--c-danger)">Failed to load tiers</div>';
+      return;
+    }
+    currentTiers = await r.json();
+    renderTiers();
+  }
+
+  function renderTiers() {
+    const host = document.getElementById('tiers-list');
+    if (!currentTiers.length) {
+      host.innerHTML = `
+        <div class="card" style="padding:32px;text-align:center;color:var(--c-text-muted)">
+          No tiers defined for this recon type yet.
+          <div style="margin-top:12px"><button class="btn btn-primary" onclick="openBuilder(null)">Create your first tier</button></div>
+        </div>`;
+      return;
+    }
+    host.innerHTML = currentTiers.map(t => {
+      const condsText = (t.conditions || []).map(c => `${c.field}.${c.op}`).join(' · ');
+      const enabled = t.enabled;
+      return `
+        <div class="tier-card ${enabled ? '' : 'disabled'}" draggable="true" data-tier-id="${t.id}">
+          <span class="drag-handle" title="Drag to reorder">⋮⋮</span>
+          <div class="tier-priority">${t.priority}</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:600;font-size:var(--t-body)">${esc(t.name)}</div>
+            <div class="muted" style="font-size:var(--t-micro);margin-top:2px;font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(condsText)}</div>
+          </div>
+          ${t.auto_confirm ? '<span class="badge badge-success" style="font-size:var(--t-micro)">auto-confirm</span>' : ''}
+          ${t.legacy_tier ? `<span class="badge badge-neutral" style="font-size:var(--t-micro)">legacy T${t.legacy_tier}</span>` : ''}
+          <button class="btn btn-sm btn-ghost" title="Test against last 7 days" onclick="testTierImpact(${t.id})">Test impact</button>
+          <label style="display:flex;align-items:center;gap:6px;font-size:var(--t-small);cursor:pointer">
+            <input type="checkbox" ${enabled ? 'checked' : ''} onchange="toggleTier(${t.id}, this.checked)">
+            ${enabled ? 'Enabled' : 'Muted'}
+          </label>
+          <button class="btn btn-sm btn-default" onclick="openBuilder(${t.id})">Edit</button>
+          <button class="btn btn-sm btn-danger-soft" onclick="deleteTier(${t.id})">Delete</button>
+        </div>`;
+    }).join('');
+    wireDragHandlers();
+  }
+
+  // --- Drag-drop priority reorder -----------------------------------------
+
+  let dragSrc = null;
+
+  function wireDragHandlers() {
+    const cards = document.querySelectorAll('.tier-card[draggable="true"]');
+    cards.forEach(card => {
+      card.addEventListener('dragstart', (e) => {
+        dragSrc = card;
+        card.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+      });
+      card.addEventListener('dragend', () => {
+        card.classList.remove('dragging');
+        document.querySelectorAll('.tier-card.drop-target')
+          .forEach(c => c.classList.remove('drop-target'));
+        dragSrc = null;
+      });
+      card.addEventListener('dragover', (e) => {
+        if (!dragSrc || dragSrc === card) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        card.classList.add('drop-target');
+      });
+      card.addEventListener('dragleave', () => card.classList.remove('drop-target'));
+      card.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        card.classList.remove('drop-target');
+        if (!dragSrc || dragSrc === card) return;
+        const host = document.getElementById('tiers-list');
+        const rect = card.getBoundingClientRect();
+        const after = (e.clientY - rect.top) > rect.height / 2;
+        host.insertBefore(dragSrc, after ? card.nextSibling : card);
+        const newOrder = Array.from(host.querySelectorAll('.tier-card[draggable="true"]'))
+                              .map(c => parseInt(c.dataset.tierId, 10));
+        const r = await fetch('/match-tiers/reorder', {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({tier_ids: newOrder}),
+        });
+        if (!r.ok) {
+          alert('Reorder failed — refresh to see actual order');
+          loadTiers();
+          return;
+        }
+        loadTiers();
+      });
+    });
+  }
+
+  async function toggleTier(id, enabled) {
+    const r = await fetch(`/match-tiers/${id}`, {
+      method: 'PUT', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({enabled}),
+    });
+    if (!r.ok) { alert((await r.json().catch(()=>({}))).detail || 'Failed'); return; }
+    loadTiers();
+  }
+
+  async function testTierImpact(id) {
+    const r = await fetch(`/match-tiers/${id}/impact?lookback_sessions=10`);
+    if (!r.ok) {
+      alert((await r.json().catch(()=>({}))).detail || 'Impact test failed');
+      return;
+    }
+    const j = await r.json();
+    if (!j.pairs_evaluated) {
+      alert(`${j.tier_name}\n\nNo historical pairs to test against — load a session first.`);
+      return;
+    }
+    const pct = j.pairs_evaluated > 0
+      ? ((j.matched_today / j.pairs_evaluated) * 100).toFixed(1)
+      : '0.0';
+    alert(
+      `${j.tier_name}\n\n` +
+      `Scanned ${j.sessions_scanned} recent sessions, ${j.pairs_evaluated.toLocaleString()} pairs evaluated.\n\n` +
+      `Would still match: ${j.matched_today.toLocaleString()} (${pct}%)\n` +
+      `Would NOT match:   ${j.excluded_today.toLocaleString()}\n\n` +
+      `Tier is currently ${j.enabled ? 'ENABLED' : 'MUTED'}` +
+      (j.auto_confirm ? ' with auto-confirm.' : '.'));
+  }
+
+  async function deleteTier(id) {
+    if (!confirm('Delete this tier? The engine will skip it on the next run.')) return;
+    const r = await fetch(`/match-tiers/${id}`, {method: 'DELETE'});
+    if (!r.ok) { alert((await r.json().catch(()=>({}))).detail || 'Failed'); return; }
+    loadTiers();
+  }
+
+  // --- RECON TYPE TABS ----------------------------------------------------
+
+  document.getElementById('recon-tabs').addEventListener('click', (ev) => {
+    const t = ev.target.closest('.recon-tab');
+    if (!t) return;
+    document.querySelectorAll('.recon-tab').forEach(b => b.classList.remove('active'));
+    t.classList.add('active');
+    currentRecon = t.dataset.recon;
+    loadTiers();
+  });
+
+  // --- BUILDER MODAL ------------------------------------------------------
+
+  document.getElementById('btn-new-tier').onclick = () => openBuilder(null);
+  document.getElementById('builder-close').onclick = closeBuilder;
+  document.getElementById('b-cancel').onclick = closeBuilder;
+  document.getElementById('b-save').onclick = saveTier;
+
+  async function openBuilder(tierId) {
+    editingTierId = tierId;
+    selectedConditions = [];
+    document.getElementById('b-name').value = '';
+    document.getElementById('b-priority').value = '10';
+    document.getElementById('b-enabled').checked = true;
+    document.getElementById('b-auto-confirm').checked = false;
+    document.getElementById('builder-title').textContent = tierId ? 'Edit tier' : 'New tier';
+
+    // If editing, prefill from the existing tier
+    if (tierId) {
+      const r = await fetch(`/match-tiers/${tierId}`);
+      if (r.ok) {
+        const t = await r.json();
+        document.getElementById('b-name').value = t.name;
+        document.getElementById('b-priority').value = t.priority;
+        document.getElementById('b-enabled').checked = t.enabled;
+        document.getElementById('b-auto-confirm').checked = t.auto_confirm;
+        selectedConditions = (t.conditions || []).map(c => ({...c}));
+      }
+    }
+
+    document.getElementById('builder-modal').showModal();
+    await loadSamples();
+    renderConditionChips();
+    rerenderEvaluations();
+  }
+
+  function closeBuilder() {
+    document.getElementById('builder-modal').close();
+  }
+
+  async function loadSamples() {
+    const r = await fetch(`/match-tier-samples?recon_type=${currentRecon}`);
+    const clearedHost = document.getElementById('builder-cleared');
+    const decoyHost = document.getElementById('builder-decoys');
+    if (!r.ok) {
+      clearedHost.innerHTML = '<div class="card" style="padding:18px">Failed to load samples</div>';
+      decoyHost.innerHTML = '';
+      return;
+    }
+    sampleData = await r.json();
+    if (!sampleData.cleared_pair) {
+      clearedHost.innerHTML = `
+        <div class="card" style="padding:18px;color:var(--c-text-muted)">
+          ${esc(sampleData.message || 'No sample data available — load a session and run matching first.')}
+        </div>`;
+      decoyHost.innerHTML = '';
+      return;
+    }
+    clearedHost.innerHTML = renderSamplePairCard(sampleData.cleared_pair, 'Real cleared pair');
+    decoyHost.innerHTML = (sampleData.decoys || []).length
+      ? '<div style="font-size:var(--t-small);font-weight:600;margin:18px 0 8px;color:var(--c-text-muted)">FALSE-POSITIVE GUARD — decoys</div>'
+        + sampleData.decoys.map((d, i) => renderSamplePairCard(d, `Decoy ${i+1}`)).join('')
+      : '';
+  }
+
+  function renderSamplePairCard(pair, headTitle) {
+    const oneSided = currentRecon !== 'two_sided';
+    const leftLabel = oneSided ? 'Flexcube · DR' : 'SWIFT';
+    const rightLabel = oneSided ? 'Flexcube · CR' : 'Flexcube';
+    const s = pair.swift || {};
+    const f = pair.flex || {};
+    const isDecoy = pair.kind === 'decoy';
+    const headBadge = isDecoy
+      ? `<span class="badge badge-warn">${esc(headTitle)}</span>`
+      : `<span class="badge badge-success">${esc(headTitle)}</span>`;
+    const reason = pair.reason ? `<span class="muted">${esc(pair.reason)}</span>` : '';
+    const note = isDecoy && pair.note ? `<span class="muted">${esc(pair.note)}</span>` : '';
+
+    // Field rows: (id-suffix, label, swift-value, flex-value)
+    const fields = [
+      ['value_date', 'Value date', fmtVD(s.value_date), fmtVD(f.value_date)],
+      ['amount',     'Amount',     fmtAmt(s.amount),    fmtAmt(f.amount)],
+      ['sign',       'Sign',       s.sign || '—',       f.type || '—'],
+      ['ref',        'Ref',        s.our_ref || '—',    f.trn_ref || '—'],
+      ['narration',  'Narration',  truncate((s.booking_text_1 || '') + ' ' + (s.booking_text_2 || ''), 100),
+                                   truncate(f.narration || '', 100)],
+    ];
+    const pairKey = (isDecoy ? 'decoy-' : 'cleared-') + Math.random().toString(36).slice(2, 8);
+    pair._domKey = pairKey;
+    return `
+      <div class="sample-pair-card" data-pair-key="${pairKey}">
+        <div class="sample-pair-head">
+          ${headBadge}
+          <span style="font-weight:600">${leftLabel}</span>
+          <span class="muted">↔</span>
+          <span style="font-weight:600">${rightLabel}</span>
+          ${reason}
+          ${note}
+          <span style="margin-left:auto" class="muted" id="pair-status-${pairKey}">—</span>
+        </div>
+        <div class="sample-pair-grid">
+          ${fields.map(([id, label, sv, fv]) => `
+            <div class="sp-field-label">${label}</div>
+            <div class="sp-field-cell ${id === 'ref' || id === 'narration' ? 'cell-mono' : ''}"
+                 data-pair-key="${pairKey}" data-field="${id}" data-side="swift"
+                 onclick="onFieldClick('${id}','swift')">${esc(sv)}</div>
+            <div class="sp-field-cell ${id === 'ref' || id === 'narration' ? 'cell-mono' : ''}"
+                 data-pair-key="${pairKey}" data-field="${id}" data-side="flex"
+                 onclick="onFieldClick('${id}','flex')">${esc(fv)}</div>
+          `).join('')}
+        </div>
+      </div>`;
+  }
+
+  // Map clicked field -> default condition (field, op, default params)
+  const FIELD_TO_CONDITION = {
+    value_date: {field: 'value_date', op: 'equal'},
+    amount:     {field: 'amount',     op: 'equal_within_tol'},
+    sign:       {field: 'sign',       op: 'mirror'},
+    ref:        {field: 'ref',        op: 'symmetric_in_narration'},
+    narration:  {field: 'ref',        op: 'symmetric_in_narration'},  // narration click also = ref check
+  };
+
+  function onFieldClick(fieldName) {
+    const cond = FIELD_TO_CONDITION[fieldName];
+    if (!cond) return;
+    // Toggle: if already selected, remove; else add
+    const idx = selectedConditions.findIndex(c =>
+      c.field === cond.field && c.op === cond.op);
+    if (idx >= 0) {
+      selectedConditions.splice(idx, 1);
+    } else {
+      selectedConditions.push({...cond});
+    }
+    renderConditionChips();
+    rerenderEvaluations();
+  }
+
+  function renderConditionChips() {
+    const host = document.getElementById('b-conditions');
+    if (!selectedConditions.length) {
+      host.innerHTML = '<div class="muted" style="font-size:var(--t-small);text-align:center;padding:24px 0">Click a field on the left to add a condition</div>';
+      return;
+    }
+    host.innerHTML = selectedConditions.map((c, i) => `
+      <span class="cond-chip">
+        <strong>${esc(c.field)}</strong>.<span>${esc(c.op)}</span>
+        <button onclick="removeCondition(${i})" title="Remove">×</button>
+      </span>`).join('');
+  }
+
+  function removeCondition(idx) {
+    selectedConditions.splice(idx, 1);
+    renderConditionChips();
+    rerenderEvaluations();
+  }
+
+  // For each visible sample pair, ask the server to evaluate the
+  // current selectedConditions and paint cells green/red. Clears
+  // paint when no conditions are selected.
+  async function rerenderEvaluations() {
+    const allPairs = [];
+    if (sampleData?.cleared_pair) allPairs.push(sampleData.cleared_pair);
+    (sampleData?.decoys || []).forEach(d => allPairs.push(d));
+
+    // Reset all cells
+    document.querySelectorAll('.sp-field-cell').forEach(el => {
+      el.classList.remove('cell-pass', 'cell-fail');
+    });
+    document.querySelectorAll('[id^="pair-status-"]').forEach(el => el.textContent = '—');
+
+    if (!selectedConditions.length) return;
+
+    for (const pair of allPairs) {
+      if (!pair.swift || !pair.flex) continue;
+      const r = await fetch('/match-tier-eval', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          swift: pair.swift, flex: pair.flex,
+          conditions: selectedConditions,
+        }),
+      });
+      if (!r.ok) continue;
+      const result = await r.json();
+      // Paint each clicked field cell with pass/fail.
+      result.conditions.forEach((c, i) => {
+        const sel = selectedConditions[i];
+        // Map condition.field back to the clicked-field name(s)
+        const fieldKeys = Object.entries(FIELD_TO_CONDITION)
+          .filter(([k, v]) => v.field === sel.field && v.op === sel.op)
+          .map(([k, v]) => k);
+        for (const fkey of fieldKeys) {
+          ['swift','flex'].forEach(side => {
+            const cell = document.querySelector(
+              `.sp-field-cell[data-pair-key="${pair._domKey}"][data-field="${fkey}"][data-side="${side}"]`);
+            if (cell) {
+              cell.classList.remove('cell-pass', 'cell-fail');
+              cell.classList.add(c.passes ? 'cell-pass' : 'cell-fail');
+            }
+          });
+        }
+      });
+      const statusEl = document.getElementById(`pair-status-${pair._domKey}`);
+      if (statusEl) {
+        if (pair.kind === 'decoy') {
+          statusEl.innerHTML = result.all_pass
+            ? '<span style="color:#dc2626;font-weight:600">⚠️ Would falsely match</span>'
+            : '<span style="color:#059669;font-weight:600">✓ Excluded</span>';
+        } else {
+          statusEl.innerHTML = result.all_pass
+            ? '<span style="color:#059669;font-weight:600">✓ Would match</span>'
+            : '<span style="color:#dc2626;font-weight:600">Would NOT match</span>';
+        }
+      }
+    }
+
+    // Bottom summary line
+    const truePos = sampleData?.cleared_pair && allPairs[0]?.swift && allPairs[0]?.flex ? 1 : 0;
+    document.getElementById('b-summary').textContent =
+      selectedConditions.length === 0
+        ? 'Click a field above to start building conditions.'
+        : `Rule has ${selectedConditions.length} condition${selectedConditions.length === 1 ? '' : 's'}. See pair statuses above.`;
+  }
+
+  async function saveTier() {
+    const name = document.getElementById('b-name').value.trim();
+    const priority = parseInt(document.getElementById('b-priority').value, 10);
+    const enabled = document.getElementById('b-enabled').checked;
+    const auto_confirm = document.getElementById('b-auto-confirm').checked;
+    if (!name) { alert('Tier name is required'); return; }
+    if (!selectedConditions.length) { alert('Add at least one condition'); return; }
+    if (!Number.isFinite(priority)) { alert('Priority must be a number'); return; }
+
+    const body = {
+      account_id: null,
+      recon_type: currentRecon,
+      name, priority, enabled, auto_confirm,
+      conditions: selectedConditions,
+    };
+    let r;
+    if (editingTierId) {
+      r = await fetch(`/match-tiers/${editingTierId}`, {
+        method: 'PUT', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({name, priority, enabled, auto_confirm, conditions: selectedConditions}),
+      });
+    } else {
+      r = await fetch('/match-tiers', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(body),
+      });
+    }
+    if (!r.ok) {
+      alert((await r.json().catch(()=>({}))).detail || 'Failed to save');
+      return;
+    }
+    closeBuilder();
+    loadTiers();
+  }
+
+  // --- helpers ------------------------------------------------------------
+
+  function fmtVD(d) {
+    if (!d) return '—';
+    const s = String(d);
+    return s.length === 8 ? `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}` : s;
+  }
+  function fmtAmt(a) {
+    if (a == null) return '—';
+    return Number(a).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+  }
+  function truncate(s, n) {
+    s = (s || '').toString();
+    return s.length > n ? s.slice(0, n) + '…' : s;
+  }
+
+  // Boot
+  document.body.dataset.nav = 'matching-tiers';
+  loadTiers();
+</script>
+{% endblock %}

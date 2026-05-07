@@ -321,7 +321,12 @@ def _execute(conn, job: dict, actor: str = 'system_scheduler') -> dict:
 
         def _target() -> None:
             try:
-                result[0], result[1] = 'ok', handler(conn, params) or 'ok'
+                job_conn = get_conn()
+                try:
+                    result[0], result[1] = 'ok', handler(job_conn, params) or 'ok'
+                    job_conn.commit()
+                finally:
+                    job_conn.close()
             except Exception as exc:
                 result[0] = 'error'
                 result[1] = f"{type(exc).__name__}: {exc}\n{traceback.format_exc()[-1500:]}"

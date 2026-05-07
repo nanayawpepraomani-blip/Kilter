@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block title %}Account ledger — Kilter{% endblock %}
+{% block crumbs %}
+<a href="/cash-accounts">Cash accounts</a><span class="sep">/</span><span class="current" id="crumb-acct">Ledger</span>
+{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1 id="head-title">Account ledger</h1>
+    <div class="subtitle">Chronological session chain for one account — every load advances the anchor; open items roll forward across sessions until cleared.</div>
+  </div>
+  <div style="display:flex;gap:8px">
+    <a class="btn btn-default" id="cta-status" href="#">Account status</a>
+    <a class="btn btn-default" id="cta-open-items" href="#">Open items</a>
+  </div>
+</div>
+
+<div class="summary-strip" id="summary-strip"></div>
+
+<div class="card">
+  <div class="card-head">
+    <h2>Session chain</h2>
+    <span class="hint" id="chain-count">—</span>
+  </div>
+  <div class="card-body tight">
+    <table class="table" id="chain-table">
+      <thead>
+        <tr>
+          <th style="width:90px">Session</th>
+          <th>Kind</th>
+          <th>Period</th>
+          <th class="num">Opening</th>
+          <th class="num">Closing</th>
+          <th class="num">Δ on chain</th>
+          <th class="num">Rows</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="chain-body">
+        <tr class="empty-row"><td colspan="9">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const ACCOUNT_ID = {{ account_id }};
+document.body.dataset.nav = 'cash-accounts';
+
+function fmtBal(v) {
+  if (v === null || v === undefined) return '—';
+  const n = Number(v);
+  const sign = n < 0 ? 'D ' : (n > 0 ? 'C ' : '');
+  return sign + Math.abs(n).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+}
+function fmtDelta(v) {
+  if (v === null || v === undefined) return '—';
+  const n = Number(v);
+  const arrow = n > 0 ? '▲' : (n < 0 ? '▼' : '·');
+  const cls = n > 0 ? 'success' : (n < 0 ? 'danger' : 'neutral');
+  return `<span class="badge badge-${cls}" style="font-size:var(--t-micro)">${arrow} ${fmtBal(Math.abs(n))}</span>`;
+}
+function fmtPeriod(s) {
+  // For one-sided sessions, opening_balance_date / closing_balance_date
+  // were populated from value_date min/max at ingest; flex_balance_as_of
+  // is the optional balances-sheet pin. Pick the best available combo.
+  const start = s.opening_balance_date;
+  const end = s.closing_balance_date || s.flex_balance_as_of;
+  if (!start && !end) return '<span class="muted">—</span>';
+  if (start && end && start !== end) return `${fmtDate(start)} → ${fmtDate(end)}`;
+  return fmtDate(end || start);
+}
+function kindBadge(kind) {
+  const cls = kind === 'seed' ? 'badge-info'
+           : kind === 'flex_delta' ? 'badge-neutral'
+           : 'badge-neutral';
+  return `<span class="badge ${cls}">${esc(kind || 'recon')}</span>`;
+}
+function statusBadge(status, locked) {
+  if (locked) return '<span class="badge badge-neutral">🔒 locked</span>';
+  if (status === 'closed') return '<span class="badge badge-success">closed</span>';
+  return '<span class="badge badge-warn">open</span>';
+}
+
+async function load() {
+  const r = await fetch(`/accounts/${ACCOUNT_ID}/ledger`);
+  const body = document.getElementById('chain-body');
+  if (!r.ok) {
+    body.innerHTML = '<tr class="empty-row"><td colspan="9">Load failed.</td></tr>';
+    return;
+  }
+  const d = await r.json();
+  const acct = d.account;
+
+  // Header + breadcrumbs.
+  document.getElementById('head-title').textContent =
+    `${acct.label} — ledger`;
+  document.getElementById('crumb-acct').textContent =
+    `${acct.shortname || acct.label} ledger`;
+  document.getElementById('cta-status').href = `/accounts/${ACCOUNT_ID}/status-page`;
+  document.getElementById('cta-open-items').href = `/open-items-view?account_id=${ACCOUNT_ID}`;
+
+  // Summary chips: anchor, open items, session count.
+  const chips = [
+    { label: 'Current anchor',
+      val:   fmtBal(acct.last_closing_balance),
+      tone:  acct.last_closing_balance == null ? 'neutral' : 'primary' },
+    { label: 'Open items',  val: (d.open_items_count || 0).toLocaleString(), tone: 'warn' },
+    { label: 'Sessions',    val: (d.sessions || []).length, tone: 'success' },
+    { label: 'Recon mode',
+      val: acct.account_recon_type === 'one_sided' ? '1-sided' : '2-sided',
+      tone: 'neutral' },
+  ];
+  document.getElementById('summary-strip').innerHTML = chips.map(c => `
+    <span class="chip">
+      <span class="chip-dot ${c.tone}"></span>
+      <span class="chip-num">${esc(String(c.val))}</span>
+      <span class="chip-label">${esc(c.label)}</span>
+    </span>`).join('');
+
+  // Build the chain table. Compute per-row Δ (closing - opening) so
+  // operators can scan for anomalies (e.g. a Day where Δ explodes).
+  const sess = d.sessions || [];
+  document.getElementById('chain-count').textContent =
+    `${sess.length} session${sess.length === 1 ? '' : 's'}`;
+  if (!sess.length) {
+    body.innerHTML = '<tr class="empty-row"><td colspan="9">No sessions yet — load a proof or pair to start the chain.</td></tr>';
+    return;
+  }
+  body.innerHTML = sess.map(s => {
+    // Pick the right opening/closing depending on session_kind. One-
+    // sided sessions store the canonical numbers in flex_opening_balance
+    // / flex_closing_balance; two-sided in opening_balance_amount with
+    // a sign letter.
+    const oneSided = (s.session_kind === 'seed' || s.session_kind === 'flex_delta');
+    const opening = oneSided
+      ? s.flex_opening_balance
+      : (s.opening_balance_sign === 'D' ? -1 : 1) * (s.opening_balance_amount || 0);
+    const closing = oneSided
+      ? s.flex_closing_balance
+      : (s.closing_balance_sign === 'D' ? -1 : 1) * (s.closing_balance_amount || 0);
+    const delta = (closing != null && opening != null) ? (closing - opening) : null;
+    const rows = (s.swift_count || 0) + (s.flex_count || 0);
+    return `
+      <tr>
+        <td><a href="/sessions/${s.id}/review">#${s.id}</a></td>
+        <td>${kindBadge(s.session_kind)}</td>
+        <td>${fmtPeriod(s)}</td>
+        <td class="num">${fmtBal(opening)}</td>
+        <td class="num">${fmtBal(closing)}</td>
+        <td class="num">${fmtDelta(delta)}</td>
+        <td class="num">${rows.toLocaleString()}</td>
+        <td>${statusBadge(s.status, s.locked_at)}</td>
+        <td><a class="btn btn-ghost btn-sm" href="/sessions/${s.id}/review">Open →</a></td>
+      </tr>`;
+  }).join('');
+}
+
+load();
+</script>
+{% endblock %}

@@ -31,10 +31,109 @@ match logic uses MIRROR_SIGN from recon_engine so the same rule applies.
 
 from __future__ import annotations
 
+import bisect
 import json
+import re
 from datetime import datetime
 
 from recon_engine import MIRROR_SIGN, Tolerance, normalize_ref
+
+
+_NARRATION_TOKEN = re.compile(r'[\s/\\\-_.,;:|()\[\]{}"\']+')
+_HAS_DIGIT = re.compile(r'\d')
+
+_MIN_REF_DIGIT_RATIO = 0.40
+
+def _is_ref_like(token: str) -> bool:
+    if not token:
+        return False
+    digits = sum(1 for c in token if c.isdigit())
+    return digits >= max(2, len(token) * _MIN_REF_DIGIT_RATIO)
+
+
+def _index_swift_for_carry(rows: list[dict]) -> tuple[dict, dict, dict]:
+    """Build (by_ref, sorted_amts, sorted_rows) indexes over the
+    swift-side candidate rows for carry_forward_match. Mirrors the
+    engine's `_build_flex_ref_index` shape: every digit-bearing ref
+    token (own_ref / their_ref / booking-text words) maps to the
+    rows that mention it.
+
+    Without this, a one-sided BTW delta (~18k DR open items × ~18k
+    DR candidates) ran a full linear scan inside a per-open-item
+    loop, totalling ~320M iterations and stalling carry-forward."""
+    by_ref: dict[str, list[dict]] = {}
+    by_sign: dict[str, list[dict]] = {}
+    for r in rows:
+        sign = r.get('sign')
+        if sign:
+            by_sign.setdefault(sign, []).append(r)
+        seen_keys: set[str] = set()
+
+        def _add_ref(token: str | None, *, require_digit: bool = False) -> None:
+            if not token:
+                return
+            n = normalize_ref(token)
+            if not n or len(n) < 3 or n in seen_keys:
+                return
+            if require_digit and not _is_ref_like(n):
+                return
+            seen_keys.add(n)
+            by_ref.setdefault(n, []).append(r)
+
+        _add_ref(r.get('our_ref'))
+        _add_ref(r.get('their_ref'))
+        for fld in ('booking_text_1', 'booking_text_2'):
+            text = r.get(fld) or ''
+            if not text:
+                continue
+            for tok in _NARRATION_TOKEN.split(text):
+                _add_ref(tok, require_digit=True)
+
+    sorted_amts: dict[str, list[float]] = {}
+    sorted_rows: dict[str, list[dict]] = {}
+    for sign, rs in by_sign.items():
+        rs_sorted = sorted(rs, key=lambda x: x['amount'])
+        sorted_rows[sign] = rs_sorted
+        sorted_amts[sign] = [x['amount'] for x in rs_sorted]
+    return by_ref, sorted_amts, sorted_rows
+
+
+def _index_flex_for_carry(rows: list[dict]) -> tuple[dict, dict, dict]:
+    """Mirror of _index_swift_for_carry for the flex side. Indexes
+    by every ref token in trn_ref / external_ref / narration."""
+    by_ref: dict[str, list[dict]] = {}
+    by_type: dict[str, list[dict]] = {}
+    for r in rows:
+        typ = r.get('type')
+        if typ:
+            by_type.setdefault(typ, []).append(r)
+        seen_keys: set[str] = set()
+
+        def _add_ref(token: str | None, *, require_digit: bool = False) -> None:
+            if not token:
+                return
+            n = normalize_ref(token)
+            if not n or len(n) < 3 or n in seen_keys:
+                return
+            if require_digit and not _is_ref_like(n):
+                return
+            seen_keys.add(n)
+            by_ref.setdefault(n, []).append(r)
+
+        _add_ref(r.get('trn_ref'))
+        _add_ref(r.get('external_ref'))
+        text = r.get('narration') or ''
+        if text:
+            for tok in _NARRATION_TOKEN.split(text):
+                _add_ref(tok, require_digit=True)
+
+    sorted_amts: dict[str, list[float]] = {}
+    sorted_rows: dict[str, list[dict]] = {}
+    for typ, rs in by_type.items():
+        rs_sorted = sorted(rs, key=lambda x: x['amount'])
+        sorted_rows[typ] = rs_sorted
+        sorted_amts[typ] = [x['amount'] for x in rs_sorted]
+    return by_ref, sorted_amts, sorted_rows
 
 
 def load_tolerance(conn, account_id: int | None) -> Tolerance:
@@ -55,6 +154,57 @@ def load_tolerance(conn, account_id: int | None) -> Tolerance:
         min_ref_len=row['min_ref_len'],
         fx_tol_bps=row['fx_tol_bps'] or 0.0,
     )
+
+
+def load_match_tiers(conn, account_id: int | None, recon_type: str) -> list:
+    """Load the tier set the engine should evaluate for this account.
+
+    Resolution order:
+      1. Per-account tier rows (account_id = this account_id) — replaces
+         the default set entirely (not additive). Per-account overrides
+         are an opt-in: most accounts use the recon_type defaults.
+      2. Default tier rows (account_id IS NULL, recon_type = this) —
+         the seeded T1-T4 equivalents from db._seed_match_tiers.
+      3. Hardcoded fallback (recon_engine.default_tiers_for) — only
+         hit when the DB hasn't been seeded yet (e.g. fresh test DB
+         created by an in-memory fixture).
+
+    Returns a list of TierDef objects ready to pass to propose_candidates.
+    """
+    import json
+    from recon_engine import TierDef, default_tiers_for
+
+    rows = []
+    if account_id is not None:
+        rows = conn.execute(
+            "SELECT id, name, priority, conditions_json, enabled, auto_confirm, legacy_tier "
+            "FROM match_tiers WHERE account_id=? ORDER BY priority",
+            (account_id,),
+        ).fetchall()
+    if not rows:
+        rows = conn.execute(
+            "SELECT id, name, priority, conditions_json, enabled, auto_confirm, legacy_tier "
+            "FROM match_tiers WHERE account_id IS NULL AND recon_type=? "
+            "ORDER BY priority",
+            (recon_type,),
+        ).fetchall()
+    if not rows:
+        return default_tiers_for(recon_type)
+
+    out: list[TierDef] = []
+    for r in rows:
+        try:
+            conds = tuple(json.loads(r['conditions_json']))
+        except (TypeError, ValueError):
+            conds = tuple()
+        out.append(TierDef(
+            id=r['id'], name=r['name'], priority=r['priority'],
+            conditions=conds,
+            enabled=bool(r['enabled']),
+            auto_confirm=bool(r['auto_confirm']),
+            legacy_tier=r['legacy_tier'],
+        ))
+    return out
 
 
 # --- carry-forward matching ------------------------------------------------
@@ -102,17 +252,27 @@ def carry_forward_match(conn, session_id: int, tol: Tolerance) -> dict:
     cleared_flex = 0
     now = datetime.utcnow().isoformat()
 
+    # Build ref + amount indexes once for each side, then mark rows
+    # as used via a set instead of list.remove. This collapses the
+    # 320M-iteration nested scan that used to stall carry-forward
+    # on a one-sided BTW delta into near-O(M).
+    flex_by_ref, flex_amts, flex_rows_by_type = _index_flex_for_carry(flex_free)
+    swift_by_ref, swift_amts, swift_rows_by_sign = _index_swift_for_carry(swift_free)
+    used_flex_ids: set[int] = set()
+    used_swift_ids: set[int] = set()
+
     for oi in open_rows:
         oi_dict = dict(oi)
         if oi_dict['source_side'] == 'swift':
-            # Prior SWIFT entry — look for a Flex counterpart in this session.
             target_type = MIRROR_SIGN.get(oi_dict['sign'])
             if target_type is None:
                 continue
-            picked = _pick_flex_match(oi_dict, flex_free, target_type, tol)
+            picked = _pick_flex_match_indexed(
+                oi_dict, flex_by_ref, flex_amts, flex_rows_by_type,
+                used_flex_ids, target_type, tol)
             if picked is None:
                 continue
-            flex_free.remove(picked)
+            used_flex_ids.add(picked['row_number'])
             _record_carry_assignment(
                 conn, session_id,
                 swift_row=None, flex_row=picked['row_number'],
@@ -122,15 +282,16 @@ def carry_forward_match(conn, session_id: int, tol: Tolerance) -> dict:
                 now=now,
             )
             cleared_swift += 1
-        else:
-            # Prior Flex entry — look for a SWIFT counterpart in this session.
+        elif oi_dict['source_side'] == 'flex':
             target_sign = _flex_to_swift_sign(oi_dict['sign'])
             if target_sign is None:
                 continue
-            picked = _pick_swift_match(oi_dict, swift_free, target_sign, tol)
+            picked = _pick_swift_match_indexed(
+                oi_dict, swift_by_ref, swift_amts, swift_rows_by_sign,
+                used_swift_ids, target_sign, tol)
             if picked is None:
                 continue
-            swift_free.remove(picked)
+            used_swift_ids.add(picked['row_number'])
             _record_carry_assignment(
                 conn, session_id,
                 swift_row=picked['row_number'], flex_row=None,
@@ -151,6 +312,90 @@ def carry_forward_match(conn, session_id: int, tol: Tolerance) -> dict:
         'cleared_against_swift': cleared_swift,
         'cleared_against_flex': cleared_flex,
     }
+
+
+def _pick_flex_match_indexed(oi: dict, by_ref: dict, sorted_amts: dict,
+                              sorted_rows: dict, used_ids: set,
+                              target_type: str, tol: Tolerance) -> dict | None:
+    """Indexed counterpart to _pick_flex_match. Two passes:
+      1. Ref-driven — look up the open item's ref in the per-side
+         by_ref index (which already includes narration tokens), pick
+         the first eligible (mirror-type, amount-tolerant, not-yet-used)
+         row. This is what catches the BTW pattern where the prior
+         CR's wallet ref appears in today's DR narration.
+      2. Amount-window fallback — bisect on the type-sorted amount
+         array, take rows within tolerance, pick the first that's
+         date-tight (within tol.date_tol_days).
+    """
+    oi_ref_norm = normalize_ref(oi.get('ref'))
+    oi_has_valid_ref = bool(oi_ref_norm and len(oi_ref_norm) >= tol.min_ref_len)
+    if oi_has_valid_ref:
+        for f in by_ref.get(oi_ref_norm, ()):
+            if f['row_number'] in used_ids:
+                continue
+            if f.get('type') != target_type:
+                continue
+            if not tol.amount_ok(oi['amount'], f['amount']):
+                continue
+            return f
+
+    # Amount-window fallback: only runs when the open item had a valid ref
+    # that simply wasn't found in the index. If the ref was absent or too
+    # short, skip — amount+date alone on a busy GL produces false positives
+    # (equivalent to the forbidden T3/T4 policy for one-sided accounts).
+    if not oi_has_valid_ref:
+        return None
+
+    amts = sorted_amts.get(target_type, ())
+    rows = sorted_rows.get(target_type, ())
+    if not amts:
+        return None
+    window = max(tol.amount_tol_abs,
+                 abs(oi['amount']) * (tol.amount_tol_pct / 100.0))
+    lo = bisect.bisect_left(amts, oi['amount'] - window - 1e-9)
+    hi = bisect.bisect_right(amts, oi['amount'] + window + 1e-9)
+    for f in rows[lo:hi]:
+        if f['row_number'] in used_ids:
+            continue
+        if _date_close(oi.get('value_date'), f.get('value_date'), tol.date_tol_days):
+            return f
+    return None
+
+
+def _pick_swift_match_indexed(oi: dict, by_ref: dict, sorted_amts: dict,
+                               sorted_rows: dict, used_ids: set,
+                               target_sign: str, tol: Tolerance) -> dict | None:
+    """Mirror of _pick_flex_match_indexed — prior Flex open item
+    looking for a current-session SWIFT counterpart."""
+    oi_ref_norm = normalize_ref(oi.get('ref'))
+    oi_has_valid_ref = bool(oi_ref_norm and len(oi_ref_norm) >= tol.min_ref_len)
+    if oi_has_valid_ref:
+        for s in by_ref.get(oi_ref_norm, ()):
+            if s['row_number'] in used_ids:
+                continue
+            if s.get('sign') != target_sign:
+                continue
+            if not tol.amount_ok(oi['amount'], s['amount']):
+                continue
+            return s
+
+    if not oi_has_valid_ref:
+        return None
+
+    amts = sorted_amts.get(target_sign, ())
+    rows = sorted_rows.get(target_sign, ())
+    if not amts:
+        return None
+    window = max(tol.amount_tol_abs,
+                 abs(oi['amount']) * (tol.amount_tol_pct / 100.0))
+    lo = bisect.bisect_left(amts, oi['amount'] - window - 1e-9)
+    hi = bisect.bisect_right(amts, oi['amount'] + window + 1e-9)
+    for s in rows[lo:hi]:
+        if s['row_number'] in used_ids:
+            continue
+        if _date_close(oi.get('value_date'), s.get('value_date'), tol.date_tol_days):
+            return s
+    return None
 
 
 def _pick_flex_match(oi: dict, flex_candidates: list[dict], target_type: str,

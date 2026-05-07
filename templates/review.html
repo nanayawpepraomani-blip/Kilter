@@ -7,7 +7,7 @@
 {% endblock %}
 {% block topbar_actions %}
   <a class="btn btn-default btn-sm" href="#" onclick="downloadReport(); return false;">Export xlsx</a>
-  <a class="btn btn-warn-soft btn-sm" href="#" onclick="closeSession(); return false;" title="Mark session closed and seed unmatched rows into the open-items ledger">Close session</a>
+  <a id="close-session-btn" class="btn btn-warn-soft btn-sm" href="#" onclick="closeSession(); return false;" title="Mark session closed and seed unmatched rows into the open-items ledger">Close session</a>
   <a class="btn btn-ghost btn-sm" href="/sessions/{{ session_id }}/audit-page">Audit</a>
 {% endblock %}
 
@@ -220,10 +220,25 @@
     font-size: var(--t-small);
   }
 
-  /* Register table */
+  /* Register table — Level 1 polish: single-line rows with sticky
+     header so 17k-row sessions stay scannable. Description and
+     reference are width-constrained with ellipsis; the full text
+     is in the title= tooltip. */
+  .register { table-layout: auto; }
+  .register thead { position: sticky; top: 0; z-index: 5; background: var(--c-surface); box-shadow: 0 1px 0 var(--c-border); }
+  .register tbody td { white-space: nowrap; vertical-align: middle; padding: 6px 10px; font-size: var(--t-small); }
   .register td.amount { font-variant-numeric: tabular-nums; text-align: right; }
   .register td.credit { color: var(--c-success); }
   .register td.debit { color: var(--c-danger); }
+  .register td.col-ref code {
+    display: inline-block; max-width: 180px; vertical-align: bottom;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .register td.col-desc {
+    max-width: 480px; overflow: hidden; text-overflow: ellipsis;
+    color: var(--c-text-muted);
+  }
+  .register td.col-date { color: var(--c-text-muted); font-variant-numeric: tabular-nums; }
   .register .side-badge {
     padding: 2px 8px; border-radius: 3px; font-size: var(--t-micro);
     font-weight: 600; letter-spacing: 0.3px;
@@ -256,29 +271,29 @@
       </div>
     </div>
     <div class="period">
-      <div style="font-size:var(--t-micro);color:var(--c-text-subtle);text-transform:uppercase;letter-spacing:0.3px;font-weight:600">Statement period</div>
+      <div id="m-period-heading" style="font-size:var(--t-micro);color:var(--c-text-subtle);text-transform:uppercase;letter-spacing:0.3px;font-weight:600">Statement period</div>
       <div class="period-value" id="m-period">—</div>
-      <div style="font-size:var(--t-micro);margin-top:4px">Statement <strong id="m-stmt">—</strong> · Session #{{ session_id }}</div>
+      <div id="m-stmt-line" style="font-size:var(--t-micro);margin-top:4px">Statement <strong id="m-stmt">—</strong> · Session #{{ session_id }}</div>
     </div>
   </div>
 
   <div class="reconcile-panels">
     <div class="reconcile-panel cleared">
-      <div class="panel-label">Cleared balance · Our side (Flexcube)</div>
+      <div class="panel-label" id="rp-cleared-header">Cleared balance · Our side (Flexcube)</div>
       <div class="row">
         <div class="cell">
           <div class="amt" id="rp-open">—</div>
-          <div class="sublabel">Beginning balance</div>
+          <div class="sublabel" id="rp-open-label">Beginning balance</div>
         </div>
         <div class="op">−</div>
         <div class="cell">
           <div class="amt" id="rp-debit">—</div>
-          <div class="sublabel"><span id="rp-debit-n">0</span> cleared debits</div>
+          <div class="sublabel"><span id="rp-debit-n">0</span> <span id="rp-debit-suffix">cleared debits</span></div>
         </div>
         <div class="op">+</div>
         <div class="cell">
           <div class="amt" id="rp-credit">—</div>
-          <div class="sublabel"><span id="rp-credit-n">0</span> cleared credits</div>
+          <div class="sublabel"><span id="rp-credit-n">0</span> <span id="rp-credit-suffix">cleared credits</span></div>
         </div>
       </div>
     </div>
@@ -287,7 +302,7 @@
       <div class="row">
         <div class="cell">
           <div class="amt" id="rp-close">—</div>
-          <div class="sublabel">Statement ending balance</div>
+          <div class="sublabel" id="rp-close-label">Statement ending balance</div>
         </div>
         <div class="cell">
           <div class="amt" id="rp-cleared">—</div>
@@ -295,7 +310,7 @@
         </div>
         <div class="cell difference">
           <div class="amt ok" id="rp-diff">—<span class="check" id="rp-check" style="display:none">✓</span></div>
-          <div class="sublabel">Difference</div>
+          <div class="sublabel" id="rp-diff-label">Difference</div>
         </div>
       </div>
     </div>
@@ -310,16 +325,71 @@
     This session was locked when its reconciliation certificate was signed. No further decisions can be recorded.
   </div>
 </div>
+
+<!-- Continuity breadcrumb. Populated for any session whose account has
+     a prior session — surfaces the chain (yesterday's closing = today's
+     opening) so the operator can see the linkage at a glance instead of
+     navigating away to the sessions list. -->
+<div id="continues-from" style="display:none;align-items:center;gap:8px;padding:8px 14px;margin-bottom:12px;background:var(--c-surface-2);border:1px solid var(--c-border);border-radius:6px;font-size:var(--t-small);color:var(--c-text-muted)">
+  <span style="font-size:14px">⛓</span>
+  <span id="continues-from-text">—</span>
+</div>
 <div id="balance-validation-badge" style="margin-bottom:8px"></div>
 
 <div class="stats-strip">
   <div class="stat-tile"><div class="label">Opening balance</div><div class="value" id="ss-open">—</div><div class="sub" id="ss-open-date">—</div></div>
   <div class="stat-tile"><div class="label">Closing balance</div><div class="value" id="ss-close">—</div><div class="sub" id="ss-close-date">—</div></div>
-  <div class="stat-tile"><div class="label">Statement movement</div><div class="value" id="ss-move">—</div><div class="sub">Credits − Debits (SWIFT)</div></div>
+  <div class="stat-tile"><div class="label" id="ss-move-label">Statement movement</div><div class="value" id="ss-move">—</div><div class="sub">Credits − Debits (SWIFT)</div></div>
+  <!-- Match rate — engine's success at pairing today's rows. Numerator
+       counts rows on either side that ended up in a confirmed or
+       pending assignment (rejected rows are explicitly NOT matches).
+       Sub-line shows the same number broken down by absolute count. -->
   <div class="stat-tile progress">
-    <div class="label">Reconciliation progress</div>
+    <div class="label">Match rate</div>
+    <div class="value" id="ss-match-rate">—</div>
+    <div class="bar"><div id="ss-match-bar" style="width:0%"></div></div>
+    <div class="sub" id="ss-match-sub">—</div>
+  </div>
+  <!-- Reconciliation progress — operator review state. Counts how many
+       engine proposals have been confirmed/rejected vs left pending.
+       Distinct from match rate: a session with 80% match rate may
+       still be 0% reviewed. -->
+  <div class="stat-tile progress">
+    <div class="label">Review progress</div>
     <div class="value" id="ss-progress">—</div>
     <div class="bar"><div id="ss-bar" style="width:0%"></div></div>
+  </div>
+</div>
+
+<!-- Matching workflow panel. Three explicit actions instead of one
+     "do everything" button:
+       Preview match    — dry-run, no writes; shows projected match
+                          rate per tier so ops can tune before applying
+       Apply matching   — runs the tier-driven engine using the
+                          configured tiers in match_tiers, writes
+                          assignments, no carry-forward, no splits
+       Carry-forward    — clears today's free rows against PRIOR open
+                          items; runs as a separate explicit step so
+                          ops controls the order. -->
+<div id="run-matching-panel" class="card" style="margin-top:12px;display:none">
+  <div class="card-body" style="padding:14px 16px">
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:10px">
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:var(--t-body);margin-bottom:2px" id="rm-title">Loaded — no matching has run yet</div>
+        <div class="muted" style="font-size:var(--t-small)" id="rm-sub">
+          Configure tiers on
+          <a href="/matching-tiers" target="_blank">Matching tiers</a>,
+          preview the projected match rate, then apply when ready.
+          Carry-forward of prior open items is a separate explicit step.
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap" id="rm-actions">
+      <button id="rm-preview" class="btn btn-default" type="button">Preview match</button>
+      <button id="rm-button"  class="btn btn-primary" type="button">Apply matching</button>
+      <button id="rm-carry"   class="btn btn-default" type="button">Carry-forward open items</button>
+    </div>
+    <div id="rm-result" style="display:none;margin-top:12px;padding:12px;background:var(--c-surface-2);border-radius:6px;font-size:var(--t-small)"></div>
   </div>
 </div>
 
@@ -329,7 +399,21 @@
   <button class="tab" data-tab="split">Split view</button>
 </div>
 
-<div id="tab-queue"><div id="root"></div></div>
+<div id="tab-queue">
+  <!-- Bulk-confirm bar — only shows when there are Tier 1 pending matches.
+       Tier 1 is the only tier safe to auto-confirm in bulk per Ecobank
+       Ghana ops policy (lower tiers like T3 amount+date produce too many
+       false candidates on busy days). -->
+  <div id="bulk-confirm-bar" style="display:none;align-items:center;gap:12px;padding:10px 14px;margin-bottom:10px;background:#ecfdf5;border:1px solid #10b981;border-radius:6px;font-size:var(--t-small)">
+    <span style="font-size:16px">⚡</span>
+    <div style="flex:1">
+      <strong id="bulk-confirm-title">Auto-confirm Tier 1 matches</strong>
+      <span class="muted" id="bulk-confirm-sub" style="margin-left:6px">Strict ref + amount pairs are safe to confirm without per-card review.</span>
+    </div>
+    <button id="bulk-confirm-btn" class="btn btn-success" type="button">Auto-confirm Tier 1</button>
+  </div>
+  <div id="root"></div>
+</div>
 
 <div id="tab-split" style="display:none">
   <div class="card" style="padding:0">
@@ -337,7 +421,7 @@
       <!-- SWIFT pane (left) -->
       <div id="split-swift-pane" style="border-right:1px solid var(--c-border);display:flex;flex-direction:column">
         <div class="split-pane-head" style="padding:12px 16px;border-bottom:1px solid var(--c-border);background:var(--c-surface-2);font-weight:600;font-size:var(--t-small);display:flex;justify-content:space-between;align-items:center">
-          <span>SWIFT — Their side</span>
+          <span id="split-swift-label">SWIFT — Their side</span>
           <span class="muted" id="split-swift-summary" style="font-weight:500;font-size:var(--t-small)">—</span>
         </div>
         <div style="padding:8px 12px;border-bottom:1px solid var(--c-border);display:flex;gap:8px">
@@ -355,7 +439,7 @@
       <!-- Flex pane (right) -->
       <div id="split-flex-pane" style="display:flex;flex-direction:column">
         <div class="split-pane-head" style="padding:12px 16px;border-bottom:1px solid var(--c-border);background:var(--c-surface-2);font-weight:600;font-size:var(--t-small);display:flex;justify-content:space-between;align-items:center">
-          <span>Flexcube — Our side</span>
+          <span id="split-flex-label">Flexcube — Our side</span>
           <span class="muted" id="split-flex-summary" style="font-weight:500;font-size:var(--t-small)">—</span>
         </div>
         <div style="padding:8px 12px;border-bottom:1px solid var(--c-border);display:flex;gap:8px">
@@ -551,13 +635,50 @@ async function refreshSession() {
   const od = s.opening_balance_date, cd = s.closing_balance_date;
   setText('m-period', (od && cd) ? `${fmtDate(od)} → ${fmtDate(cd)}` : (cd ? fmtDate(cd) : '—'));
 
-  setText('ss-open',  fmtBalance(s.opening_balance_amount, s.opening_balance_sign));
-  setText('ss-close', fmtBalance(s.closing_balance_amount, s.closing_balance_sign));
+  // For one-sided sessions, opening/closing live in flex_*_balance
+  // (signed reals). Fall through to the SWIFT-style amount+sign columns
+  // when those exist (two-sided sessions and one-sided seeds — the
+  // ingest_proof_seed code populates both shapes for compat).
+  function fmtSignedBal(signed) {
+    if (signed == null) return '—';
+    const sign = signed < 0 ? 'D' : 'C';
+    return `${sign} ${fmtAmount(Math.abs(signed))}`;
+  }
+  const openingDisplay = (s.opening_balance_amount != null && s.opening_balance_sign)
+    ? fmtBalance(s.opening_balance_amount, s.opening_balance_sign)
+    : fmtSignedBal(s.flex_opening_balance);
+  const closingDisplay = (s.closing_balance_amount != null && s.closing_balance_sign)
+    ? fmtBalance(s.closing_balance_amount, s.closing_balance_sign)
+    : fmtSignedBal(s.flex_closing_balance);
+  setText('ss-open',  openingDisplay);
+  setText('ss-close', closingDisplay);
   setText('ss-open-date',  od ? fmtDate(od) : '');
   setText('ss-close-date', cd ? fmtDate(cd) : '');
 
-  const movement = (s.totals?.swift_credits_all || 0) - (s.totals?.swift_debits_all || 0);
+  // Movement calculation: for two-sided sessions we read the SWIFT
+  // statement's debit/credit totals; for one-sided seed/flex_delta
+  // sessions there is no SWIFT side — the ingest splits the flex CRs
+  // into flex_txns and the flex DRs into swift_txns (via the swift-
+  // shape adapter), so the right calculation is flex_credits_all
+  // minus swift_debits_all. Without this branch one-sided sessions
+  // surface "movement = -ΣDR" (debit-only), which matches no real
+  // financial concept.
+  const oneSided = (s.session_kind === 'seed' || s.session_kind === 'flex_delta');
+  const moveCredits = oneSided
+    ? (s.totals?.flex_credits_all || 0)
+    : (s.totals?.swift_credits_all || 0);
+  const moveDebits = oneSided
+    ? (s.totals?.swift_debits_all || 0)   // flex DR rows live in swift_txns for one-sided
+    : (s.totals?.swift_debits_all || 0);
+  const movement = moveCredits - moveDebits;
   setText('ss-move', (movement >= 0 ? '+' : '−') + ' ' + fmtAmount(Math.abs(movement)));
+  // Relabel the movement tile so the source matches the calculation.
+  // The tile's <div class="sub"> sibling lives inside the same .stat-tile.
+  const moveTile = document.getElementById('ss-move')?.parentElement;
+  const moveSub = moveTile?.querySelector('.sub');
+  if (moveSub) moveSub.textContent = oneSided
+    ? 'Credits − Debits (Flexcube)'
+    : 'Credits − Debits (SWIFT)';
 
   const counts = s.counts || {};
   const total = (counts.pending || 0) + (counts.confirmed || 0) + (counts.rejected || 0);
@@ -567,26 +688,256 @@ async function refreshSession() {
   setStyle('ss-bar', 'width', pct + '%');
   setText('tc-queue', counts.pending || 0);
 
+  // Bulk-confirm Tier 1 bar — only show when there are pending T1 rows.
+  // Server enforces the same tier=1 cap; this is just UX gating.
+  const pendingByTier = counts.pending_by_tier || {};
+  const pendingT1 = pendingByTier['1'] || 0;
+  const bulkBar = document.getElementById('bulk-confirm-bar');
+  const bulkBtn = document.getElementById('bulk-confirm-btn');
+  if (bulkBar) {
+    if (pendingT1 > 0) {
+      bulkBar.style.display = 'flex';
+      if (bulkBtn) bulkBtn.textContent = `Auto-confirm Tier 1 (${pendingT1.toLocaleString()})`;
+    } else {
+      bulkBar.style.display = 'none';
+    }
+  }
+
+  // Match rate. Numerator and denominator differ between two-sided
+  // and one-sided sessions because the lifecycle is different:
+  //
+  //   Two-sided (SWIFT vs Flex): both sides should pair within the
+  //     same session. Rate = (matched DR rows + matched CR rows) /
+  //     (total DR rows + total CR rows).
+  //
+  //   One-sided (proof seed / flex_delta): rows flow ACROSS sessions.
+  //     Today's settlement DRs clear PRIOR open CRs (carry-forward).
+  //     Today's wallet CRs become open items waiting for FUTURE DRs
+  //     (forward-flow). So a CR that didn't pair today isn't a break
+  //     — it is correctly seeded as an open item for tomorrow. The
+  //     real question is "what is unaccounted-for?". A row is
+  //     accounted for if it (a) cleared in this session, OR (b) was
+  //     seeded as an open item for the next session. Anything else
+  //     is a true orphan.
+  const matchedSwift = s.totals?.matched_swift_rows || 0;
+  const matchedFlex  = s.totals?.matched_flex_rows  || 0;
+  const totalRows    = (counts.swift_total || 0) + (counts.flex_total || 0);
+  let matchRate, matchSubText, matchNumerator;
+  if (oneSided) {
+    // Accounted-for math for one-sided sessions:
+    //   matchedSwift = today's DR rows with an assignment (carry-forward
+    //                  to prior CR sets flex_row=0 but swift_row IS this
+    //                  session's row → counted here)
+    //   matchedFlex  = today's CR rows with an assignment (in-session
+    //                  CR↔DR pairs only, since carry-forward of today's
+    //                  CRs against prior DRs is rare on BTW)
+    //   seeded       = today's rows that became open items for tomorrow
+    //                  (forward-flow — no assignment, no counterpart yet)
+    // open_items_cleared is NOT added here — those are PRIOR open items
+    // that got cleared, and they're already counted via matchedSwift
+    // (the carry-forward assignments). Adding them double-counts.
+    const seeded  = s.open_items_seeded  || 0;
+    const cleared = s.open_items_cleared || 0;
+    matchNumerator = matchedSwift + matchedFlex + seeded;
+    const open = Math.max(0, totalRows - matchNumerator);
+    matchRate = totalRows > 0 ? Math.min(100, matchNumerator / totalRows * 100) : 0;
+    matchSubText = totalRows > 0
+      ? `${cleared.toLocaleString()} cleared · ${seeded.toLocaleString()} forward-flowing · ${open.toLocaleString()} open`
+      : 'No rows loaded yet';
+  } else {
+    matchNumerator = matchedSwift + matchedFlex;
+    matchRate = totalRows > 0 ? (matchNumerator / totalRows * 100) : 0;
+    matchSubText = totalRows > 0
+      ? `${matchNumerator.toLocaleString()} of ${totalRows.toLocaleString()} rows paired`
+      : 'No rows loaded yet';
+  }
+  setText('ss-match-rate', `${matchRate.toFixed(1)}%`);
+  setStyle('ss-match-bar', 'width', Math.min(100, matchRate) + '%');
+  setText('ss-match-sub', matchSubText);
+
+  // Run-matching panel state machine. Reads matching_started_at /
+  // matching_finished_at on the session row to figure out which of
+  // four states we're in — and crucially reconnects to the in-flight
+  // state across navigation/refresh:
+  //
+  //   1. Never run                  → show CTA + Run matching button
+  //   2. Started, not finished      → show "Matching… (Xs)" + auto-poll
+  //   3. Finished, no assignments   → show "Matched ✓ — 0 pairs" (zero hits)
+  //   4. Finished, has assignments  → hide panel (user has work to do)
+  //
+  // State (2) is the bug fix: previously the timer lived in a closure
+  // tied to the fetch promise, so a navigation away dropped it and
+  // the user saw "Run matching" again even mid-run. Now the start
+  // timestamp lives on the row, so any client opening the page reads
+  // the same state.
+  const rmPanel = document.getElementById('run-matching-panel');
+  const rmButton = document.getElementById('rm-button');
+  const rmSub = document.getElementById('rm-sub');
+  const rmTitle = document.getElementById('rm-title');
+
+  function fmtElapsed(secs) {
+    const m = Math.floor(secs / 60);
+    const sec = Math.floor(secs % 60);
+    return m > 0 ? `${m}m ${sec.toString().padStart(2,'0')}s` : `${sec}s`;
+  }
+
+  if (rmPanel && rmButton) {
+    const rowsLoaded = (counts.swift_total || 0) + (counts.flex_total || 0);
+    const matchingStarted = !!s.matching_started_at;
+    const matchingFinished = !!s.matching_finished_at;
+    const matchingInFlight = matchingStarted && !matchingFinished;
+    const hasAssignments = total > 0;
+    const hasEngineAssignments = (counts.engine_assignments || 0) > 0;
+
+    // Customise the prompt by session_kind once, then refine with
+    // state. Idempotent — re-runs reset the message every refresh.
+    if (s.session_kind === 'seed') {
+      if (rmTitle) rmTitle.textContent = 'Self-match the proof, then seed the open-items ledger';
+      if (rmSub) rmSub.textContent = 'The proof is loaded but its internal C/D pairs haven\'t been settled. Run matching to cancel paired legs and seed the unsettled residue as carry-forward open items for tomorrow\'s delta.';
+    } else if (s.session_kind === 'flex_delta') {
+      if (rmTitle) rmTitle.textContent = 'Match the delta + carry forward open items';
+      if (rmSub) rmSub.textContent = 'Today\'s rows are loaded but not matched yet. Run matching to find within-day pairs, clear prior open items, and seed any residue as new open items.';
+    }
+
+    // Stop any existing in-flight poller before deciding the new
+    // state — refreshSession() may have been called multiple times.
+    if (window._rmPoller) { clearInterval(window._rmPoller); window._rmPoller = null; }
+    if (window._rmTicker) { clearInterval(window._rmTicker); window._rmTicker = null; }
+
+    if (matchingInFlight) {
+      rmPanel.style.display = 'block';
+      rmButton.disabled = true;
+      const startedTs = new Date(s.matching_started_at + 'Z').getTime();
+      const startedLocal = new Date(s.matching_started_at + 'Z').toLocaleTimeString();
+      const tick = () => {
+        const elapsed = (Date.now() - startedTs) / 1000;
+        rmButton.textContent = `Matching… (${fmtElapsed(elapsed)})`;
+      };
+      tick();
+      window._rmTicker = setInterval(tick, 1000);
+      if (rmSub) rmSub.innerHTML =
+        `<strong>Matching in progress · started ${startedLocal}</strong> — running the engine, splits, M:N, carry-forward, and auto-rules. Safe to navigate away; the page reconnects to the timer when you come back.`;
+      // Poll the session detail every 5s so we detect completion
+      // even if the user stays on this page the whole time.
+      window._rmPoller = setInterval(async () => {
+        try {
+          const r = await fetch(`/sessions/${SESSION_ID}`);
+          if (!r.ok) return;
+          const fresh = await r.json();
+          if (fresh.matching_finished_at) {
+            clearInterval(window._rmPoller); window._rmPoller = null;
+            clearInterval(window._rmTicker); window._rmTicker = null;
+            refreshSession();
+            loadQueue();
+          }
+        } catch (_) { /* network blip — retry on next tick */ }
+      }, 5000);
+    } else if (matchingFinished && !hasAssignments) {
+      // Engine ran but found zero matches — common for a seed where
+      // the DR refs and CR refs come from different systems. Show
+      // the "no pairs" state but make it clear matching DID run.
+      rmPanel.style.display = 'block';
+      rmButton.disabled = false;
+      rmButton.textContent = 'Re-run matching';
+      if (rmSub) rmSub.innerHTML =
+        `<strong>Matched · 0 pairs found</strong> — the engine ran but didn\'t find any pairs at tier 1–6. Residue went to open items for the next session to clear. Click Re-run to retry (e.g. after tweaking tolerances).`;
+    } else if (hasAssignments && hasEngineAssignments) {
+      // Engine has run and produced tiered assignments — hide the panel,
+      // the user has review work to do in the queue tab.
+      rmPanel.style.display = 'none';
+    } else if (hasAssignments && !hasEngineAssignments) {
+      // Only carry-forward (auto_carry) assignments exist — the tiered
+      // engine has never run for this session. Keep the panel visible
+      // so the operator can trigger a full matching pass.
+      rmPanel.style.display = 'block';
+      rmButton.disabled = false;
+      rmButton.textContent = 'Run matching';
+      if (rmSub) rmSub.innerHTML =
+        `<strong>Carry-forward only</strong> — prior open items were cleared automatically, but the tiered engine hasn\'t run yet. Click Run matching to find within-session pairs.`;
+    } else if (rowsLoaded > 0 && !matchingStarted) {
+      // First-time load. Show the original CTA.
+      rmPanel.style.display = 'block';
+      rmButton.disabled = false;
+      rmButton.textContent = 'Run matching';
+    } else {
+      rmPanel.style.display = 'none';
+    }
+  }
+
+  // Cleared totals — for two-sided sessions, "our side" lives in
+  // flex_txns and the cleared CR/DR sums come from there. For one-
+  // sided sessions, ingest splits the file's CR rows into flex_txns
+  // and DR rows into swift_txns (so the engine can pair them as if
+  // SWIFT vs Flex). That means cleared_debits has to read from the
+  // swift-side query (swift_debits_cleared), not the flex side which
+  // is structurally zero on a one-sided session.
   const cleared_credits = s.totals?.flex_credits_cleared || 0;
-  const cleared_debits  = s.totals?.flex_debits_cleared  || 0;
-  setText('rp-open',    fmtAmount(s.opening_balance_amount || 0));
+  const cleared_debits  = oneSided
+    ? (s.totals?.swift_debits_cleared || 0)
+    : (s.totals?.flex_debits_cleared || 0);
+  // For one-sided sessions the Cleared-balance card's beginning value
+  // is the signed flex_opening_balance (a debit balance reads negative).
+  // Two-sided sessions still use the unsigned amount column so existing
+  // legacy displays are unchanged. Without this, a debit-balance seed
+  // shows "56,704,939.75" with no sign next to a "−56,704,939.75"
+  // Cleared balance in the Reconcile box — the inconsistency confused
+  // operators in the last screenshot.
+  const beginningBalance = (s.flex_opening_balance != null && oneSided)
+    ? s.flex_opening_balance
+    : (s.opening_balance_amount || 0) * (s.opening_balance_sign === 'D' ? -1 : 1);
+  setText('rp-open',    fmtAmount(beginningBalance));
   setText('rp-debit',   fmtAmount(cleared_debits));
   setText('rp-credit',  fmtAmount(cleared_credits));
-  setText('rp-debit-n', counts.confirmed || 0);
-  setText('rp-credit-n', counts.confirmed || 0);
+  // For one-sided sessions the DR count = matched swift rows, CR count =
+  // matched flex rows in THIS session only (carry-forward credits from prior
+  // sessions are not new flex movements here — showing counts.confirmed for
+  // both makes the credit row look like "17,970 credits = 212,766 GHS" which
+  // implies 12 GHS per credit and confuses operators).
+  setText('rp-debit-n', oneSided ? (s.totals?.matched_swift_rows ?? counts.confirmed ?? 0) : (counts.confirmed || 0));
+  setText('rp-credit-n', oneSided ? (s.totals?.matched_flex_rows ?? 0) : (counts.confirmed || 0));
 
-  const closingAmt = s.closing_balance_amount || 0;
-  const clearedRunning = (s.opening_balance_amount || 0) + cleared_credits - cleared_debits;
+  // For one-sided sessions, the "Statement ending balance" comes from
+  // the file's closing balance (flex side) rather than the SWIFT side
+  // — reuse the flex_closing_balance we wrote at ingest time.
+  const closingAmt = oneSided
+    ? (s.flex_closing_balance != null ? s.flex_closing_balance : 0)
+    : (s.closing_balance_amount || 0);
+  const openingAmt = oneSided
+    ? (s.flex_opening_balance != null ? s.flex_opening_balance : 0)
+    : (s.opening_balance_amount || 0);
+  const clearedRunning = openingAmt + cleared_credits - cleared_debits;
   const diff = closingAmt - clearedRunning;
   setText('rp-close',   fmtAmount(closingAmt));
   setText('rp-cleared', fmtAmount(clearedRunning));
   const rpDiff = document.getElementById('rp-diff');
   if (rpDiff) {
     rpDiff.textContent = fmtAmount(Math.abs(diff));
-    rpDiff.classList.toggle('ok', Math.abs(diff) < 0.01);
-    rpDiff.classList.toggle('err', Math.abs(diff) >= 0.01);
+    // Pre-matching, the "Difference" cell is structurally non-zero
+    // (no rows have been cleared yet, so the entire delta sits in
+    // Difference). Painting it red would falsely imply a recon
+    // failure. Show it neutral until at least one decision has been
+    // made; switch to red/green once the operator is actively
+    // reconciling.
+    const matchingStarted = (counts.confirmed || 0) + (counts.rejected || 0) > 0;
+    rpDiff.classList.toggle('ok',  matchingStarted && Math.abs(diff) < 0.01);
+    rpDiff.classList.toggle('err', matchingStarted && Math.abs(diff) >= 0.01);
   }
-  setStyle('rp-check', 'display', Math.abs(diff) < 0.01 ? 'inline' : 'none');
+  setStyle('rp-check', 'display',
+    ((counts.confirmed || 0) + (counts.rejected || 0) > 0) && Math.abs(diff) < 0.01 ? 'inline' : 'none');
+  // On one-sided sessions, the "Difference" between Cleared balance
+  // and Statement ending balance is structurally non-zero — it's the
+  // day's net change (closing − opening) which becomes carry-forward
+  // open items, not a recon failure. Relabel + add a tooltip so the
+  // operator doesn't read it as "books are out of balance". For
+  // two-sided sessions the original "Difference" semantics still apply.
+  const diffLabel = document.getElementById('rp-diff-label');
+  if (diffLabel) {
+    if (oneSided) {
+      diffLabel.innerHTML = 'Residue → open items <span style="color:var(--c-text-muted);font-weight:400" title="On a one-sided GL the matching engine pairs equal-amount CR/DR transactions that cancel each other. The day&apos;s net change (closing − opening) is structurally NOT a within-day pair — it carries forward as open items for tomorrow&apos;s delta to clear. This number reaching zero would mean nothing is rolling forward.">ⓘ</span>';
+    } else {
+      diffLabel.textContent = 'Difference';
+    }
+  }
 
   // Balance validation badge (1C)
   const bvEl = document.getElementById('balance-validation-badge');
@@ -601,6 +952,72 @@ async function refreshSession() {
     }
   }
 
+  // Comprehensive vocabulary swap for one-sided sessions. There's no
+  // SWIFT statement on these GLs — every "Statement …" label and
+  // "SWIFT" reference would be confusing. Each label has a hardcoded
+  // two-sided default in the markup; we override here when the
+  // session is one-sided so the page reads truthfully end-to-end.
+  const labelOverrides = oneSided ? {
+    'm-period-heading':   'Period',
+    'rp-cleared-header':  'Cleared movement · Flexcube',
+    'rp-open-label':      'Opening balance',
+    'rp-debit-suffix':    'matched debits',
+    'rp-credit-suffix':   'matched credits',
+    'rp-close-label':     'Closing balance',
+    'ss-move-label':      'Net movement',
+    'split-swift-label':  'DR legs · settlement side',
+    'split-flex-label':   'CR legs · wallet side',
+  } : {
+    'm-period-heading':   'Statement period',
+    'rp-cleared-header':  'Cleared balance · Our side (Flexcube)',
+    'rp-open-label':      'Beginning balance',
+    'rp-debit-suffix':    'cleared debits',
+    'rp-credit-suffix':   'cleared credits',
+    'rp-close-label':     'Statement ending balance',
+    'ss-move-label':      'Statement movement',
+    'split-swift-label':  'SWIFT — Their side',
+    'split-flex-label':   'Flexcube — Our side',
+  };
+  for (const [id, text] of Object.entries(labelOverrides)) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  }
+  // The "Statement — · Session #N" sub-line drops the "Statement —"
+  // prefix entirely on one-sided (there's no statement reference).
+  const stmtLine = document.getElementById('m-stmt-line');
+  if (stmtLine) {
+    stmtLine.innerHTML = oneSided
+      ? `Session #${SESSION_ID}`
+      : `Statement <strong id="m-stmt">${esc(s.swift_statement_ref || '—')}</strong> · Session #${SESSION_ID}`;
+  }
+
+  // Continuity breadcrumb. Hidden for the very first session on an
+  // account (or unregistered sessions); otherwise renders a one-line
+  // link back to the previous session and the closing balance it
+  // handed off — that closing == this session's opening if continuity
+  // passed at ingest.
+  const cb = document.getElementById('continues-from');
+  if (cb) {
+    if (s.prev_session && s.prev_session.id) {
+      const prev = s.prev_session;
+      const balRaw = prev.prev_closing_balance;
+      const balStr = (balRaw == null) ? '—'
+        : (balRaw < 0 ? '−' : '') +
+          fmtAmount(Math.abs(balRaw));
+      const dateStr = prev.prev_closing_date
+        ? ' as of ' + fmtDate(prev.prev_closing_date)
+        : '';
+      const kindLabel = prev.session_kind === 'seed' ? 'proof seed'
+                      : prev.session_kind === 'flex_delta' ? 'flex delta'
+                      : 'session';
+      document.getElementById('continues-from-text').innerHTML =
+        `Continues from <a href="/sessions/${prev.id}/review">${esc(kindLabel)} #${prev.id}</a> — closing balance <strong>${balStr}</strong>${dateStr}.`;
+      cb.style.display = 'flex';
+    } else {
+      cb.style.display = 'none';
+    }
+  }
+
   // Lock banner (1B)
   const lockBanner = document.getElementById('session-lock-banner');
   if (lockBanner) {
@@ -611,17 +1028,169 @@ async function refreshSession() {
       lockBanner.style.display = 'none';
     }
   }
+
+  // Hide "Close session" button once the session is already closed.
+  const closeBtn = document.getElementById('close-session-btn');
+  if (closeBtn) closeBtn.style.display = s.status === 'closed' ? 'none' : '';
 }
 
+// Paginated queue loader. Pulls a page of pending assignments, then
+// fetches the next page in the background as the operator approaches
+// the end. Was previously a single fetch of all pending rows, which
+// timed out at 16k+ rows because the server side ran N+3 queries per
+// row.
+const QUEUE_PAGE_SIZE = 50;
+let queueTotal = 0;
+
+// Plain-language description of every match tier for the operator.
+// One source of truth: review-card "Why this tier?" expandable + the
+// tolerance-admin tier reference table both read from this. Wording
+// uses the BTW Bank-to-Wallet GL vocabulary (wallet ref, EKAKRONG
+// settlement user, TRN refs like H26ZEXA…) but the rules apply to
+// any one-sided GL where DR↔CR pairing is the goal.
+const TIER_INFO = {
+  1: {
+    title: 'Strong match — reference linkage + amount',
+    summary: "A reference number on one side appears in the other side's narration, the amounts are equal (within tolerance), and the signs mirror (one DR, one CR).",
+    look_for: [
+      "Wallet reference (e.g. the 12-digit number after \"Bank2Wallet\") that appears on both legs",
+      "TRN ref (e.g. H26ZEXA…) from one side that shows up in the other side's narration",
+      "Same amount and same value date",
+    ],
+    confidence: 'Highest',
+    confidence_why: 'The reference linkage proves the two legs belong to the same transaction — safe to auto-confirm in bulk.',
+  },
+  2: {
+    title: 'Reference matches, amounts differ',
+    summary: 'A reference linkage exists between the two sides, but the amounts are NOT equal beyond tolerance — usually FX, a partial settlement, or a fee.',
+    look_for: [
+      'Same wallet ref or TRN ref on both legs',
+      'Amount difference — could be FX (wallet credit posted in different currency), a partial settlement, or a deducted fee',
+      'Words like "fee", "charge", "FX", or partial-amount language in the narration',
+    ],
+    confidence: 'High',
+    confidence_why: 'The ref linkage is strong evidence the legs are related — but the amount mismatch needs human eyes to confirm whether it is a legitimate adjustment or a real break.',
+  },
+  3: {
+    title: 'Same amount, same day, no ref link',
+    summary: "A DR and CR with the same amount and same value date, signs mirror — but the engine could NOT find any reference number tying the two legs together.",
+    look_for: [
+      'Wallet phone number (12-digit) on both sides — does it match?',
+      "TRN ref appearing in the other side's narration (engine may have missed a substring)",
+      "Posting pattern — DR usually by EKAKRONG (settlement bot), CR by a wallet user (W3S_GH, etc.)",
+    ],
+    confidence: 'Medium',
+    confidence_why: 'On a busy GL there are often dozens of debits and credits at common amounts (470.00, 1,000.00). Without a reference linking them, the engine guessed based on amount + date. Often right, but not safe to auto-confirm.',
+  },
+  4: {
+    title: 'Same amount, off by one day, no ref link',
+    summary: 'Same conditions as Tier 3 (no ref linkage, mirror sign, amount within tolerance) but the value dates are off by one calendar day.',
+    look_for: [
+      'Cross-day pairings happen when a settlement file cuts at midnight or T+1 effective dating is in play',
+      'Date drift on top of "no ref link" makes coincidence more likely — read the narration carefully',
+    ],
+    confidence: 'Lower',
+    confidence_why: 'Date drift on top of no ref link increases the chance the engine paired two unrelated transactions. Confirm only if the wallet ref or TRN clearly matches on inspection.',
+  },
+  5: {
+    title: 'Split (1:N or N:1)',
+    summary: 'One leg on this side equals the SUM of multiple legs on the other side. For example: one settlement DR covering three wallet credits.',
+    look_for: [
+      'All N legs share a reference token with the single side (settlement batch ID, sweep ref, etc.)',
+      "Sum of the N legs equals the single side's amount within tolerance",
+      'Same value date across the group',
+    ],
+    confidence: 'Aggregate',
+    confidence_why: 'Real splits happen frequently in batch settlements. Confirm only when the N legs are clearly part of the same logical batch (shared ref, posting user, or narration pattern).',
+  },
+  6: {
+    title: 'Many-to-many group',
+    summary: 'A group of DRs and a group of CRs whose totals match within a small date window — typical netting or sweep cycles.',
+    look_for: [
+      'Sum of the DR group equals sum of the CR group within tolerance',
+      'Group is bounded (max 3 rows per side) to keep the search predictable',
+      'Common ref token across the group (sweep batch ID, netting cycle ID)',
+    ],
+    confidence: 'Aggregate',
+    confidence_why: 'These are usually netting / sweep transactions. Confirm only after eyeballing makes the group logically consistent — same wallet pool, same settlement cycle, etc.',
+  },
+};
+window.TIER_INFO = TIER_INFO;
+let queueLoading = false;
+
 async function loadQueue() {
-  const r = await fetch(`/sessions/${SESSION_ID}/queue`);
-  queue = await r.json();
+  queue = [];
+  queueTotal = 0;
   index = 0;
+  await loadQueuePage(0);
   renderQueueCard();
 }
 
+async function loadQueuePage(offset) {
+  if (queueLoading) return;
+  queueLoading = true;
+  try {
+    const r = await fetch(`/sessions/${SESSION_ID}/queue?limit=${QUEUE_PAGE_SIZE}&offset=${offset}`);
+    if (!r.ok) {
+      const body = await r.text().catch(() => '');
+      console.error('Queue fetch failed', r.status, body.slice(0, 500));
+      if (offset === 0) {
+        root.innerHTML = `
+          <div class="card">
+            <div class="queue-done">
+              <h2>Couldn't load the review queue</h2>
+              <p>Server returned <code>${r.status}</code>. Check the uvicorn log for the traceback.</p>
+            </div>
+          </div>`;
+      }
+      return;
+    }
+    const payload = await r.json();
+    // Handle both shapes: legacy bare-list (older deploys) and the
+    // new {items, total, limit, offset} object.
+    const items = Array.isArray(payload) ? payload : (payload.items || []);
+    queueTotal = Array.isArray(payload) ? items.length : (payload.total || items.length);
+    if (offset === 0) queue = items;
+    else queue = queue.concat(items);
+  } finally {
+    queueLoading = false;
+  }
+}
+
+// Pre-fetch the next page when the operator gets close to the end of
+// the loaded slice. Idempotent — a no-op if the next page is already
+// loading or we've already pulled everything. Re-renders the card on
+// completion so a "Loading more…" placeholder advances to the real
+// row once data arrives.
+async function maybeLoadMoreQueue() {
+  if (queue.length >= queueTotal) return;
+  if (index < queue.length - 10) return;
+  const before = queue.length;
+  await loadQueuePage(queue.length);
+  if (queue.length > before && index >= before) renderQueueCard();
+}
+
 function renderQueueCard() {
+  // Pre-fetch the next page in the background as the operator
+  // approaches the end of the loaded slice. Cheap no-op if there's
+  // nothing more to fetch.
+  maybeLoadMoreQueue();
+
+  // Treat "no more loaded AND we've consumed everything" differently
+  // than "still pages on the server" — show a loading hint while
+  // a background fetch is in flight rather than the misleading
+  // "Queue cleared" success message.
   if (queue.length === 0 || index >= queue.length) {
+    if (index < queueTotal) {
+      root.innerHTML = `
+        <div class="card">
+          <div class="queue-done">
+            <h2>Loading more…</h2>
+            <p>Fetching the next page of pending matches.</p>
+          </div>
+        </div>`;
+      return;
+    }
     root.innerHTML = `
       <div class="card">
         <div class="queue-done">
@@ -634,11 +1203,13 @@ function renderQueueCard() {
   }
   const a = queue[index];
   const tierNames = {
-    1: 'TIER 1 — Strict match', 2: 'TIER 2 — Ref hit, amounts differ',
-    3: 'TIER 3 — Amount + date', 4: 'TIER 4 — Amount, date ±1 day',
-    5: 'TIER 5 — 1:N or N:1 split (ref-gated)',
-    6: 'TIER 6 — M:N aggregate (date band)',
+    1: 'TIER 1 — Strong match', 2: 'TIER 2 — Reference matches, amounts differ',
+    3: 'TIER 3 — Same amount + same day, no ref',
+    4: 'TIER 4 — Same amount, off by one day',
+    5: 'TIER 5 — Split (1:N or N:1)',
+    6: 'TIER 6 — Many-to-many group',
   };
+  const tierMeta = TIER_INFO[a.tier] || null;
   const priorityBadges = {
     low:    'background:var(--c-bg-sub);color:var(--c-text-muted)',
     normal: 'background:#dbeafe;color:#1e40af',
@@ -646,26 +1217,59 @@ function renderQueueCard() {
     urgent: 'background:#fee2e2;color:#991b1b',
   };
   const dueOverdue = a.due_date && a.due_date < new Date().toISOString().slice(0, 10);
+  // One-sided GLs (proof seed / flex_delta) match Flexcube DR ↔ Flexcube
+  // CR — there is no SWIFT side. The "swift" panel data here is actually
+  // a Flexcube DR row pushed through the swift-shape adapter at ingest,
+  // so we relabel headers + fields to read truthfully.
+  const oneSidedCard = session && (session.session_kind === 'seed' || session.session_kind === 'flex_delta');
+  const drNarration = oneSidedCard
+    ? [a.swift.booking_text_1, a.swift.booking_text_2].filter(Boolean).map(esc).join(' · ') || '—'
+    : null;
+  const leftHeader = oneSidedCard ? 'Flexcube · DR side' : 'SWIFT';
+  const rightHeader = oneSidedCard ? 'Flexcube · CR side' : 'Flexcube';
+  const diffLabel = oneSidedCard ? 'CR − DR' : 'Flexcube − SWIFT';
   root.innerHTML = `
     <div class="card review-card">
       <div class="tier-banner tier-${a.tier}">
-        <span class="tier-tag">${tierNames[a.tier]}</span>
-        <span class="reason">${esc(a.reason)}</span>
+        <div style="display:flex;align-items:center;gap:12px;flex:1;min-width:0">
+          <span class="tier-tag">${tierNames[a.tier]}</span>
+          <span class="reason" style="text-align:left">${esc(a.reason)}</span>
+        </div>
+        ${tierMeta ? `<button class="tier-info-toggle" type="button"
+            onclick="toggleTierInfo(${a.tier})"
+            aria-expanded="false"
+            aria-controls="tier-info-${a.tier}"
+            style="background:transparent;border:1px solid currentColor;color:inherit;padding:2px 10px;border-radius:999px;font-size:var(--t-micro);font-weight:600;cursor:pointer;flex-shrink:0">Why this tier? <span class="caret">▾</span></button>` : ''}
       </div>
+      ${tierMeta ? `
+      <div id="tier-info-${a.tier}" class="tier-info-panel" style="display:none;padding:14px 18px;background:var(--c-surface-2);border-bottom:1px solid var(--c-border)">
+        <div style="font-weight:600;margin-bottom:6px">${esc(tierMeta.title)}</div>
+        <p style="margin:0 0 10px 0">${esc(tierMeta.summary)}</p>
+        <div style="font-weight:600;font-size:var(--t-small);color:var(--c-text-muted);margin-bottom:4px">What to look for when reviewing</div>
+        <ul style="margin:0 0 10px 18px;padding:0;font-size:var(--t-small)">
+          ${tierMeta.look_for.map(item => `<li>${esc(item)}</li>`).join('')}
+        </ul>
+        <div style="font-size:var(--t-small);color:var(--c-text-muted)"><strong>Confidence — ${esc(tierMeta.confidence)}.</strong> ${esc(tierMeta.confidence_why)}</div>
+      </div>` : ''}
       <div class="panels">
         <div class="panel">
-          <h3>SWIFT <span class="side">Row ${a.swift.row_number}</span></h3>
+          <h3>${leftHeader} <span class="side">Row ${a.swift.row_number}</span></h3>
           <div class="amount-row">
             <div class="amount-value">${fmtAmount(a.swift.amount)}</div>
             <div class="amount-tag">${a.swift.sign === 'C' ? 'Credit' : 'Debit'} · ${esc(a.swift.sign)}</div>
           </div>
           <div class="field-row"><span class="field-label">Value date</span><span class="field-value">${fmtDate(a.swift.value_date)}</span></div>
+          ${oneSidedCard ? `
+          <div class="field-row"><span class="field-label">TRN ref</span><span class="field-value mono">${esc(a.swift.our_ref) || '—'}</span></div>
+          <div class="field-row"><span class="field-label">Narration</span><span class="field-value">${drNarration}</span></div>
+          ` : `
           <div class="field-row"><span class="field-label">Our ref</span><span class="field-value mono">${esc(a.swift.our_ref) || '—'}</span></div>
           <div class="field-row"><span class="field-label">Their ref</span><span class="field-value mono">${esc(a.swift.their_ref) || '—'}</span></div>
           <div class="field-row"><span class="field-label">Booking text</span><span class="field-value">${esc(a.swift.booking_text_1) || '—'}${a.swift.booking_text_2 ? ' · ' + esc(a.swift.booking_text_2) : ''}</span></div>
+          `}
         </div>
         <div class="panel">
-          <h3>Flexcube <span class="side">Row ${a.flex.row_number}</span></h3>
+          <h3>${rightHeader} <span class="side">Row ${a.flex.row_number}</span></h3>
           <div class="amount-row">
             <div class="amount-value">${fmtAmount(a.flex.amount)}</div>
             <div class="amount-tag">${esc(a.flex.type)}</div>
@@ -678,14 +1282,18 @@ function renderQueueCard() {
       </div>
       <div class="diff-banner ${Math.abs(a.amount_diff) < 0.01 ? 'zero' : ''}">
         <span>Amount difference</span>
-        <span><strong>${fmtAmount(a.amount_diff)}</strong> (Flexcube − SWIFT)</span>
+        <span><strong>${fmtAmount(a.amount_diff)}</strong> (${diffLabel})</span>
       </div>
       ${a.competing.length > 0 ? `
         <div class="competing-strip">
           <strong>${a.competing.length} competing candidate${a.competing.length === 1 ? '' : 's'}:</strong>
-          ${a.competing.slice(0, 4).map(c =>
-            `<span style="background:var(--c-bg-sub);color:var(--c-text-muted);padding:2px 8px;border-radius:999px;font-size:var(--t-micro);font-weight:600;margin-left:6px">${c.side === 'alt_flex' ? 'Flex' : 'SWIFT'} row ${c.side === 'alt_flex' ? c.flex_row : c.swift_row} · T${c.tier}</span>`
-          ).join('')}${a.competing.length > 4 ? ` <span class="muted">+${a.competing.length - 4} more</span>` : ''}
+          ${a.competing.slice(0, 4).map(c => {
+            const altLabel = oneSidedCard
+              ? (c.side === 'alt_flex' ? 'CR' : 'DR')
+              : (c.side === 'alt_flex' ? 'Flex' : 'SWIFT');
+            const altRow = c.side === 'alt_flex' ? c.flex_row : c.swift_row;
+            return `<span style="background:var(--c-bg-sub);color:var(--c-text-muted);padding:2px 8px;border-radius:999px;font-size:var(--t-micro);font-weight:600;margin-left:6px">${altLabel} row ${altRow} · T${c.tier}</span>`;
+          }).join('')}${a.competing.length > 4 ? ` <span class="muted">+${a.competing.length - 4} more</span>` : ''}
         </div>` : ''}
       <div class="case-strip" style="display:flex;gap:12px;align-items:center;padding:10px 12px;background:var(--c-bg-sub);border-radius:6px;margin-top:10px;font-size:var(--t-small)">
         <div style="display:flex;align-items:center;gap:6px">
@@ -894,6 +1502,19 @@ async function splitGroupDecision(groupId, action) {
 
 function skip() { index = Math.min(index + 1, queue.length); renderQueueCard(); }
 function prev() { index = Math.max(index - 1, 0); renderQueueCard(); }
+function toggleTierInfo(tier) {
+  const panel = document.getElementById(`tier-info-${tier}`);
+  const btn = document.querySelector(`button[aria-controls="tier-info-${tier}"]`);
+  if (!panel) return;
+  const isOpen = panel.style.display !== 'none';
+  panel.style.display = isOpen ? 'none' : 'block';
+  if (btn) {
+    btn.setAttribute('aria-expanded', String(!isOpen));
+    const caret = btn.querySelector('.caret');
+    if (caret) caret.textContent = isOpen ? '▾' : '▴';
+  }
+}
+window.toggleTierInfo = toggleTierInfo;
 
 document.addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
@@ -1026,18 +1647,41 @@ function renderRegister() {
     const tierText = e.tier
       ? (e.tier === 5 ? ' · split' : ' · T' + e.tier)
       : '';
+    // Side badge: for one-sided sessions both sides come from the
+    // same Flex file (CRs in flex_txns, DRs split into swift_txns at
+    // ingest), so the SWIFT/Flexcube vocabulary is misleading. Show
+    // DR/CR instead — the actual ledger meaning of the row.
+    const oneSidedSession = session && (session.session_kind === 'seed'
+                                          || session.session_kind === 'flex_delta');
+    const sideLabel = oneSidedSession
+      ? (e.side === 'swift' ? 'DR' : 'CR')
+      : (e.side === 'swift' ? 'SWIFT' : 'Flex');
+    const desc = e.description || '';
     return `
       <tr class="${picked ? 'picked' : ''}">
         <td class="pickcell">${checkbox}</td>
-        <td><span class="side-badge ${e.side}">${e.side === 'swift' ? 'SWIFT' : 'Flex'}</span> <span class="muted" style="font-size:var(--t-micro)">#${e.row_number}</span></td>
-        <td class="muted">${fmtDate(e.value_date)}</td>
-        <td><code style="font-size:var(--t-small)">${esc(e.ref) || ''}</code></td>
-        <td>${esc(e.description) || ''}</td>
+        <td><span class="side-badge ${e.side}">${sideLabel}</span> <span class="muted" style="font-size:var(--t-micro)">#${e.row_number}</span></td>
+        <td class="col-date">${fmtShortDate(e.value_date)}</td>
+        <td class="col-ref"><code title="${esc(e.ref || '')}">${esc(e.ref) || ''}</code></td>
+        <td class="col-desc" title="${esc(desc)}">${esc(desc)}</td>
         <td class="amount ${e.sign === 'D' ? 'debit' : ''}">${e.sign === 'D' ? fmtAmount(e.amount) : ''}</td>
         <td class="amount ${e.sign === 'C' ? 'credit' : ''}">${e.sign === 'C' ? fmtAmount(e.amount) : ''}</td>
         <td><span class="badge status-badge ${e.status}">${e.status}${tierText}</span>${splitBadge}</td>
       </tr>`;
   }).join('');
+}
+
+// Compact date formatter for the register table — "30-APR" instead
+// of "2026-04-30". Year stays implicit because the session period is
+// already shown in the page header. Falls back to the full ISO when
+// the input doesn't look like YYYYMMDD (e.g. legacy NULL or string).
+function fmtShortDate(d) {
+  if (!d) return '';
+  const s = String(d);
+  if (s.length !== 8) return fmtDate(d);
+  const months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+  const m = parseInt(s.slice(4,6), 10);
+  return `${s.slice(6,8)}-${months[m - 1] || s.slice(4,6)}`;
 }
 
 document.getElementById('register-body').addEventListener('change', (ev) => {
@@ -1391,5 +2035,233 @@ document.addEventListener('keydown', (e) => {
 document.body.dataset.nav = 'sessions';
 refreshSession();
 loadQueue();
+
+// Bulk-confirm Tier 1 button. Server enforces the tier=1 cap; this
+// just confirms with the operator + refreshes counts and the queue.
+(function wireBulkConfirm() {
+  const btn = document.getElementById('bulk-confirm-btn');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    const counts = (session && session.counts) || {};
+    const n = (counts.pending_by_tier || {})['1'] || 0;
+    if (!n) return;
+    const ok = window.confirm(
+      `Auto-confirm all ${n.toLocaleString()} Tier 1 matches in this session?\n\n` +
+      `Tier 1 = strict ref + amount (high confidence). Tier 3 (amount + date) ` +
+      `and below are NOT included — those still need per-card review.`);
+    if (!ok) return;
+    btn.disabled = true;
+    const original = btn.textContent;
+    btn.textContent = 'Confirming…';
+    try {
+      const r = await fetch(`/sessions/${SESSION_ID}/bulk-confirm`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({tier: 1}),
+      });
+      if (!r.ok) {
+        const body = await r.text().catch(() => '');
+        alert(`Bulk confirm failed (${r.status}): ${body.slice(0, 200)}`);
+        return;
+      }
+      const result = await r.json();
+      const verb = result.status_set === 'pending_approval'
+        ? 'sent to manager approval'
+        : 'auto-confirmed';
+      alert(`${result.updated.toLocaleString()} Tier 1 matches ${verb}.`);
+      await refreshSession();
+      await loadQueue();
+    } finally {
+      btn.disabled = false;
+      btn.textContent = original;
+    }
+  });
+})();
+
+// --- Run-matching button + live timer -------------------------------------
+// The ingest paths load rows only; the matching engine runs here when ops
+// clicks the button. The fetch can take many minutes on a large delta, so
+// we show an elapsed-seconds counter that ticks every second until the
+// response lands — gives ops confidence the page hasn't hung.
+(function wireRunMatching() {
+  const btn = document.getElementById('rm-button');
+  if (!btn) return;
+  let timerHandle = null;
+
+  function fmtElapsed(secs) {
+    const m = Math.floor(secs / 60);
+    const s = Math.floor(secs % 60);
+    return m > 0 ? `${m}m ${s.toString().padStart(2, '0')}s`
+                 : `${s}s`;
+  }
+
+  btn.addEventListener('click', async () => {
+    const sub = document.getElementById('rm-sub');
+    const startTs = new Date();
+    const startedAt = startTs.toLocaleTimeString();
+    btn.disabled = true;
+    btn.textContent = 'Matching…';
+
+    // Live elapsed counter — refreshes every second.
+    const tick = () => {
+      const elapsed = (Date.now() - startTs.getTime()) / 1000;
+      btn.textContent = `Matching… (${fmtElapsed(elapsed)})`;
+    };
+    timerHandle = setInterval(tick, 1000);
+    if (sub) sub.innerHTML =
+      `<strong>Started ${startedAt}</strong> — running the tier-driven engine on the loaded pool. Carry-forward is a separate step. Page won\'t refresh until done.`;
+
+    try {
+      const r = await fetch(`/sessions/${SESSION_ID}/run-matching`, { method: 'POST' });
+      if (!r.ok) {
+        const err = (await r.json().catch(() => ({}))).detail || `HTTP ${r.status}`;
+        throw new Error(err);
+      }
+      const result = await r.json();
+      clearInterval(timerHandle); timerHandle = null;
+      btn.textContent = 'Matched ✓';
+      const finishedAt = new Date(result.finished_at + 'Z').toLocaleTimeString();
+      // Pull the up-to-date match rate from /sessions/{id} so we can
+      // headline the post-run summary with the success %. Fire-and-
+      // forget — refreshSession() further down also re-renders the
+      // tile, this just gets the success % into the banner.
+      let matchRateLabel = '';
+      try {
+        const fresh = await fetch(`/sessions/${SESSION_ID}`).then(x => x.json());
+        const cs = fresh.counts || {};
+        const ms = fresh.totals?.matched_swift_rows || 0;
+        const mf = fresh.totals?.matched_flex_rows  || 0;
+        const tr = (cs.swift_total || 0) + (cs.flex_total || 0);
+        const oneSidedFresh = fresh.session_kind === 'seed' || fresh.session_kind === 'flex_delta';
+        if (tr > 0) {
+          let num;
+          if (oneSidedFresh) {
+            // Same accounting as the stat-tile calc: matched (this-side
+            // assignments) + seeded (forward-flow, no assignment).
+            // Carry-forward cleared is NOT added — those rows are
+            // already counted via matched_swift_rows. Adding open_items_cleared
+            // double-counts and breaks the rate.
+            num = ms + mf + (fresh.open_items_seeded || 0);
+            num = Math.min(num, tr);
+          } else {
+            num = ms + mf;
+          }
+          const rate = (num / tr * 100).toFixed(1);
+          matchRateLabel = `<strong style="color:var(--c-success)">Match rate ${rate}%</strong> (${num.toLocaleString()} of ${tr.toLocaleString()} rows accounted for) · `;
+        }
+      } catch (_) { /* non-blocking — render summary without rate */ }
+      if (sub) sub.innerHTML =
+        `<strong>Done in ${fmtElapsed(result.elapsed_seconds)}</strong> · started ${startedAt}, finished ${finishedAt}. ` +
+        `<br>${matchRateLabel}` +
+        `Candidates: ${result.candidates_proposed.toLocaleString()} · ` +
+        `Pending matches: ${result.pending_assignments.toLocaleString()} · ` +
+        `Splits: ${result.splits_proposed} · M:N: ${result.m2n_proposed} · ` +
+        `Carried-forward: ${result.open_items_carried.toLocaleString()} · ` +
+        `New open items: ${result.open_items_seeded.toLocaleString()} · ` +
+        `Auto-confirmed: ${result.auto_confirmed.toLocaleString()}`;
+      // Refresh the page state so the queue + register tabs reflect
+      // the new assignments.
+      setTimeout(() => { refreshSession(); loadQueue(); }, 800);
+    } catch (e) {
+      if (timerHandle) { clearInterval(timerHandle); timerHandle = null; }
+      btn.disabled = false;
+      btn.textContent = 'Apply matching';
+      if (sub) sub.innerHTML =
+        `<strong style="color:var(--c-state-rejected)">Matching failed:</strong> ${e.message}`;
+    }
+  });
+})();
+
+// Preview-match button: dry-run, no writes. Shows projected match rate
+// + per-tier counts in the result panel so ops can decide whether to
+// apply, tweak the tiers on /matching-tiers, or skip entirely.
+(function wirePreview() {
+  const btn = document.getElementById('rm-preview');
+  const out = document.getElementById('rm-result');
+  if (!btn || !out) return;
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    const original = btn.textContent;
+    btn.textContent = 'Previewing…';
+    out.style.display = 'block';
+    out.innerHTML = '<span class="muted">Running dry-run against the loaded data…</span>';
+    try {
+      const r = await fetch(`/sessions/${SESSION_ID}/match-preview`, {method: 'POST'});
+      if (!r.ok) {
+        const err = (await r.json().catch(() => ({}))).detail || `HTTP ${r.status}`;
+        throw new Error(err);
+      }
+      const j = await r.json();
+      if (!j.enabled_tiers) {
+        out.innerHTML = `
+          <strong>${esc(j.message || 'No tiers configured.')}</strong><br>
+          <a href="/matching-tiers" target="_blank">Open Matching tiers</a> to enable or build tiers, then preview again.`;
+        return;
+      }
+      const tierLines = (j.per_tier || []).map(t => `
+        <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--c-border)">
+          <span><strong>Tier ${t.tier}</strong> — ${esc(t.name)}${t.auto_confirm ? ' <span class="badge badge-success" style="font-size:var(--t-micro)">auto-confirm</span>' : ''}</span>
+          <strong>${t.count.toLocaleString()}</strong>
+        </div>`).join('');
+      out.innerHTML = `
+        <div style="display:flex;align-items:baseline;gap:18px;margin-bottom:8px">
+          <div style="font-size:var(--t-2);font-weight:700">${j.projected_match_rate_pct.toFixed(1)}%</div>
+          <div class="muted">projected match rate · dry-run, nothing written</div>
+        </div>
+        <div style="font-size:var(--t-small);margin-bottom:10px">
+          ${j.candidates_proposed.toLocaleString()} candidates · ${j.pairs_resolved.toLocaleString()} pairs resolved ·
+          ${j.projected_auto_confirmed.toLocaleString()} would auto-confirm · ${j.projected_pending.toLocaleString()} would be pending review
+        </div>
+        ${tierLines || '<div class="muted">No pairs resolved at any tier.</div>'}
+        <div class="muted" style="font-size:var(--t-micro);margin-top:10px">
+          Tweak tiers on <a href="/matching-tiers" target="_blank">Matching tiers</a> and preview again, or hit
+          <strong>Apply matching</strong> when satisfied.
+        </div>`;
+    } catch (e) {
+      out.innerHTML = `<strong style="color:var(--c-state-rejected)">Preview failed:</strong> ${esc(e.message)}`;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = original;
+    }
+  });
+})();
+
+// Carry-forward button: standalone explicit step. Clears today's free
+// rows against PRIOR open items via ref+amount linkage. Operator
+// triggers AFTER reviewing tier-driven matches so they can decide the
+// order in their workflow.
+(function wireCarryForward() {
+  const btn = document.getElementById('rm-carry');
+  const out = document.getElementById('rm-result');
+  if (!btn || !out) return;
+  btn.addEventListener('click', async () => {
+    if (!window.confirm(
+      'Push carry-forward open items?\n\n' +
+      'This will clear any of today\'s rows that match prior open items via ref+amount linkage. ' +
+      'Idempotent — safe to re-run; rows already paired stay paired.')) return;
+    btn.disabled = true;
+    const original = btn.textContent;
+    btn.textContent = 'Pushing…';
+    out.style.display = 'block';
+    out.innerHTML = '<span class="muted">Running carry-forward against prior open items…</span>';
+    try {
+      const r = await fetch(`/sessions/${SESSION_ID}/carry-forward`, {method: 'POST'});
+      if (!r.ok) {
+        const err = (await r.json().catch(() => ({}))).detail || `HTTP ${r.status}`;
+        throw new Error(err);
+      }
+      const j = await r.json();
+      out.innerHTML = `
+        <strong style="color:var(--c-success)">Carry-forward complete</strong> ·
+        ${j.open_items_carried.toLocaleString()} prior open items cleared in ${j.elapsed_seconds.toFixed(1)}s.`;
+      setTimeout(() => { refreshSession(); loadQueue(); }, 600);
+    } catch (e) {
+      out.innerHTML = `<strong style="color:var(--c-state-rejected)">Carry-forward failed:</strong> ${esc(e.message)}`;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = original;
+    }
+  });
+})();
 </script>
 {% endblock %}

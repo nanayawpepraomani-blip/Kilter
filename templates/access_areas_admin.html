@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+{% block title %}Access areas — Kilter{% endblock %}
+{% block crumbs %}<span class="current">Access areas</span>{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Access areas</h1>
+    <div class="subtitle">Taxonomy for access scoping. Each cash account belongs to one area; users see only the areas in their active scope. Renaming an area does not retroactively rename it on existing accounts — update those manually if needed.</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <h2>Area list</h2>
+    <div style="display:flex;gap:10px;align-items:center">
+      <label style="font-size:var(--t-small);color:var(--c-text-muted)">
+        <input type="checkbox" id="show-inactive"> Show inactive
+      </label>
+      <button class="btn btn-primary btn-sm admin-only" id="add-btn" style="display:none">Add area</button>
+    </div>
+  </div>
+  <div class="card-body tight">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Parent</th>
+          <th class="num">Accounts</th>
+          <th>Active</th>
+          <th>Created</th>
+          <th class="admin-only" style="display:none"></th>
+        </tr>
+      </thead>
+      <tbody id="body"><tr class="empty-row"><td colspan="6">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<div id="modal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.55);z-index:100;align-items:flex-start;justify-content:center;padding:50px 20px;overflow-y:auto">
+  <div class="card" style="max-width:500px;width:100%;margin:0">
+    <div class="card-head">
+      <h2 id="modal-title">Add access area</h2>
+      <button class="btn btn-ghost btn-sm" onclick="closeModal()">Close</button>
+    </div>
+    <div class="card-body">
+      <form id="form" class="form-grid">
+        <input type="hidden" name="mode" value="add">
+        <input type="hidden" name="area_id" value="">
+        <div class="field span-full"><label>Name *</label>
+          <input class="input" name="name" required maxlength="60" placeholder="e.g. TREASURY"></div>
+        <div class="field span-full"><label>Parent (optional, free text)</label>
+          <input class="input" name="parent" maxlength="60" placeholder="e.g. SYSTEM, REGION-EU"></div>
+        <div class="field span-full" id="active-field" style="display:none"><label>Active</label>
+          <select class="input" name="active"><option value="1">Yes</option><option value="0">No (hidden from picker)</option></select></div>
+        <div style="grid-column:1/-1;display:flex;gap:10px;align-items:center">
+          <button type="submit" class="btn btn-primary" id="submit-btn">Save</button>
+          <button type="button" class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+          <span class="status" id="status"></span>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.body.dataset.nav = 'access-areas';
+
+let canEdit = false;
+
+document.addEventListener('me:loaded', (ev) => {
+  canEdit = ev.detail.role === 'admin';
+  document.querySelectorAll('.admin-only').forEach(el => {
+    el.style.display = canEdit ? '' : 'none';
+  });
+});
+
+async function load() {
+  const inc = document.getElementById('show-inactive').checked;
+  const r = await fetch(`/access-areas?include_inactive=${inc ? 'true' : 'false'}&with_usage=true`);
+  if (!r.ok) { document.getElementById('body').innerHTML = `<tr><td colspan="6">Load failed.</td></tr>`; return; }
+  const rows = await r.json();
+  const body = document.getElementById('body');
+  if (rows.length === 0) { body.innerHTML = `<tr class="empty-row"><td colspan="6">No access areas.</td></tr>`; return; }
+  body.innerHTML = rows.map(a => `
+    <tr>
+      <td><strong>${esc(a.name)}</strong></td>
+      <td>${a.parent ? esc(a.parent) : '<span class="muted">—</span>'}</td>
+      <td class="num">${a.accounts_count || 0}</td>
+      <td>${a.active ? '<span class="badge badge-success">Active</span>' : '<span class="badge badge-neutral">Inactive</span>'}</td>
+      <td><span class="muted" style="font-size:var(--t-small)">${esc((a.created_at || '').slice(0,10))} · ${esc(a.created_by || '—')}</span></td>
+      <td class="admin-only" style="${canEdit ? '' : 'display:none'}">
+        <button class="btn btn-ghost btn-sm" onclick='openEdit(${JSON.stringify(a)})'>Edit</button>
+        ${a.active
+          ? `<button class="btn btn-ghost btn-sm" onclick="setActive(${a.id}, 0)">Deactivate</button>`
+          : `<button class="btn btn-ghost btn-sm" onclick="setActive(${a.id}, 1)">Reactivate</button>`}
+      </td>
+    </tr>`).join('');
+}
+
+function openAdd() {
+  const f = document.getElementById('form');
+  f.reset();
+  f.mode.value = 'add';
+  f.area_id.value = '';
+  document.getElementById('active-field').style.display = 'none';
+  document.getElementById('modal-title').textContent = 'Add access area';
+  document.getElementById('status').textContent = '';
+  document.getElementById('modal').style.display = 'flex';
+}
+
+function openEdit(a) {
+  const f = document.getElementById('form');
+  f.mode.value = 'edit';
+  f.area_id.value = a.id;
+  f.name.value = a.name;
+  f.parent.value = a.parent || '';
+  f.active.value = a.active ? '1' : '0';
+  document.getElementById('active-field').style.display = '';
+  document.getElementById('modal-title').textContent = `Edit ${a.name}`;
+  document.getElementById('status').textContent = '';
+  document.getElementById('modal').style.display = 'flex';
+}
+
+function closeModal() { document.getElementById('modal').style.display = 'none'; }
+
+async function setActive(id, value) {
+  const verb = value ? 'reactivate' : 'deactivate';
+  if (!confirm(`Are you sure you want to ${verb} this access area?`)) return;
+  const r = await fetch(`/access-areas/${id}`, {
+    method: 'PATCH', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({active: value}),
+  });
+  if (!r.ok) { alert((await r.json().catch(()=>({}))).detail || `${verb} failed`); return; }
+  load();
+}
+
+document.getElementById('form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = e.target;
+  const status = document.getElementById('status');
+  const body = {
+    name: f.name.value.trim(),
+    parent: f.parent.value.trim() || null,
+  };
+  let url, method;
+  if (f.mode.value === 'add') {
+    url = '/access-areas'; method = 'POST';
+  } else {
+    url = `/access-areas/${f.area_id.value}`; method = 'PATCH';
+    body.active = Number(f.active.value);
+  }
+  status.className = 'status';
+  status.textContent = 'Saving…';
+  try {
+    const r = await fetch(url, {
+      method, headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error((await r.json().catch(()=>({}))).detail || 'Save failed');
+    status.className = 'status success';
+    status.textContent = 'Saved.';
+    closeModal();
+    load();
+  } catch (err) {
+    status.className = 'status error';
+    status.textContent = err.message;
+  }
+});
+
+document.getElementById('show-inactive').addEventListener('change', load);
+document.getElementById('add-btn').addEventListener('click', openAdd);
+
+load();
+</script>
+{% endblock %}
