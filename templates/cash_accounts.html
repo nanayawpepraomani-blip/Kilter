@@ -49,13 +49,12 @@
         </div>
         <div class="field" style="grid-column:1/-1"><label>Recon mode</label>
           <select class="input" name="account_recon_type" id="new-recon-type" onchange="onReconTypeChange()">
-            <option value="two_sided">Two-sided — pair SWIFT statement against Flex GL (correspondent nostros)</option>
-            <option value="one_sided">One-sided — Flex GL only, no SWIFT counterpart (suspense / wallet GLs / internal-only)</option>
+            <option value="two_sided">Two-sided — SWIFT bank statement matched against Flexcube/GL (e.g. correspondent nostro accounts)</option>
+            <option value="one_sided">One-sided — Flexcube/GL only: DR entries matched against CR entries within the same GL account (e.g. suspense GLs, wallet GLs)</option>
           </select>
           <span class="hint" style="font-size:var(--t-small);color:var(--c-text-muted)">
-            One-sided accounts use the proof-seed + balance-chain flow:
-            anchor on Day 0, then each daily Flex delta's opening must
-            match the previous day's closing.
+            <strong>One-sided:</strong> no SWIFT file — Flexcube GL DR entries are matched against CR entries on the same account. Use for internal GLs (B2W, W2B, suspense).<br>
+            <strong>Two-sided:</strong> SWIFT statement (bank/correspondent side) is matched against the Flexcube GL (bank's internal booking). Use for nostro/vostro accounts.
           </span>
         </div>
         <div class="field"><label>Access area</label>
@@ -459,27 +458,27 @@ function render() {
       <table class="table" style="border-radius:0">
         <thead>
           <tr>
-            <th style="width:120px">Shortname</th>
+            <th style="width:180px">Shortname</th>
             <th>Label</th>
             <th>BIC</th>
             <th>SWIFT acct (Their)</th>
             <th>Flex GL (Our)</th>
             <th style="width:70px">CCY</th>
             <th style="width:160px">Anchor</th>
-            <th style="width:120px"></th>
+            <th style="width:160px;white-space:nowrap"></th>
           </tr>
         </thead>
         <tbody>
           ${groups[area].sort((a,b) => (a.shortname || a.label).localeCompare(b.shortname || b.label)).map(a => `
             <tr>
-              <td>
+              <td style="white-space:nowrap">
                 <span class="acct-cell">
                   ${bankAvatar(a.bic, a.shortname)}
                   <span class="acct-cell__name">${esc(a.shortname || '')}</span>
+                  ${a.account_recon_type === 'one_sided'
+                    ? '<span class="badge badge-info" style="margin-left:4px;font-size:var(--t-micro)" title="One-sided GL — Flex only, no SWIFT counterpart">1-sided</span>'
+                    : ''}
                 </span>
-                ${a.account_recon_type === 'one_sided'
-                  ? '<span class="badge badge-info" style="margin-left:6px;font-size:var(--t-micro)" title="One-sided GL — Flex only, no SWIFT counterpart">1-sided</span>'
-                  : ''}
               </td>
               <td>${esc(a.label)}${a.notes ? `<br><span class="muted" style="font-size:var(--t-small)">${esc(a.notes)}</span>` : ''}</td>
               <td class="muted"><code>${esc(a.bic || '')}</code></td>
@@ -487,7 +486,7 @@ function render() {
               <td class="muted"><code>${esc(a.flex_ac_no)}</code></td>
               <td><span class="badge badge-neutral">${esc(a.currency)}</span></td>
               <td>${anchorCell(a)}</td>
-              <td>${actionsCell(a)}</td>
+              <td style="white-space:nowrap">${actionsCell(a)}</td>
             </tr>`).join('')}
         </tbody>
       </table>

@@ -33,13 +33,14 @@
           <th class="num">Opening</th>
           <th class="num">Closing</th>
           <th class="num">Δ on chain</th>
-          <th class="num">Rows</th>
+          <th class="num" title="DR rows loaded / CR rows loaded">DR / CR rows</th>
+          <th class="num" title="Confirmed matched pairs">Pairs</th>
           <th>Status</th>
           <th></th>
         </tr>
       </thead>
       <tbody id="chain-body">
-        <tr class="empty-row"><td colspan="9">Loading…</td></tr>
+        <tr class="empty-row"><td colspan="10">Loading…</td></tr>
       </tbody>
     </table>
   </div>
@@ -128,7 +129,7 @@ async function load() {
   document.getElementById('chain-count').textContent =
     `${sess.length} session${sess.length === 1 ? '' : 's'}`;
   if (!sess.length) {
-    body.innerHTML = '<tr class="empty-row"><td colspan="9">No sessions yet — load a proof or pair to start the chain.</td></tr>';
+    body.innerHTML = '<tr class="empty-row"><td colspan="10">No sessions yet — load a proof or pair to start the chain.</td></tr>';
     return;
   }
   body.innerHTML = sess.map(s => {
@@ -144,7 +145,17 @@ async function load() {
       ? s.flex_closing_balance
       : (s.closing_balance_sign === 'D' ? -1 : 1) * (s.closing_balance_amount || 0);
     const delta = (closing != null && opening != null) ? (closing - opening) : null;
-    const rows = (s.swift_count || 0) + (s.flex_count || 0);
+    const drRows   = s.swift_count || 0;
+    const crRows   = s.flex_count  || 0;
+    const drLabel  = oneSided ? 'DR' : 'SWIFT';
+    const crLabel  = oneSided ? 'CR' : 'Flex';
+    const rowsCell = `<span title="${drRows.toLocaleString()} ${drLabel} rows">${drRows.toLocaleString()}</span>`
+                   + `<span class="muted" style="padding:0 4px">/</span>`
+                   + `<span title="${crRows.toLocaleString()} ${crLabel} rows">${crRows.toLocaleString()}</span>`;
+    const confirmed = s.confirmed || 0;
+    const pairsCell = confirmed
+      ? `<span class="badge badge-success" style="font-size:var(--t-micro)">${confirmed.toLocaleString()}</span>`
+      : `<span class="muted">—</span>`;
     return `
       <tr>
         <td><a href="/sessions/${s.id}/review">#${s.id}</a></td>
@@ -153,7 +164,8 @@ async function load() {
         <td class="num">${fmtBal(opening)}</td>
         <td class="num">${fmtBal(closing)}</td>
         <td class="num">${fmtDelta(delta)}</td>
-        <td class="num">${rows.toLocaleString()}</td>
+        <td class="num" style="white-space:nowrap">${rowsCell}</td>
+        <td class="num">${pairsCell}</td>
         <td>${statusBadge(s.status, s.locked_at)}</td>
         <td><a class="btn btn-ghost btn-sm" href="/sessions/${s.id}/review">Open →</a></td>
       </tr>`;

@@ -48,10 +48,12 @@
     }
     const data = await r.json();
     const a = data.account;
+    const isOneSided = a.account_recon_type === 'one_sided';
     document.getElementById('crumb-account').textContent = a.shortname || a.label;
     document.getElementById('acct-title').textContent = a.label;
-    document.getElementById('acct-subtitle').textContent =
-      `${a.swift_account} ↔ ${a.flex_ac_no} · ${a.currency}${a.access_area ? ' · ' + a.access_area : ''}`;
+    document.getElementById('acct-subtitle').textContent = isOneSided
+      ? `${a.flex_ac_no} · ${a.currency}${a.access_area ? ' · ' + a.access_area : ''} · GL one-sided`
+      : `${a.swift_account} ↔ ${a.flex_ac_no} · ${a.currency}${a.access_area ? ' · ' + a.access_area : ''}`;
 
     const t = data.totals;
     const oi = data.open_items;
@@ -61,10 +63,10 @@
       <div class="stat accent-primary">
         <div class="label">Match rate</div>
         <div class="value">${t.match_rate_pct.toFixed(1)}%</div>
-        <div class="hint">${t.confirmed} confirmed of ${t.swift_total} SWIFT</div>
+        <div class="hint">${t.confirmed} confirmed of ${t.swift_total} ${isOneSided ? 'GL DR rows' : 'SWIFT rows'}</div>
       </div>
-      <div class="stat"><div class="label">SWIFT rows (all time)</div><div class="value">${t.swift_total}</div></div>
-      <div class="stat"><div class="label">Flex rows (all time)</div><div class="value">${t.flex_total}</div></div>
+      <div class="stat"><div class="label">${isOneSided ? 'GL DR rows (all time)' : 'SWIFT rows (all time)'}</div><div class="value">${t.swift_total}</div></div>
+      <div class="stat"><div class="label">${isOneSided ? 'GL CR rows (all time)' : 'Flex rows (all time)'}</div><div class="value">${t.flex_total}</div></div>
       <div class="stat accent-warn">
         <div class="label">Open items</div>
         <div class="value">${oi.count}</div>

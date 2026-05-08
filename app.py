@@ -6355,7 +6355,7 @@ def account_recon_status(account_id: int, user: dict = Depends(current_user)):
     try:
         acc = conn.execute(
             "SELECT id, label, shortname, access_area, bic, swift_account, "
-            "       flex_ac_no, currency, notes, active "
+            "       flex_ac_no, currency, notes, active, account_recon_type "
             "FROM accounts WHERE id=?", (account_id,),
         ).fetchone()
         if acc is None:
