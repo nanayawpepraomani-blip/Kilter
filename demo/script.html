@@ -121,7 +121,7 @@
 
   <header class="hero">
     <h1>Kilter &middot; Live Demo Script</h1>
-    <div class="meta">Mixed audience (ops + leadership) &middot; ~10 minutes &middot; Local at <code style="background:rgba(255,255,255,0.15);color:white">http://127.0.0.1:8000</code></div>
+    <div class="meta">Mixed audience (ops + leadership) &middot; ~11 minutes &middot; Local at <code style="background:rgba(255,255,255,0.15);color:white">http://127.0.0.1:8000</code></div>
   </header>
 
   <nav class="nav">
@@ -133,6 +133,7 @@
     <a href="#scene4">4 · Roles</a>
     <a href="#scene5">5 · Scoping</a>
     <a href="#scene6">6 · Export + audit</a>
+    <a href="#scene7">7 · Scheduler</a>
     <a href="#recovery">If it breaks</a>
   </nav>
 
@@ -146,6 +147,7 @@
     <li><input type="checkbox"> <strong>One session with a pending queue item.</strong> If everything is already cleared, upload a fresh SWIFT/Flex pair from <code>uploads/</code> so you have something to confirm live.</li>
     <li><input type="checkbox"> <strong>Browser zoom at 110%.</strong> Makes the screen readable from the back of the room.</li>
     <li><input type="checkbox"> <strong>Close every unrelated tab.</strong> Hide the bookmark bar (<code>Ctrl+Shift+B</code>).</li>
+    <li><input type="checkbox"> <strong>Scheduler has recent job runs.</strong> Admin → Scheduler — confirm at least one job has a last-run timestamp from today or yesterday. If not, click Run now on Intake Scan.</li>
     <li><input type="checkbox"> <strong>Recovery plan.</strong> If a page breaks, switch to the other tab and narrate while you recover. Never refresh the presenter tab mid-demo.</li>
   </ul>
 
@@ -159,7 +161,8 @@
       <tr><td>4:45</td><td>1:15</td><td>Scene 4 &middot; Switch to ops — what role-based UI looks like</td></tr>
       <tr><td>6:00</td><td>1:30</td><td>Scene 5 &middot; Active-area picker (the mixed-audience hook)</td></tr>
       <tr><td>7:30</td><td>1:30</td><td>Scene 6 &middot; Export xlsx + audit log</td></tr>
-      <tr><td>9:00</td><td>1:00</td><td>Close + Q&amp;A</td></tr>
+      <tr><td>9:00</td><td>1:00</td><td>Scene 7 &middot; Scheduler — "what happened overnight" <span class="moneyshot">ops hook</span></td></tr>
+      <tr><td>10:00</td><td>1:00</td><td>Close + Q&amp;A</td></tr>
     </tbody>
   </table>
 
@@ -185,7 +188,7 @@
       <li>Click Upload.</li>
       <li>Wait for the status line → <em>"Session #5: Registered · N pending, X unmatched SWIFT, Y unmatched Flex."</em></li>
     </ol>
-    <div class="say">Two files — SWIFT messages from the bank, and the Flexcube extract for the matching account. Kilter sha-256s both files so you can't accidentally ingest the same statement twice. Behind the scenes the matcher proposed pairs across four tiers — the ones it's sure about, and the ones that need a human. That's what we do next.</div>
+    <div class="say">Two files — SWIFT messages from the bank, and the Flexcube extract for the matching account. Kilter sha-256s both files so you can't accidentally ingest the same statement twice. In production the scanner does this automatically every 15 minutes — you never need to drag a file. Behind the scenes the matcher proposed pairs across four tiers — the ones it's sure about, and the ones that need a human. That's what we do next.</div>
     <div class="callout warn">
       <strong>If the upload fails</strong> (duplicate hash, wrong format): switch to an existing session with <code>pending &gt; 0</code> and narrate: <em>"Here's one already ingested — same flow from here on."</em>
     </div>
@@ -217,7 +220,7 @@
       <li>Bottom-left: <em>Ops Demo User &middot; ops</em>.</li>
       <li>Top of Dashboard — the same four stat cards as admin.</li>
     </ul>
-    <div class="say">Same app, different role. Ops sees the reconciliation tools and nothing else. No user management, no activity log, no manual upload — that's admin territory. We've got four roles total: admin, ops, audit, and internal control. Audit and IC can read the activity log; they can't touch a match.</div>
+    <div class="say">Same app, different role. Ops sees the reconciliation tools and nothing else. No user management, no activity log, no manual upload — that's admin territory. Four roles total: admin, ops, audit, and internal control. Audit and IC can read the activity log and export it; they can't touch a match. Everyone logs in with TOTP — Microsoft Authenticator, Google Authenticator, Authy — whatever the bank already uses.</div>
   </section>
 
   <section class="scene" id="scene5">
@@ -254,10 +257,26 @@
     <div class="say">Three things ship with every reconciliation session. The xlsx report for finance — same format they're already using. The session's audit trail — who matched what, when. And a running activity log across every user, every action. The question "prove who did this" has a one-line answer now.</div>
   </section>
 
+  <section class="scene" id="scene7">
+    <h3><span class="beat">9:00</span> Scene 7 — Scheduler <span class="moneyshot">ops hook</span> <span style="color:var(--muted);font-weight:normal;font-size:13px">(1:00)</span></h3>
+    <p><strong>Show:</strong> Admin sidebar → <strong>Scheduler</strong>.</p>
+    <p><strong>Point at, in this order:</strong></p>
+    <ul>
+      <li>The jobs table — 7 rows, all enabled, each with a last-run timestamp and next-run time.</li>
+      <li>Highlight <strong>DB Backup</strong> (02:00 daily) and <strong>Intake Scan</strong> (every 15 min).</li>
+      <li>Click into a job — show the params JSON, enable/disable toggle, run-now button.</li>
+      <li>If there are recent job runs, expand one to show the log output.</li>
+    </ul>
+    <div class="say">Before anyone walked in this morning, Kilter had already backed up the database, pulled the Flexcube extract, scanned the inbox for new files, and sent the SLA alert to the treasury team. Seven jobs — all pre-seeded, all configurable here. You can change the schedule, adjust the retention, or trigger a run manually. Nothing needs a cron tab or a script.</div>
+    <div class="callout">
+      <strong>Time check:</strong> if you're running long, skip the job detail click and just point at the table. The concept lands from the list alone.
+    </div>
+  </section>
+
   <section class="scene" id="close">
-    <h3><span class="beat">9:00</span> Close <span style="color:var(--muted);font-weight:normal;font-size:13px">(1:00)</span></h3>
+    <h3><span class="beat">10:00</span> Close <span style="color:var(--muted);font-weight:normal;font-size:13px">(1:00)</span></h3>
     <p><strong>Back to the Dashboard. Say:</strong></p>
-    <div class="say">That's the loop: ingest, review, export, audited. Self-hosted on your infrastructure, MFA by default, role-based, and scoped to the way each team actually works. What I'd like next is a green light to run a 1-branch, 1-month pilot in parallel with your existing tool — we measure the real numbers, and we come back with a go/no-go in six weeks.</div>
+    <div class="say">That's the loop: ingest overnight, review in the morning, export when done, audited throughout. Self-hosted on your infrastructure, MFA by default, role-based, and scoped to the way each team actually works. What I'd like next is a green light to run a 1-branch, 1-month pilot in parallel with your existing tool — we measure the real numbers, and we come back with a go/no-go in six weeks.</div>
     <p><strong>Pause. Invite questions.</strong></p>
   </section>
 

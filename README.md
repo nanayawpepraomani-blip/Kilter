@@ -24,13 +24,15 @@ and lets ops confirm or reject — with every click logged.
 - **Audit log** — every login, decision, export, and config change in one
   immutable table; CSV export for regulatory review.
 - **Roles** — `admin`, `ops`, `audit`, `internal_control`. MFA (TOTP) by
-  default. Access-area scoping per user.
-- **Scheduled automation** — file scans, daily-close, SLA alerts (Teams /
-  email), month-end certificates.
+  default — works with Microsoft Authenticator, Google Authenticator, Authy,
+  or any TOTP app. Access-area scoping per user.
+- **Scheduled automation** — 7 built-in jobs: intake scan, daily-close,
+  SLA alerts (Teams / email), daily breaks report, month-end certificates,
+  nightly DB backup, and weekly session cleanup. All configurable in the UI.
 
 ## Requirements
 
-- Python 3.12+
+- Python 3.13+
 - ~8 GB RAM (SQLite default; Postgres supported for HA — ask)
 - 100 GB disk for 2 years of statements + audit log
 - Outbound: 443 (Teams webhook), 587 (SMTP), optionally 1521 (Oracle for
@@ -136,5 +138,6 @@ commercial license. Contact Kilter for licensing.
 
 ## Status
 
-Pre-1.0 — pilot-bank phase. Active development. Breaking changes possible
+**v1.0 — production-ready.** Pre-launch security review complete. All blocking
+findings resolved. Suitable for full ops-team rollout.
 between minor versions until 1.0.

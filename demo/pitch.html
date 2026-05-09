@@ -4,17 +4,29 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Kilter — Pitch</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reset.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/theme/white.css">
   <style>
-    :root { --ink: #0f172a; --muted: #52606d; --primary: #1f3a8a; --accent: #0891b2;
-            --warn: #b45309; --warn-soft: #fef3c7; --success: #059669;
-            --border: #e4e7eb; --surface: #ffffff; }
-    .reveal { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, Helvetica, Arial, sans-serif; color: var(--ink); }
-    .reveal h1 { font-size: 2.6em; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 0.4em; color: var(--primary); }
+    :root {
+      --ink: #0f172a; --muted: #52606d; --subtle: #8899aa;
+      --primary: #1f3a8a; --primary-soft: #eff4fb;
+      --accent: #0891b2;
+      --success: #059669; --success-soft: #d1fae5;
+      --warn: #b45309; --warn-soft: #fef3c7;
+      --danger: #b91c1c;
+      --border: #e4e7eb; --surface: #ffffff;
+    }
+    .reveal {
+      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: var(--ink);
+    }
+    .reveal h1 { font-size: 2.6em; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 0.4em; color: var(--primary); }
     .reveal h2 { font-size: 1.8em; font-weight: 700; letter-spacing: -0.3px; color: var(--primary); margin-bottom: 0.4em; text-transform: none; }
-    .reveal h3 { font-size: 1.2em; font-weight: 600; color: var(--ink); text-transform: none; }
+    .reveal h3 { font-size: 1.15em; font-weight: 600; color: var(--ink); text-transform: none; }
     .reveal section { text-align: left; }
     .reveal section.center { text-align: center; }
     .reveal p, .reveal li { color: var(--ink); line-height: 1.45; }
@@ -33,13 +45,12 @@
     .reveal blockquote { background: #f5f7fa; border-left: 4px solid var(--primary); padding: 12px 18px; margin: 0.5em 0; font-style: normal; box-shadow: none; font-size: 0.85em; }
     .reveal blockquote p { margin: 0; }
     .reveal .brand-badge {
-      display: inline-block; background: var(--primary); color: white;
-      width: 60px; height: 60px; border-radius: 10px;
+      background: var(--primary); color: white;
+      width: 64px; height: 64px; border-radius: 12px;
       display: flex; align-items: center; justify-content: center;
-      font-size: 1.8em; font-weight: 800;
+      font-size: 2em; font-weight: 800;
       margin: 0 auto 20px;
     }
-    .reveal .slide-number { color: var(--muted); font-size: 0.6em; }
     .reveal .subtitle { color: var(--muted); font-size: 1.1em; font-weight: 500; margin-top: -0.3em; }
     .reveal .tier-row td:first-child { font-weight: 600; color: var(--primary); white-space: nowrap; }
     .reveal .ask-list { counter-reset: ask; padding: 0; list-style: none; }
@@ -52,9 +63,70 @@
     }
     .reveal .pill { display: inline-block; background: var(--primary); color: white; padding: 3px 10px; border-radius: 20px; font-size: 0.7em; font-weight: 600; letter-spacing: 0.3px; }
     .reveal .pill-soft { background: #eff4fb; color: var(--primary); }
-    .reveal .pill-ok { background: #d1fae5; color: var(--success); }
+    .reveal .pill-ok { background: var(--success-soft); color: var(--success); }
+    .reveal .pill-warn { background: var(--warn-soft); color: var(--warn); }
     .reveal .footnote { color: var(--muted); font-size: 0.65em; margin-top: 1.5em; font-style: italic; }
     .reveal aside.notes { display: none; }
+
+    /* ── Stat card strip ── */
+    .stat-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 1.2em 0; }
+    .stat-card {
+      background: var(--primary-soft); border: 1px solid var(--border);
+      border-radius: 10px; padding: 14px 16px; text-align: center;
+    }
+    .stat-card .val { font-size: 2em; font-weight: 800; color: var(--primary); line-height: 1; }
+    .stat-card .lbl { font-size: 0.65em; color: var(--muted); margin-top: 4px; font-weight: 500; }
+
+    /* ── Scheduler timeline ── */
+    .sched-wrap { position: relative; padding-left: 28px; margin-top: 1.2em; }
+    .sched-wrap::before {
+      content: ''; position: absolute; left: 10px; top: 6px; bottom: 6px;
+      width: 2px; background: linear-gradient(to bottom, var(--primary) 0%, var(--accent) 100%);
+      border-radius: 2px;
+    }
+    .sched-node {
+      position: relative; margin-bottom: 10px; display: flex; align-items: flex-start; gap: 12px;
+    }
+    .sched-node::before {
+      content: ''; position: absolute; left: -22px; top: 6px;
+      width: 10px; height: 10px; border-radius: 50%;
+      background: var(--primary); border: 2px solid white;
+      box-shadow: 0 0 0 3px rgba(31,58,138,0.18);
+    }
+    .sched-node.accent::before { background: var(--accent); box-shadow: 0 0 0 3px rgba(8,145,178,0.18); }
+    .sched-node.success::before { background: var(--success); box-shadow: 0 0 0 3px rgba(5,150,105,0.18); }
+    .sched-time { font-size: 0.7em; color: var(--muted); min-width: 4.5em; font-variant-numeric: tabular-nums; font-weight: 600; padding-top: 1px; }
+    .sched-body { flex: 1; }
+    .sched-name { font-weight: 600; font-size: 0.78em; color: var(--ink); }
+    .sched-desc { font-size: 0.7em; color: var(--muted); }
+    .sched-divider { font-size: 0.65em; color: var(--subtle); margin: 6px 0 10px; padding-left: 0; font-style: italic; }
+
+    /* ── Security checklist grid ── */
+    .sec-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 1em; }
+    .sec-item {
+      display: flex; align-items: flex-start; gap: 10px;
+      background: #f5f7fa; border-radius: 8px; padding: 10px 12px;
+      border: 1px solid var(--border);
+    }
+    .sec-check {
+      flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%;
+      background: var(--success-soft); color: var(--success);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 800; margin-top: 1px;
+    }
+    .sec-text { font-size: 0.72em; color: var(--ink); line-height: 1.4; }
+    .sec-text strong { display: block; font-weight: 600; }
+
+    /* ── Feature chip grid ── */
+    .chip-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 0.8em; }
+    .chip {
+      display: inline-flex; align-items: center; gap: 5px;
+      background: var(--primary-soft); color: var(--primary);
+      border: 1px solid rgba(31,58,138,0.15); border-radius: 20px;
+      padding: 4px 12px; font-size: 0.68em; font-weight: 600;
+    }
+    .chip-ok { background: var(--success-soft); color: var(--success); border-color: rgba(5,150,105,0.15); }
+    .chip::before { content: '✓'; font-size: 0.9em; }
   </style>
 </head>
 <body>
@@ -63,11 +135,11 @@
 
     <!-- Slide 1 — Title -->
     <section class="center">
-      <div class="brand-badge">E</div>
+      <div class="brand-badge">K</div>
       <h1 style="margin-bottom: 0.2em">Kilter</h1>
-      <p class="subtitle">A modern replacement for the legacy reconciliation stack.</p>
-      <p class="muted" style="margin-top: 2em">
-        Self-hosted &middot; Vendor-neutral &middot; Audit trail by default.
+      <p class="subtitle">Modern reconciliation for correspondent-banking treasuries.</p>
+      <p class="muted" style="margin-top: 1.6em">
+        Self-hosted &middot; Vendor-neutral &middot; Audit trail by default &middot; <strong>v1.0</strong>
       </p>
       <p class="muted" style="margin-top: 3em; font-size: 0.8em">
         <span class="fill">Presenter name</span> &middot; <span class="fill">Date</span>
@@ -75,6 +147,7 @@
       <aside class="notes">
         Most mid-tier banks still run a 1990s reconciliation tool — end-of-life, no active vendor support.
         Kilter is the purpose-built replacement — same job, 2026-era UX, and every action leaves an audit trail.
+        We're at v1.0 — production-ready, security-reviewed, deployed.
       </aside>
     </section>
 
@@ -85,7 +158,7 @@
       <ul>
         <li><strong>The legacy reconciliation tool is end-of-life.</strong> No active vendor support. No Windows 11 hardening. UI unchanged since launch.</li>
         <li><strong>Month-end reconciliation is manual.</strong> Ops exports from the core (Flexcube / T24 / Finacle / equivalent), pulls SWIFT, eyeballs matches in Excel. <span class="fill">[FILL: hours per cycle]</span>.</li>
-        <li><strong>Audit has no breadcrumbs.</strong> "Who cleared this on the 14th?" → a spreadsheet filename.</li>
+        <li><strong>Audit has no breadcrumbs.</strong> "Who cleared this on the 14th?" &rarr; a spreadsheet filename.</li>
       </ul>
       <aside class="notes">
         The problem isn't the legacy tool itself — it's that legacy tool plus manual Excel stitching is how
@@ -99,40 +172,41 @@
       <h2>What Kilter does</h2>
       <blockquote>
         Pairs SWIFT messages with Flexcube transactions, proposes matches in tiers,
-        and lets ops confirm or reject — with every click logged.
+        and lets ops confirm or reject &mdash; with every click logged.
       </blockquote>
-      <p style="margin-top: 1em"><strong>Four user-visible parts:</strong></p>
-      <ol>
-        <li><strong>Intake</strong> — drop the SWIFT <code>.out</code> and Flexcube <code>.xlsx</code>, or let the scanner auto-ingest from <code>messages/</code>.</li>
-        <li><strong>Review queue</strong> — ranked candidates per unmatched transaction; confirm in one click.</li>
-        <li><strong>Scoped dashboard</strong> — each user picks the access areas they work in (a branch, a cluster, or all).</li>
-        <li><strong>Export + audit</strong> — xlsx report for finance, full audit log for compliance.</li>
+      <p style="margin-top: 1em"><strong>Six user-visible parts:</strong></p>
+      <ol style="font-size: 0.88em">
+        <li><strong>Intake</strong> &mdash; drop SWIFT <code>.out</code>/<code>.xml</code> and Flexcube <code>.xlsx</code>, or let the auto-scanner pick them up from <code>messages/</code>.</li>
+        <li><strong>Review queue</strong> &mdash; ranked match candidates; confirm in one click, keyboard-first.</li>
+        <li><strong>Open items ledger</strong> &mdash; breaks roll forward across sessions until cleared or written off.</li>
+        <li><strong>Scoped dashboard</strong> &mdash; each user picks the access areas they work in (branch, cluster, or all).</li>
+        <li><strong>Export + audit</strong> &mdash; xlsx report for finance, full immutable audit log for compliance.</li>
+        <li><strong>Automation</strong> &mdash; 7 built-in scheduler jobs run overnight, unattended.</li>
       </ol>
     </section>
 
     <!-- Slide 4 — Matching engine -->
     <section>
       <h2>The matching engine</h2>
-      <p class="muted">Four tiers, strongest first.</p>
+      <p class="muted">Four tiers, strongest first. Nothing auto-confirms without ops.</p>
       <table>
         <thead>
-          <tr><th style="width: 18%">Tier</th><th style="width: 40%">What matches</th><th>Example</th></tr>
+          <tr><th style="width: 20%">Tier</th><th style="width: 38%">What matches</th><th>Example</th></tr>
         </thead>
         <tbody>
-          <tr class="tier-row"><td>1 &middot; Strict</td><td>Reference + amount + date</td><td>1:1, no judgement call</td></tr>
-          <tr class="tier-row"><td>2 &middot; Ref hit, amounts differ</td><td>Same ref, amount off by fees/FX</td><td>Usually a wire-fee deduction</td></tr>
-          <tr class="tier-row"><td>3 &middot; Amount + date</td><td>No ref, same amount on same day</td><td>Statement without a narrative</td></tr>
-          <tr class="tier-row"><td>4 &middot; Amount, date &plusmn;1 day</td><td>Same amount, next-day booking</td><td>Weekend / cut-off timing</td></tr>
+          <tr class="tier-row"><td>1 &middot; Strict</td><td>Reference + amount + date</td><td>1:1, no judgement needed</td></tr>
+          <tr class="tier-row"><td>2 &middot; Ref hit, amounts differ</td><td>Same ref, amount off by fees / FX</td><td>Wire-fee deduction</td></tr>
+          <tr class="tier-row"><td>3 &middot; Amount + date, no ref</td><td>Same amount, same day</td><td>Statement without narrative</td></tr>
+          <tr class="tier-row"><td>4 &middot; Amount &plusmn;1 day</td><td>Same amount, next-day booking</td><td>Weekend / cut-off timing</td></tr>
         </tbody>
       </table>
       <p style="margin-top: 1em; font-size: 0.85em">
-        Ops still <strong>decides</strong> tier 2-4. The engine <strong>proposes</strong> and ranks.
-        <span class="pill pill-soft">Nothing auto-matches without a human confirm.</span>
+        Ops <strong>decides</strong> tier 2–4. The engine <strong>proposes and ranks</strong>.
+        <span class="pill pill-soft" style="margin-left:6px">Tier 1 can auto-confirm; tiers 2–4 always need a human.</span>
       </p>
       <aside class="notes">
-        The engine isn't doing the ops team's job — it's doing the searching so ops can do the
-        deciding. Tier 1 is the "free" matches. Tier 2-4 is where judgement lives, and that's
-        exactly the work we want humans on.
+        The engine isn't doing the ops team's job — it's doing the searching so ops can do the deciding.
+        Tier 1 is the "free" matches. Tier 2-4 is where judgement lives, and that's exactly the work we want humans on.
       </aside>
     </section>
 
@@ -141,8 +215,9 @@
       <h2>The review experience</h2>
       <ul>
         <li>One candidate at a time &mdash; no Excel scrolling.</li>
-        <li><strong>Confirm / Reject / Skip</strong> &mdash; keyboard-friendly.</li>
-        <li><strong>Swap</strong> &mdash; if the top pick is wrong, surface the next candidate without re-running.</li>
+        <li><strong>Confirm / Reject / Skip</strong> &mdash; keyboard shortcuts built in (C / R / J·K to navigate).</li>
+        <li><strong>Swap</strong> &mdash; if the top pick is wrong, surface the next ranked candidate without re-running the engine.</li>
+        <li>Stats strip at the top: pending decisions, confirmed, unmatched SWIFT, unmatched Flex &mdash; live as you work.</li>
         <li>&ldquo;Queue cleared &rarr; Download reconciliation xlsx&rdquo; when you're done.</li>
       </ul>
       <p class="footnote">Live demo next &mdash; this is the screen ops will live in.</p>
@@ -155,8 +230,8 @@
       <ul>
         <li>Top-bar picker, present on every page.</li>
         <li><strong>Single area</strong> (most common) or <strong>multi-select</strong> (regional supervisors).</li>
-        <li>Scope filters Dashboard / Cash accounts / Sessions &mdash; users only see work relevant to them.</li>
-        <li>Areas configurable per deployment &mdash; import from your existing tool's taxonomy, or define your own.</li>
+        <li>Scope filters Dashboard, Cash accounts, Sessions &mdash; users only see work relevant to them.</li>
+        <li>Areas configurable per deployment &mdash; import from your existing taxonomy, or define your own.</li>
       </ul>
       <aside class="notes">
         Ops asked: I only work on Branch 001 — don't show me 102 other areas. Done.
@@ -167,78 +242,200 @@
     <!-- Slide 7 — Roles & audit -->
     <section>
       <h2>Roles &amp; audit</h2>
-      <h3>Four roles</h3>
-      <ul style="margin-bottom: 1em">
-        <li><code>admin</code> &mdash; everything, including ingest and user management.</li>
-        <li><code>ops</code> &mdash; reconcile, confirm/reject, export.</li>
-        <li><code>audit</code> / <code>internal_control</code> &mdash; read-only on activity log and exports.</li>
-      </ul>
-      <h3>Everything is logged</h3>
-      <p style="font-size: 0.9em">Login, decision, export, scope change, account registration &mdash;
-      one <code>audit_log</code> table powers both the Activity page and the CSV export auditors receive.</p>
-      <p style="margin-top: 1em; font-size: 0.85em">
-        <span class="pill">MFA</span>&nbsp;&nbsp;TOTP, Microsoft Authenticator compatible. Enrollment via one-time token.
-      </p>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2em; align-items: start">
+        <div>
+          <h3>Four roles</h3>
+          <ul style="font-size: 0.85em; margin-bottom: 1em">
+            <li><code>admin</code> &mdash; everything, including ingest and user management.</li>
+            <li><code>ops</code> &mdash; reconcile, confirm/reject, export.</li>
+            <li><code>audit</code> &mdash; read-only: activity log + exports.</li>
+            <li><code>internal_control</code> &mdash; read-only: same as audit, scoped separately.</li>
+          </ul>
+          <p style="font-size: 0.82em">
+            <span class="pill">MFA</span>&nbsp; TOTP &mdash; works with Microsoft Authenticator,
+            Google Authenticator, Authy, or any TOTP app. Enrollment via one-time token link.
+          </p>
+        </div>
+        <div>
+          <h3>Everything is logged</h3>
+          <p style="font-size: 0.82em">Login, match decision, export, scope change, account registration &mdash;
+          one immutable <code>audit_log</code> table. Exports as CSV for regulators.</p>
+          <blockquote style="margin-top: 0.8em; font-size: 0.8em">
+            "Who cleared this on the 14th?"<br>
+            &rarr; <strong>Answer in under 1 second.</strong>
+          </blockquote>
+        </div>
+      </div>
+      <aside class="notes">
+        The audit log is the product within the product for compliance teams.
+        The CSV export means no one needs a database query tool to answer audit questions.
+      </aside>
     </section>
 
-    <!-- Slide 8 — Numbers -->
+    <!-- Slide 8 — "Works while you sleep" Scheduler -->
+    <section>
+      <h2>Works while you sleep</h2>
+      <p class="muted" style="margin-bottom: 0.5em">7 automation jobs, all pre-seeded, all configurable in the UI.</p>
+      <div class="sched-wrap">
+        <div class="sched-node success">
+          <div class="sched-time">02:00</div>
+          <div class="sched-body">
+            <div class="sched-name">DB Backup</div>
+            <div class="sched-desc">SQLite online backup — 7 daily snapshots kept, old ones pruned automatically.</div>
+          </div>
+        </div>
+        <div class="sched-node accent">
+          <div class="sched-time">05:45</div>
+          <div class="sched-body">
+            <div class="sched-name">Flexcube Extract</div>
+            <div class="sched-desc">Pulls core-banking GL data from Oracle — no manual export needed.</div>
+          </div>
+        </div>
+        <div class="sched-node">
+          <div class="sched-time">06:00</div>
+          <div class="sched-body">
+            <div class="sched-name">Intake Scan</div>
+            <div class="sched-desc">Watches <code>messages/</code> — parses and pairs new SWIFT + Flex files automatically.</div>
+          </div>
+        </div>
+        <div class="sched-node">
+          <div class="sched-time">06:15</div>
+          <div class="sched-body">
+            <div class="sched-name">Daily Breaks Report</div>
+            <div class="sched-desc">Unmatched items emailed to treasury — no log-in required to get the picture.</div>
+          </div>
+        </div>
+        <div class="sched-node accent">
+          <div class="sched-time">08:00</div>
+          <div class="sched-body">
+            <div class="sched-name">SLA Check</div>
+            <div class="sched-desc">Flags accounts past the break age threshold — Teams message or email alert.</div>
+          </div>
+        </div>
+        <div class="sched-node">
+          <div class="sched-time">23:55</div>
+          <div class="sched-body">
+            <div class="sched-name">Daily Close</div>
+            <div class="sched-desc">Evaluates open sessions, marks day-end status, rolls breaks to open-items ledger.</div>
+          </div>
+        </div>
+        <div class="sched-divider">&mdash;&mdash; weekly &mdash;&mdash;</div>
+        <div class="sched-node success">
+          <div class="sched-time">Monday</div>
+          <div class="sched-body">
+            <div class="sched-name">Session Cleanup</div>
+            <div class="sched-desc">Prunes stale and revoked sessions — keeps the database lean without manual intervention.</div>
+          </div>
+        </div>
+      </div>
+      <aside class="notes">
+        The key message here: ops walks in at 08:00 and the database is already backed up, the files are already parsed,
+        the SLA alerts are already sent. The review queue is ready. Kilter did the night shift.
+      </aside>
+    </section>
+
+    <!-- Slide 9 — Security hardening -->
+    <section>
+      <h2>Security by default</h2>
+      <p class="muted" style="margin-bottom: 0.5em">Pre-launch security review complete &mdash; all blocking findings resolved.</p>
+      <div class="sec-grid">
+        <div class="sec-item">
+          <div class="sec-check">&#10003;</div>
+          <div class="sec-text"><strong>Non-root container</strong>Runs as UID 10001. Read-only root filesystem.</div>
+        </div>
+        <div class="sec-item">
+          <div class="sec-check">&#10003;</div>
+          <div class="sec-text"><strong>TOTP MFA + replay guard</strong>Every login requires a 6-digit code. Code reuse blocked within window.</div>
+        </div>
+        <div class="sec-item">
+          <div class="sec-check">&#10003;</div>
+          <div class="sec-text"><strong>Secure cookie + SameSite</strong>Session token cannot be leaked via HTTP or cross-site requests.</div>
+        </div>
+        <div class="sec-item">
+          <div class="sec-check">&#10003;</div>
+          <div class="sec-text"><strong>HSTS, CSP, X-Frame-Options</strong>Security headers on every response. Enforced at browser and proxy layer.</div>
+        </div>
+        <div class="sec-item">
+          <div class="sec-check">&#10003;</div>
+          <div class="sec-text"><strong>Login rate-limit</strong>10 attempts per minute per IP. Automated credential stuffing blocked.</div>
+        </div>
+        <div class="sec-item">
+          <div class="sec-check">&#10003;</div>
+          <div class="sec-text"><strong>Immutable audit log</strong>Database trigger prevents any row deletion or update. Every action is permanent.</div>
+        </div>
+        <div class="sec-item">
+          <div class="sec-check">&#10003;</div>
+          <div class="sec-text"><strong>Encrypted secrets at rest</strong>TOTP secrets and SMTP credentials encrypted with Fernet AES-128-CBC.</div>
+        </div>
+        <div class="sec-item">
+          <div class="sec-check">&#10003;</div>
+          <div class="sec-text"><strong>300 MB upload cap</strong>Request body hard-limited. No disk-fill or memory-exhaustion via upload.</div>
+        </div>
+      </div>
+      <aside class="notes">
+        Banks care about this slide. Go through it quickly but let it land.
+        The immutable audit log is the one that usually gets a nod — regulators love it.
+      </aside>
+    </section>
+
+    <!-- Slide 10 — Numbers -->
     <section>
       <h2>What the numbers look like</h2>
       <p class="muted">Fill these in before presenting &mdash; or swap this slide for the pilot plan.</p>
       <table>
         <thead>
-          <tr><th>Metric</th><th class="num">Legacy tool + Excel today</th><th class="num">Kilter pilot</th></tr>
+          <tr><th>Metric</th><th class="num">Legacy tool + Excel today</th><th class="num">Kilter</th></tr>
         </thead>
         <tbody>
           <tr><td>Month-end close cycle</td><td class="num"><span class="fill">[FILL] hrs</span></td><td class="num"><span class="fill">[FILL] hrs</span></td></tr>
           <tr><td>Items auto-proposed (tier 1)</td><td class="num">0</td><td class="num"><span class="fill">[FILL] %</span></td></tr>
           <tr><td>"Who cleared this?" answered in</td><td class="num"><em>minutes, if logged</em></td><td class="num"><strong>&lt; 1 second</strong></td></tr>
-          <tr><td>Tool support contract</td><td class="num"><em>end-of-life</em></td><td class="num"><strong>in-house</strong></td></tr>
+          <tr><td>Overnight automation</td><td class="num"><em>none</em></td><td class="num"><strong>7 jobs, pre-seeded</strong></td></tr>
+          <tr><td>Tool support contract</td><td class="num"><em>end-of-life</em></td><td class="num"><strong>in-house, v1.0</strong></td></tr>
         </tbody>
       </table>
       <p class="footnote">
-        No pilot numbers yet? Replace this with: <em>&ldquo;Pilot plan: 1 currency, 1 branch, 1 month. Measure before-and-after on the table above.&rdquo;</em>
+        No pilot numbers yet? Replace with: <em>&ldquo;Pilot plan: 1 currency, 1 branch, 1 month. Measure before-and-after on the table above.&rdquo;</em>
       </p>
     </section>
 
-    <!-- Slide 9 — Built vs next -->
+    <!-- Slide 11 — Built today -->
     <section>
-      <h2>Built vs. next</h2>
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2em">
-        <div>
-          <h3 style="color: var(--success)">Built &amp; working today</h3>
-          <ul style="font-size: 0.85em">
-            <li>Intake (manual + auto-scan)</li>
-            <li>Tiered matching engine</li>
-            <li>Review queue, xlsx export</li>
-            <li>MFA login, four roles</li>
-            <li>Audit log + activity export</li>
-            <li>Access-area scoping</li>
-            <li>Discovered-accounts inbox</li>
-          </ul>
-        </div>
-        <div>
-          <h3 style="color: var(--accent)">Next (in order)</h3>
-          <ol style="font-size: 0.85em">
-            <li><strong>Pilot</strong> &mdash; 1 branch, 1 month, parallel to the existing tool.</li>
-            <li><strong>RBAC for access areas</strong> &mdash; admin restricts user scope.</li>
-            <li><strong>Scheduled scan</strong> &mdash; replace manual click with cron.</li>
-            <li><strong>AD/LDAP integration</strong> &mdash; retire local user table.</li>
-          </ol>
-        </div>
+      <h2>Production-ready today</h2>
+      <p class="muted" style="margin-bottom: 0.8em">Everything below ships in v1.0 — no roadmap asterisks.</p>
+      <div class="chip-grid">
+        <span class="chip chip-ok">Intake (manual + auto-scan)</span>
+        <span class="chip chip-ok">Tiered matching engine</span>
+        <span class="chip chip-ok">Review queue &amp; keyboard shortcuts</span>
+        <span class="chip chip-ok">Open-items ledger</span>
+        <span class="chip chip-ok">Month-end certificates</span>
+        <span class="chip chip-ok">MFA (any TOTP app)</span>
+        <span class="chip chip-ok">Four roles + access-area scoping</span>
+        <span class="chip chip-ok">Immutable audit log + CSV export</span>
+        <span class="chip chip-ok">7 automation jobs (scheduler)</span>
+        <span class="chip chip-ok">Nightly DB backup + SLA alerts</span>
+        <span class="chip chip-ok">Mobile money reconciliation</span>
+        <span class="chip chip-ok">Cards (Visa / Mastercard) module</span>
+        <span class="chip chip-ok">BYO format profiles</span>
+        <span class="chip chip-ok">Discovered-accounts inbox</span>
+        <span class="chip chip-ok">Docker single-container deploy</span>
+        <span class="chip chip-ok">Pre-launch security review &#10003;</span>
       </div>
+      <p style="margin-top: 1.2em; font-size: 0.82em; color: var(--muted)">
+        Coming next: AD/LDAP integration &middot; Postgres HA backend &middot; External secret manager &middot; Redis-backed TOTP store
+      </p>
     </section>
 
-    <!-- Slide 10 — Ask -->
+    <!-- Slide 12 — Ask -->
     <section>
       <h2>The ask</h2>
       <ol class="ask-list">
-        <li><strong>Green-light a 1-branch / 1-month pilot.</strong> Low-risk, parallel to the existing tool, measures the numbers on slide 8.</li>
+        <li><strong>Green-light a 1-branch / 1-month pilot.</strong> Low-risk, parallel to the existing tool. We measure the numbers on slide 10.</li>
         <li><strong>Name an ops champion.</strong> The person who lives in the review queue during the pilot.</li>
         <li><strong>Commit a go/no-go review date.</strong> <span class="fill">[FILL: ~6 weeks from pilot start]</span></li>
       </ol>
       <blockquote style="margin-top: 2em">
-        <strong>Demo next.</strong> See <code>SCRIPT.md</code> for the walkthrough.
+        <strong>Demo next.</strong> See <code>script.html</code> for the full walkthrough.
       </blockquote>
     </section>
 

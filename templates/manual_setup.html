@@ -244,11 +244,19 @@ WantedBy=multi-user.target</code></pre>
   <li><code>messages/processed/</code> — historic SWIFT + Flex inputs. Size-sensitive; rotate to archive storage monthly.</li>
 </ol>
 
-<h3>Atomic SQLite backup</h3>
-<p>Never copy an open SQLite file directly — use the built-in online backup API:</p>
+<h3>Built-in backup job (recommended)</h3>
+<p>Kilter ships a <strong>DB Backup</strong> scheduler job pre-enabled at 02:00 UTC. It uses SQLite's
+online backup API — safe while the database is live under WAL mode. Configure the output path
+with the environment variable:</p>
+<pre><code>KILTER_BACKUP_DIR=D:\Kilter\backups</code></pre>
+<p>Set it in <code>.env</code>, then restart. The job keeps 7 daily snapshots by default;
+edit <code>keep_days</code> in the job's params via <strong>Admin → Scheduler</strong>.</p>
+
+<h3>Manual / external backup (alternative)</h3>
+<p>If you prefer scripted snapshots, never copy an open SQLite file directly —
+use the built-in online backup API instead:</p>
 <pre><code># Windows batch / Linux shell
 python -c "import sqlite3; s=sqlite3.connect('d:/Kilter/kilter.db'); d=sqlite3.connect('d:/backups/kilter-%DATE%.db'); s.backup(d); d.close(); s.close()"</code></pre>
-
 <p>Schedule nightly via Task Scheduler / cron. Retain 30 daily + 12 monthly + 7 yearly snapshots in tiered storage.</p>
 
 <h3>Recovery</h3>

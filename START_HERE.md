@@ -8,19 +8,19 @@ doing anything — the whole process takes about 5 minutes.
 ## What you need
 
 - Windows 10 or 11
-- Python 3.12 or newer (free — see Step 1 if you don't have it)
+- Python 3.13 or newer (free — see Step 1 if you don't have it)
 - An authenticator app on your phone (free — see Step 3)
 
 ---
 
 ## Step 1 — Install Python (skip if already installed)
 
-1. Go to **https://www.python.org/downloads/** and download Python 3.12
+1. Go to **https://www.python.org/downloads/** and download Python 3.13
    or newer (the big yellow "Download Python 3.x.x" button).
 2. Run the installer.  
    **Important:** tick **"Add Python to PATH"** before you click Install.
 3. When it finishes, open a Command Prompt and type `python --version`.
-   You should see something like `Python 3.12.x`.
+   You should see something like `Python 3.13.x`.
 
 ---
 
