@@ -284,21 +284,24 @@
     /* ─────────────────────────────────────
        SLIDE 7 — ROLES & AUDIT
     ───────────────────────────────────── */
-    .roles-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 10px; margin-bottom: 14px; }
+    .roles-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 8px; margin-bottom: 10px; }
     .role-card {
-      display: flex; align-items: flex-start; gap: 12px;
+      display: flex; align-items: flex-start; gap: 10px;
       background: var(--bg-card); border: 1px solid var(--border);
-      border-radius: 11px; padding: 14px 16px;
+      border-radius: 10px; padding: 10px 12px;
     }
     .role-card .rc-badge {
-      flex-shrink: 0; width: 36px; height: 36px; border-radius: 9px;
-      display: flex; align-items: center; justify-content: center; font-size: 1.1em;
+      flex-shrink: 0; width: 30px; height: 30px; border-radius: 7px;
+      display: flex; align-items: center; justify-content: center;
+      font-family: "Inter", system-ui, sans-serif; font-size: 0.68em;
+      font-weight: 800; letter-spacing: -0.3px; color: inherit;
     }
-    .role-card .rc-name { font-size: 0.82em; font-weight: 700; color: var(--ink); margin-bottom: 3px; }
-    .role-card .rc-desc { font-size: 0.72em; color: var(--muted); line-height: 1.4; }
+    .role-card .rc-name { font-size: 0.78em; font-weight: 700; color: var(--ink); margin-bottom: 2px; }
+    .role-card .rc-desc { font-size: 0.68em; color: var(--muted); line-height: 1.4; }
     .audit-log-mock {
       background: #0a0e18; border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 10px; padding: 14px 16px; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 0.66em;
+      border-radius: 10px; padding: 10px 14px; font-family: ui-monospace, Menlo, monospace; font-size: 0.6em;
+      overflow: hidden;
     }
     .log-line { display: flex; gap: 10px; padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
     .log-line:last-child { border-bottom: none; }
@@ -341,22 +344,23 @@
     /* ─────────────────────────────────────
        SLIDE 9 — SECURITY
     ───────────────────────────────────── */
-    .sec-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 10px; margin-top: 1em; }
+    .sec-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; margin-top: 0.7em; }
     .sec-item {
-      display: flex; align-items: flex-start; gap: 12px;
-      background: var(--bg-card); border: 1px solid var(--border); border-radius: 11px; padding: 12px 14px;
+      display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
+      background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 11px 12px;
+      transition: border-color 0.15s;
     }
-    .sec-item:hover { border-color: rgba(16,185,129,0.3); }
+    .sec-item:hover { border-color: rgba(16,185,129,0.35); }
     .sec-check {
-      flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%;
-      background: var(--green-soft); border: 1px solid rgba(16,185,129,0.35);
+      width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0;
+      background: var(--green-soft); border: 1px solid rgba(16,185,129,0.4);
       display: flex; align-items: center; justify-content: center;
-      font-size: 11px; color: var(--green); font-weight: 900;
-      box-shadow: 0 0 10px rgba(16,185,129,0.2);
+      font-size: 10px; color: var(--green); font-weight: 900;
+      box-shadow: 0 0 8px rgba(16,185,129,0.25);
     }
-    .sec-text { font-size: 0.76em; color: var(--ink); line-height: 1.45; }
-    .sec-text strong { display: block; font-weight: 700; margin-bottom: 1px; }
-    .sec-text span { color: var(--muted); }
+    .sec-text { font-size: 0.72em; color: var(--ink); line-height: 1.4; }
+    .sec-text strong { display: block; font-weight: 700; margin-bottom: 3px; font-size: 1.04em; }
+    .sec-text span { color: var(--muted); font-size: 0.93em; }
 
     /* ─────────────────────────────────────
        SLIDE 10 — NUMBERS
@@ -683,70 +687,70 @@
      SLIDE 7 — ROLES & AUDIT
 ════════════════════════════════════ -->
 <section>
-  <h2>Roles + an <span class="grad-text">immutable audit trail</span></h2>
+  <h2 style="margin-bottom:0.2em; line-height:1.15">Roles + an <span class="grad-text">immutable audit trail</span></h2>
 
-  <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px; align-items:start">
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:18px; align-items:start; font-size:0.88em">
     <div>
-      <p class="muted small" style="margin-bottom:0.8em">Four roles. Each sees exactly what they need.</p>
+      <p class="muted small" style="margin-bottom:0.6em">Four roles. Each sees exactly what they need.</p>
       <div class="roles-grid">
         <div class="role-card">
-          <div class="rc-badge" style="background:var(--blue-soft)">🔧</div>
+          <div class="rc-badge" style="background:var(--blue-soft); color:var(--blue)">ADM</div>
           <div><div class="rc-name">admin</div><div class="rc-desc">Everything — ingest, user management, scheduler, settings.</div></div>
         </div>
         <div class="role-card">
-          <div class="rc-badge" style="background:var(--purple-soft)">⚙️</div>
+          <div class="rc-badge" style="background:var(--purple-soft); color:var(--purple)">OPS</div>
           <div><div class="rc-name">ops</div><div class="rc-desc">Reconcile, confirm/reject, export. No admin tools.</div></div>
         </div>
         <div class="role-card">
-          <div class="rc-badge" style="background:var(--amber-soft)">📋</div>
+          <div class="rc-badge" style="background:var(--amber-soft); color:var(--amber)">AUD</div>
           <div><div class="rc-name">audit</div><div class="rc-desc">Read-only: activity log and all exports. Can't touch matches.</div></div>
         </div>
         <div class="role-card">
-          <div class="rc-badge" style="background:var(--green-soft)">🛡</div>
+          <div class="rc-badge" style="background:var(--green-soft); color:var(--green)">IC</div>
           <div><div class="rc-name">internal_control</div><div class="rc-desc">Same as audit, scoped independently.</div></div>
         </div>
       </div>
-      <p style="margin-top:10px; font-size:0.76em; color:var(--muted)">
-        MFA on every account — works with Microsoft Authenticator, Google Authenticator, Authy, or any TOTP app. Enrollment via one-time token link.
+      <p style="margin-top:8px; font-size:0.76em; color:var(--muted)">
+        MFA on every account — Microsoft Authenticator, Google Authenticator, Authy, or any TOTP app. Enrollment via one-time token.
       </p>
     </div>
     <div>
-      <p class="muted small" style="margin-bottom:0.8em">Every action written to one immutable log.</p>
+      <p class="muted small" style="margin-bottom:0.6em">Every action written to one immutable log.</p>
       <div class="audit-log-mock">
         <div class="log-line">
           <span class="log-ts">08:14:02</span>
           <span class="log-user">k.mensah</span>
           <span class="log-act">login</span>
-          <span class="log-det">area: Branch 001</span>
+          <span class="log-det">Branch 001</span>
         </div>
         <div class="log-line">
           <span class="log-ts">08:15:11</span>
           <span class="log-user">k.mensah</span>
           <span class="log-act">decision</span>
-          <span class="log-det">confirmed T1 pair #4421</span>
+          <span class="log-det">confirmed T1 #4421</span>
         </div>
         <div class="log-line">
           <span class="log-ts">08:15:43</span>
           <span class="log-user">k.mensah</span>
           <span class="log-act">decision</span>
-          <span class="log-det">rejected T3 pair #4422</span>
+          <span class="log-det">rejected T3 #4422</span>
         </div>
         <div class="log-line">
           <span class="log-ts">08:22:05</span>
           <span class="log-user">k.mensah</span>
           <span class="log-act">export</span>
-          <span class="log-det">session 42, xlsx, 63 rows</span>
+          <span class="log-det">session 42, xlsx</span>
         </div>
         <div class="log-line">
           <span class="log-ts">09:01:18</span>
           <span class="log-user">a.otieno</span>
           <span class="log-act">audit_export</span>
-          <span class="log-det">activity CSV, 1,204 rows</span>
+          <span class="log-det">1,204 rows, CSV</span>
         </div>
       </div>
-      <p style="margin-top:8px; font-size:0.72em; color:var(--dim)">Database trigger prevents any row deletion or update. Rows are permanent.</p>
-      <div style="margin-top:10px; padding:10px 14px; background:var(--blue-soft); border:1px solid rgba(59,130,246,0.25); border-radius:9px;">
-        <span style="font-size:0.78em; color:var(--ink)">"Who cleared this on the 14th?" &nbsp;→&nbsp; </span>
+      <p style="margin-top:6px; font-size:0.68em; color:var(--dim)">DB trigger prevents deletion or update. Every row is permanent.</p>
+      <div style="margin-top:8px; padding:9px 12px; background:var(--blue-soft); border:1px solid rgba(59,130,246,0.25); border-radius:9px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+        <span style="font-size:0.76em; color:var(--ink)">"Who cleared this on the 14th?" &nbsp;→&nbsp;</span>
         <span style="font-size:0.82em; font-weight:800; background:var(--grad); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text">Under 1 second.</span>
       </div>
     </div>
