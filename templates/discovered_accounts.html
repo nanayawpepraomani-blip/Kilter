@@ -134,7 +134,7 @@ function render() {
 
   const tbody = document.querySelector('#resolved-table tbody');
   if (resolved.length === 0) {
-    tbody.innerHTML = '<tr class="empty-row"><td colspan="6">No resolved discoveries yet.</td></tr>';
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="6"><svg class="empty-icon"><use href="#i-inbox-empty"/></svg>No resolved discoveries yet.</td></tr>';
   } else {
     tbody.innerHTML = resolved.map(d => `
       <tr>

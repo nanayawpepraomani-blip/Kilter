@@ -356,7 +356,7 @@ async function load() {
   const r = await fetch('/cards/files');
   if (!r.ok) {
     document.querySelector('#files-table tbody').innerHTML =
-      '<tr class="empty-row"><td colspan="10">Failed to load.</td></tr>';
+      '<tr class="empty-row"><td colspan="10"><svg class="empty-icon" style="stroke:var(--c-danger)"><use href="#i-warning"/></svg>Failed to load.</td></tr>';
     return;
   }
   allFiles = await r.json();
@@ -430,7 +430,7 @@ function renderFiles() {
 
   const tbody = document.querySelector('#files-table tbody');
   if (files.length === 0) {
-    tbody.innerHTML = '<tr class="empty-row"><td colspan="10">No files in this scope.</td></tr>';
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="10"><svg class="empty-icon"><use href="#i-inbox-empty"/></svg>No files in this scope.</td></tr>';
     return;
   }
   tbody.innerHTML = files.map(f => `
@@ -572,7 +572,7 @@ async function loadMatches() {
   const r = await fetch('/cards/match/groups');
   if (!r.ok) {
     document.querySelector('#matches-table tbody').innerHTML =
-      '<tr class="empty-row"><td colspan="11">Failed to load.</td></tr>';
+      '<tr class="empty-row"><td colspan="11"><svg class="empty-icon" style="stroke:var(--c-danger)"><use href="#i-warning"/></svg>Failed to load.</td></tr>';
     return;
   }
   const data = await r.json();
@@ -651,7 +651,7 @@ function renderMatches() {
 
   const tbody = document.querySelector('#matches-table tbody');
   if (groups.length === 0) {
-    tbody.innerHTML = '<tr class="empty-row"><td colspan="11">No groups in this scope.</td></tr>';
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="11"><svg class="empty-icon"><use href="#i-inbox-empty"/></svg>No groups in this scope.</td></tr>';
     return;
   }
   tbody.innerHTML = groups.map(g => {

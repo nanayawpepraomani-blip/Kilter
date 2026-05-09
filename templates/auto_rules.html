@@ -132,7 +132,7 @@ async function load() {
   document.getElementById('rule-count').textContent = rules.length;
   const tbody = document.querySelector('#rules-table tbody');
   if (rules.length === 0) {
-    tbody.innerHTML = '<tr class="empty-row"><td colspan="10">No rules yet. Create one below.</td></tr>';
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="10"><svg class="empty-icon"><use href="#i-inbox-empty"/></svg>No rules yet. Create one below.</td></tr>';
     return;
   }
   tbody.innerHTML = rules.map(rule => `

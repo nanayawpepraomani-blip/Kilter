@@ -235,7 +235,7 @@ function renderWallets() {
 
   const tbody = document.querySelector('#wallets-table tbody');
   if (wallets.length === 0) {
-    tbody.innerHTML = '<tr class="empty-row"><td colspan="8">No wallets in this scope.</td></tr>';
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="8"><svg class="empty-icon"><use href="#i-inbox-empty"/></svg>No wallets in this scope.</td></tr>';
     return;
   }
   // Recent-session counts per wallet from the cached sessions list.
@@ -266,7 +266,7 @@ function renderSessions() {
   const walletById = new Map(allWallets.map(w => [w.id, w]));
   const tbody = document.querySelector('#sessions-table tbody');
   if (sessions.length === 0) {
-    tbody.innerHTML = '<tr class="empty-row"><td colspan="8">No mobile-money sessions yet for this scope.</td></tr>';
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="8"><svg class="empty-icon"><use href="#i-inbox-empty"/></svg>No mobile-money sessions yet for this scope.</td></tr>';
     return;
   }
   tbody.innerHTML = sessions.slice(0, 20).map(s => {

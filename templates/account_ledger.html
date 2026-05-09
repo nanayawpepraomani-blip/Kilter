@@ -91,7 +91,7 @@ async function load() {
   const r = await fetch(`/accounts/${ACCOUNT_ID}/ledger`);
   const body = document.getElementById('chain-body');
   if (!r.ok) {
-    body.innerHTML = '<tr class="empty-row"><td colspan="9">Load failed.</td></tr>';
+    body.innerHTML = '<tr class="empty-row"><td colspan="9"><svg class="empty-icon" style="stroke:var(--c-danger)"><use href="#i-warning"/></svg>Load failed.</td></tr>';
     return;
   }
   const d = await r.json();
@@ -129,7 +129,7 @@ async function load() {
   document.getElementById('chain-count').textContent =
     `${sess.length} session${sess.length === 1 ? '' : 's'}`;
   if (!sess.length) {
-    body.innerHTML = '<tr class="empty-row"><td colspan="10">No sessions yet — load a proof or pair to start the chain.</td></tr>';
+    body.innerHTML = '<tr class="empty-row"><td colspan="10"><svg class="empty-icon"><use href="#i-inbox-empty"/></svg>No sessions yet — load a proof or pair to start the chain.</td></tr>';
     return;
   }
   body.innerHTML = sess.map(s => {

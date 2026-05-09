@@ -4,6 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Enrol Microsoft Authenticator · Kilter</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
       --c-bg:#f7f8fa; --c-surface:#ffffff; --c-border:#e4e7eb; --c-border-strong:#cbd2d9;
@@ -17,7 +20,7 @@
       margin: 0; min-height: 100vh;
       display: flex; align-items: center; justify-content: center;
       background: linear-gradient(135deg, #0b1220 0%, #1e3a8a 100%);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, sans-serif;
+      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       color: var(--c-text); padding: 24px;
     }
     .card {
@@ -82,8 +85,8 @@
 <body>
   <div class="card">
     <div class="brand"><div class="mark">K</div><div class="name">Kilter</div></div>
-    <h1>Set up Microsoft Authenticator</h1>
-    <p class="sub">Two-factor authentication is required. This is a one-time setup — after this, you'll sign in with your username and a rotating 6-digit code from the app.</p>
+    <h1>Set up your authenticator app</h1>
+    <p class="sub">Two-factor authentication is required. This is a one-time setup — after this, you'll sign in with your username and a rotating 6-digit code from the app. Works with Microsoft Authenticator, Google Authenticator, Authy, or any TOTP-compatible app.</p>
 
     <div id="step1">
       <div class="step-heading"><span class="step-no">1</span>Verify your enrollment link</div>

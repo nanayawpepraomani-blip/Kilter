@@ -104,7 +104,7 @@ async function load() {
   document.getElementById('user-count').textContent = users.length;
   const tbody = document.querySelector('#users-table tbody');
   if (users.length === 0) {
-    tbody.innerHTML = '<tr class="empty-row"><td colspan="8">No users yet.</td></tr>';
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="8"><svg class="empty-icon"><use href="#i-inbox-empty"/></svg>No users yet.</td></tr>';
     return;
   }
   tbody.innerHTML = users.map(u => `

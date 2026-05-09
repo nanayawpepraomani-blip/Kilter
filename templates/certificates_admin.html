@@ -95,7 +95,7 @@ async function loadCerts() {
                       (b.id - a.id));
   const body = document.getElementById('body');
   if (all.length === 0) {
-    body.innerHTML = '<tr class="empty-row"><td colspan="7">No certificates yet.</td></tr>';
+    body.innerHTML = '<tr class="empty-row"><td colspan="7"><svg class="empty-icon"><use href="#i-inbox-empty"/></svg>No certificates yet.</td></tr>';
     return;
   }
   const badgeClass = {

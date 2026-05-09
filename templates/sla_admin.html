@@ -109,7 +109,7 @@ async function load() {
   const rows = await r.json();
   const body = document.getElementById('body');
   if (rows.length === 0) {
-    body.innerHTML = `<tr class="empty-row"><td colspan="8">No channels yet. Add one above.</td></tr>`;
+    body.innerHTML = `<tr class="empty-row"><td colspan="8"><svg class="empty-icon"><use href="#i-inbox-empty"/></svg>No channels yet. Add one above.</td></tr>`;
     return;
   }
   body.innerHTML = rows.map(c => {

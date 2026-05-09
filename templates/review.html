@@ -21,7 +21,7 @@
     display: flex; justify-content: space-between; align-items: flex-start;
     gap: 20px; flex-wrap: wrap; margin-bottom: 18px;
   }
-  .reconcile-head h1 { margin: 0 0 4px 0; font-size: 26px; font-weight: 700; letter-spacing: -0.4px; }
+  .reconcile-head h1 { margin: 0 0 4px 0; font-size: var(--t-1); font-weight: 700; letter-spacing: -0.4px; }
   .reconcile-head .account-line {
     display: flex; align-items: center; gap: 10px; color: var(--c-text-muted); font-size: var(--t-body);
   }
@@ -54,7 +54,7 @@
   .reconcile-panel.reconcile .row { grid-template-columns: repeat(3, 1fr); }
   .reconcile-panel .cell { text-align: left; }
   .reconcile-panel .cell .amt {
-    font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums;
+    font-size: var(--t-2); font-weight: 700; font-variant-numeric: tabular-nums;
     letter-spacing: -0.3px; color: var(--c-text);
   }
   .reconcile-panel .cell .sublabel {
@@ -318,7 +318,7 @@
 </div>
 
 <div id="session-lock-banner" style="display:none;align-items:center;gap:10px;background:#fef3c7;border:1px solid #f59e0b;border-radius:6px;padding:10px 16px;margin-bottom:12px;font-size:var(--t-small)">
-  <span style="font-size:18px">🔒</span>
+  <svg aria-hidden="true" style="width:18px;height:18px;stroke:#d97706;flex-shrink:0"><use href="#i-lock"/></svg>
   <div>
     <strong>Session locked — read only.</strong>
     <span class="lock-by" style="margin-left:6px;color:var(--c-text-muted)"></span>
@@ -331,15 +331,15 @@
      opening) so the operator can see the linkage at a glance instead of
      navigating away to the sessions list. -->
 <div id="continues-from" style="display:none;align-items:center;gap:8px;padding:8px 14px;margin-bottom:12px;background:var(--c-surface-2);border:1px solid var(--c-border);border-radius:6px;font-size:var(--t-small);color:var(--c-text-muted)">
-  <span style="font-size:14px">⛓</span>
+  <svg aria-hidden="true" style="width:14px;height:14px;flex-shrink:0"><use href="#i-link"/></svg>
   <span id="continues-from-text">—</span>
 </div>
 <div id="balance-validation-badge" style="margin-bottom:8px"></div>
 
-<div class="stats-strip">
-  <div class="stat-tile"><div class="label">Opening balance</div><div class="value" id="ss-open">—</div><div class="sub" id="ss-open-date">—</div></div>
-  <div class="stat-tile"><div class="label">Closing balance</div><div class="value" id="ss-close">—</div><div class="sub" id="ss-close-date">—</div></div>
-  <div class="stat-tile"><div class="label" id="ss-move-label">Statement movement</div><div class="value" id="ss-move">—</div><div class="sub">Credits − Debits (SWIFT)</div></div>
+<div class="stats-strip" id="stats-strip-root">
+  <div class="stat-tile skel"><div class="label">Opening balance</div><div class="value" id="ss-open">—</div><div class="sub" id="ss-open-date">—</div></div>
+  <div class="stat-tile skel"><div class="label">Closing balance</div><div class="value" id="ss-close">—</div><div class="sub" id="ss-close-date">—</div></div>
+  <div class="stat-tile skel"><div class="label" id="ss-move-label">Statement movement</div><div class="value" id="ss-move">—</div><div class="sub">Credits − Debits (SWIFT)</div></div>
   <!-- Match rate — engine's success at pairing today's rows. Numerator
        counts rows on either side that ended up in a confirmed or
        pending assignment (rejected rows are explicitly NOT matches).
@@ -405,7 +405,7 @@
        Ghana ops policy (lower tiers like T3 amount+date produce too many
        false candidates on busy days). -->
   <div id="bulk-confirm-bar" style="display:none;align-items:center;gap:12px;padding:10px 14px;margin-bottom:10px;background:#ecfdf5;border:1px solid #10b981;border-radius:6px;font-size:var(--t-small)">
-    <span style="font-size:16px">⚡</span>
+    <svg aria-hidden="true" style="width:16px;height:16px;stroke:#059669;flex-shrink:0"><use href="#i-zap"/></svg>
     <div style="flex:1">
       <strong id="bulk-confirm-title">Auto-confirm Tier 1 matches</strong>
       <span class="muted" id="bulk-confirm-sub" style="margin-left:6px">Strict ref + amount pairs are safe to confirm without per-card review.</span>
@@ -754,6 +754,7 @@ async function refreshSession() {
   setText('ss-match-rate', `${matchRate.toFixed(1)}%`);
   setStyle('ss-match-bar', 'width', Math.min(100, matchRate) + '%');
   setText('ss-match-sub', matchSubText);
+  document.getElementById('stats-strip-root')?.querySelectorAll('.skel').forEach(el => el.classList.remove('skel'));
 
   // Run-matching panel state machine. Reads matching_started_at /
   // matching_finished_at on the session row to figure out which of
@@ -1627,7 +1628,7 @@ function renderRegister() {
   });
   const tbody = document.getElementById('register-body');
   if (rows.length === 0) {
-    tbody.innerHTML = '<tr class="empty-row"><td colspan="8">No rows match the current filter.</td></tr>';
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="8"><svg class="empty-icon"><use href="#i-inbox-empty"/></svg>No rows match the current filter.</td></tr>';
     return;
   }
   tbody.innerHTML = rows.map(e => {

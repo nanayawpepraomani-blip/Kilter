@@ -85,7 +85,7 @@ async function load() {
   if (!r.ok) { document.getElementById('body').innerHTML = `<tr><td colspan="6">Load failed.</td></tr>`; return; }
   const rows = await r.json();
   const body = document.getElementById('body');
-  if (rows.length === 0) { body.innerHTML = `<tr class="empty-row"><td colspan="6">No currencies.</td></tr>`; return; }
+  if (rows.length === 0) { body.innerHTML = `<tr class="empty-row"><td colspan="6"><svg class="empty-icon"><use href="#i-inbox-empty"/></svg>No currencies.</td></tr>`; return; }
   body.innerHTML = rows.map(c => `
     <tr>
       <td><strong>${esc(c.iso_code)}</strong></td>

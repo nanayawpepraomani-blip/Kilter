@@ -119,7 +119,7 @@ async function load() {
 
   const tbody = document.querySelector('#log-table tbody');
   if (rows.length === 0) {
-    tbody.innerHTML = '<tr class="empty-row"><td colspan="6">No entries for this filter.</td></tr>';
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="6"><svg class="empty-icon"><use href="#i-inbox-empty"/></svg>No entries for this filter.</td></tr>';
     return;
   }
   tbody.innerHTML = rows.map(e => `

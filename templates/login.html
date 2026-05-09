@@ -4,6 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Sign in · Kilter</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
       --c-bg:        #f7f8fa;
@@ -24,7 +27,7 @@
       margin: 0; min-height: 100vh;
       display: flex; align-items: center; justify-content: center;
       background: linear-gradient(135deg, #0b1220 0%, #1e3a8a 100%);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, sans-serif;
+      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       color: var(--c-text); padding: 24px;
     }
     .card {
@@ -99,10 +102,10 @@
         <input id="password" name="password" type="password" autocomplete="current-password">
       </div>
       <div class="field">
-        <label for="code">Authenticator code <span id="recovery-toggle" style="font-weight:400;font-size:11px;color:rgba(255,255,255,0.6);cursor:pointer;text-decoration:underline;float:right;margin-top:2px" onclick="toggleRecovery()">Lost your device?</span></label>
+        <label for="code">Authenticator code <span id="recovery-toggle" style="font-weight:400;font-size:11px;color:var(--c-text-subtle);cursor:pointer;text-decoration:underline;float:right;margin-top:2px" onclick="toggleRecovery()">Lost your device?</span></label>
         <input id="code" name="code" type="text" inputmode="numeric" pattern="[0-9]{6}"
                maxlength="6" autocomplete="one-time-code" class="code" required placeholder="000000">
-        <div id="recovery-hint" style="display:none;font-size:11px;color:rgba(255,255,255,0.6);margin-top:4px">
+        <div id="recovery-hint" style="display:none;font-size:11px;color:var(--c-text-muted);margin-top:4px">
           Enter a recovery code (format: XXXX-XXXX-XXXX). Each code can only be used once.
         </div>
       </div>
@@ -149,7 +152,7 @@
       // over plain HTTP — production behind TLS should add Secure.
       const expSecs = Math.max(0,
         Math.floor((new Date(j.expires_at).getTime() - Date.now()) / 1000));
-      document.cookie = `kilter_token=${j.token}; Max-Age=${expSecs}; Path=/; SameSite=Strict`;
+      document.cookie = `kilter_token=${j.token}; Max-Age=${expSecs}; Path=/; SameSite=Strict; Secure`;
       const params = new URLSearchParams(window.location.search);
       window.location.href = params.get('next') || '/';
     } catch (e) {

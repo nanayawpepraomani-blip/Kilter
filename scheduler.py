@@ -121,6 +121,92 @@ def _job_daily_breaks_report(conn, params: dict) -> str:
             f"Download at /reports/daily-breaks?as_of={as_of}&format=xlsx")
 
 
+def _job_session_cleanup(conn, params: dict) -> str:
+    """Prune stale user_sessions rows that are expired or revoked.
+
+    Rows are never deleted immediately on logout — only revoked_at is set.
+    Without a cleanup job the table grows indefinitely. This job is safe to
+    run weekly; tokens are already invalid if expired or revoked.
+
+    Params (optional):
+        revoked_keep_days  — keep revoked rows for N days after revocation (default 90)
+        expired_keep_days  — keep expired rows for N days after expiry (default 7)
+    """
+    p = params or {}
+    revoked_days = int(p.get('revoked_keep_days', 90))
+    expired_days = int(p.get('expired_keep_days', 7))
+
+    r1 = conn.execute(
+        "DELETE FROM user_sessions "
+        "WHERE revoked_at IS NOT NULL "
+        "AND revoked_at < datetime('now', ?)",
+        (f'-{revoked_days} days',),
+    )
+    r2 = conn.execute(
+        "DELETE FROM user_sessions "
+        "WHERE revoked_at IS NULL "
+        "AND expires_at < datetime('now', ?)",
+        (f'-{expired_days} days',),
+    )
+    conn.commit()
+    removed = r1.rowcount + r2.rowcount
+    return (f"Pruned {removed} stale session row(s) "
+            f"(revoked >{revoked_days}d: {r1.rowcount}, "
+            f"expired >{expired_days}d: {r2.rowcount}).")
+
+
+def _job_db_backup(conn, params: dict) -> str:
+    """SQLite online backup — safe while the DB is live (WAL mode).
+
+    Params (all optional):
+        backup_dir   — absolute path to write backups (default: ./backups/)
+        keep_days    — number of daily files to retain (default: 7)
+
+    File naming: kilter-YYYYMMDD.db  One file per calendar day; running
+    the job multiple times on the same day overwrites the day's snapshot
+    rather than accumulating duplicates.
+    """
+    import sqlite3 as _sqlite3
+    from pathlib import Path as _Path
+    from datetime import date as _date
+    import glob as _glob
+
+    p = params or {}
+    backup_dir = _Path(p.get('backup_dir') or
+                       _os.environ.get('KILTER_BACKUP_DIR') or
+                       (_Path(__file__).resolve().parent / 'backups'))
+    backup_dir.mkdir(parents=True, exist_ok=True)
+
+    keep_days = int(p.get('keep_days', 7))
+    today = _date.today().strftime('%Y%m%d')
+    dest = backup_dir / f'kilter-{today}.db'
+
+    from db import DB_PATH
+    src = _sqlite3.connect(DB_PATH)
+    dst = _sqlite3.connect(dest)
+    try:
+        src.backup(dst)
+    finally:
+        dst.close()
+        src.close()
+
+    size_mb = dest.stat().st_size / 1_048_576
+
+    # Prune files older than keep_days
+    all_backups = sorted(_glob.glob(str(backup_dir / 'kilter-*.db')))
+    removed = 0
+    for old in all_backups[:-keep_days]:
+        try:
+            _Path(old).unlink()
+            removed += 1
+        except OSError:
+            pass
+
+    return (f"Backup written to {dest} ({size_mb:.1f} MB). "
+            f"Retained {min(len(all_backups), keep_days)} snapshot(s); "
+            f"pruned {removed} old file(s).")
+
+
 def _job_flex_extract(conn, params: dict) -> str:
     """Pull daily Flexcube statements for every registered account via the
     Oracle-side extractor, dropping xlsx files directly into the scanner's
@@ -214,6 +300,8 @@ JOBS = {
     'sla_check':            _job_sla_check,
     'daily_breaks_report':  _job_daily_breaks_report,
     'flex_extract':         _job_flex_extract,
+    'db_backup':            _job_db_backup,
+    'session_cleanup':      _job_session_cleanup,
 }
 
 

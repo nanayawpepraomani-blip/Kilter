@@ -94,7 +94,7 @@ function renderRows() {
   const rows = q ? allRows.filter(r => r.from_ccy.includes(q) || r.to_ccy.includes(q)) : allRows;
   const body = document.getElementById('body');
   if (rows.length === 0) {
-    body.innerHTML = `<tr class="empty-row"><td colspan="7">No rates.</td></tr>`;
+    body.innerHTML = `<tr class="empty-row"><td colspan="7"><svg class="empty-icon"><use href="#i-inbox-empty"/></svg>No rates.</td></tr>`;
     return;
   }
   body.innerHTML = rows.map(r => `
