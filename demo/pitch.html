@@ -120,15 +120,15 @@
       animation: float 4s ease-in-out infinite;
     }
     .slide-title h1 {
-      font-size: 4.5em !important; font-weight: 900 !important; margin-bottom: 14px !important;
+      font-size: 3.2em !important; font-weight: 900 !important; margin-bottom: 12px !important;
       line-height: 1 !important;
     }
     .slide-title .tagline {
-      font-size: 1.05em; color: var(--muted); max-width: 520px; margin: 0 auto 28px;
+      font-size: 0.88em; color: var(--muted); max-width: 580px; margin: 0 auto 20px;
     }
     .slide-title .meta-row {
-      display: flex; align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap;
-      font-size: 0.82em; color: var(--dim);
+      display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap;
+      font-size: 0.72em; color: var(--dim);
     }
     .slide-title .meta-row .sep { color: var(--dim); }
 
@@ -198,9 +198,9 @@
     /* ─────────────────────────────────────
        SLIDE 4 — MATCHING ENGINE
     ───────────────────────────────────── */
-    .tier-cards { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; margin-top: 1.2em; }
+    .tier-cards { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; margin-top: 0.7em; }
     .tier-card {
-      border-radius: 14px; padding: 20px 16px;
+      border-radius: 14px; padding: 14px 14px;
       border: 1px solid var(--border); background: var(--bg-card);
       position: relative; overflow: hidden;
     }
@@ -213,7 +213,7 @@
     .tier-card.t3::before { background: linear-gradient(90deg, var(--amber), #f97316); }
     .tier-card.t4::before { background: linear-gradient(90deg, var(--purple), #ec4899); }
     .tier-card .t-num {
-      font-size: 2.5em; font-weight: 900; line-height: 1; margin-bottom: 10px; letter-spacing: -2px;
+      font-size: 2em; font-weight: 900; line-height: 1; margin-bottom: 8px; letter-spacing: -2px;
     }
     .tier-card.t1 .t-num { background: var(--grad); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
     .tier-card.t2 .t-num { color: var(--cyan); }
@@ -246,7 +246,7 @@
       flex: 1; background: rgba(255,255,255,0.06); border-radius: 6px;
       padding: 4px 12px; font-size: 0.72em; color: var(--dim); font-family: monospace;
     }
-    .browser-body { padding: 18px 20px; }
+    .browser-body { padding: 10px 14px; }
     /* mini stats strip */
     .mock-stats { display: flex; gap: 8px; margin-bottom: 14px; }
     .mock-stat {
@@ -333,7 +333,7 @@
       width: 2px; background: linear-gradient(to bottom, var(--blue), var(--cyan));
       border-radius: 2px;
     }
-    .sched-node { position: relative; margin-bottom: 12px; display: flex; align-items: flex-start; gap: 10px; }
+    .sched-node { position: relative; margin-bottom: 8px; display: flex; align-items: flex-start; gap: 10px; }
     .sched-node::before {
       content: ''; position: absolute; left: -25px; top: 5px;
       width: 12px; height: 12px; border-radius: 50%;
@@ -606,13 +606,13 @@
 <section>
   <div style="display:grid; grid-template-columns:1fr 1.2fr; gap:28px; align-items:center">
     <div>
-      <h2 style="margin-bottom:0.5em">The review screen</h2>
-      <p class="muted small" style="margin-bottom:1em">This is where ops lives. Built for speed.</p>
-      <ul style="font-size:0.82em; margin-left:1em; margin-bottom:0">
-        <li style="margin-bottom:0.5em"><strong>One pair at a time</strong> &mdash; no scrolling through a spreadsheet.</li>
-        <li style="margin-bottom:0.5em"><strong>C / R / J · K</strong> &mdash; keyboard shortcuts. No mouse needed.</li>
-        <li style="margin-bottom:0.5em"><strong>Swap</strong> &mdash; surface the next ranked candidate without re-running the engine.</li>
-        <li style="margin-bottom:0.5em"><strong>Live stats strip</strong> &mdash; pending, confirmed, unmatched — updates as you work.</li>
+      <h2 style="margin-bottom:0.4em; font-size:1.3em; white-space:nowrap">The review screen</h2>
+      <p class="muted small" style="margin-bottom:0.7em">This is where ops lives. Built for speed.</p>
+      <ul style="font-size:0.75em; margin-left:1em; margin-bottom:0">
+        <li style="margin-bottom:0.35em"><strong>One pair at a time</strong> &mdash; no scrolling through a spreadsheet.</li>
+        <li style="margin-bottom:0.35em"><strong>C / R / J · K</strong> &mdash; keyboard shortcuts. No mouse needed.</li>
+        <li style="margin-bottom:0.35em"><strong>Swap</strong> &mdash; surface the next ranked candidate without re-running the engine.</li>
+        <li style="margin-bottom:0.35em"><strong>Live stats strip</strong> &mdash; pending, confirmed, unmatched — updates as you work.</li>
         <li><strong>"Queue cleared"</strong> &mdash; green card + download button when done.</li>
       </ul>
     </div>
