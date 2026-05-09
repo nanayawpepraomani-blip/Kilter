@@ -134,7 +134,9 @@ disclosure policy.
 
 Proprietary commercial — see [LICENSE](LICENSE). Pilot evaluation use is
 permitted under specific terms; production use requires a signed
-commercial license. Contact Kilter for licensing.
+commercial license.
+
+**Contact:** Timeless Nypo Tech — timelessnypotech@outlook.com
 
 ## Status
 

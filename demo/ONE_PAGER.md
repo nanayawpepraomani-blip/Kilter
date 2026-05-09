@@ -11,7 +11,7 @@ header-includes:
   - \setlength{\parindent}{0pt}
 ---
 
-**kilter.io  ·  hello@kilter.io**
+**Timeless Nypo Tech  ·  timelessnypotech@outlook.com**
 
 ---
 

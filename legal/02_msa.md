@@ -8,7 +8,7 @@
 This Master Services Agreement (this "**Agreement**") is entered into as of
 [EFFECTIVE DATE] (the "**Effective Date**") between:
 
-- **Kilter Limited**, a company incorporated in Ghana with registered
+- **Timeless Nypo Tech**, a company incorporated in Ghana with registered
   office at [ADDRESS] ("**Kilter**"); and
 - **[CUSTOMER LEGAL NAME]**, [ENTITY TYPE] of [JURISDICTION] with
   registered office at [ADDRESS] ("**Customer**").

@@ -1,4 +1,4 @@
-# Memorandum & Articles of Association — Kilter Limited
+# Memorandum & Articles of Association — Timeless Nypo Tech
 
 **Status:** DRAFT for Ghana lawyer review. Not for filing.
 **Jurisdiction:** Republic of Ghana — Companies Act, 2019 (Act 992).

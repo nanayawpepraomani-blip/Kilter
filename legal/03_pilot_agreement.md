@@ -9,7 +9,7 @@ day (a real bank legal team will redline anyway, so don't gold-plate it).
 This Pilot Evaluation Agreement (this "**Pilot Agreement**") is entered
 into as of [EFFECTIVE DATE] between:
 
-- **Kilter Limited** ("**Kilter**"); and
+- **Timeless Nypo Tech** ("**Kilter**"); and
 - **[BANK LEGAL NAME]** ("**Bank**").
 
 ## 1. Purpose
@@ -121,7 +121,7 @@ law, the Data Processing Addendum at `legal/04_dpa.md` applies.
 
 ## 8. Intellectual Property
 
-8.1 The Software remains the exclusive property of Kilter. No licence is
+8.1 The Software remains the exclusive property of Timeless Nypo Tech. No licence is
 granted other than a temporary, non-exclusive, non-transferable evaluation
 licence for the Pilot Term.
 

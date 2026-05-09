@@ -120,4 +120,4 @@ You're in. The dashboard will walk you through the rest.
 
 ## Questions?
 
-Contact the person who sent you this package.
+Contact **Timeless Nypo Tech**: timelessnypotech@outlook.com

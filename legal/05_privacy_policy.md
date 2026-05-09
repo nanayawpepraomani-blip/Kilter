@@ -15,7 +15,7 @@
 **Last updated:** [DATE]
 **Effective:** [DATE]
 
-Kilter Limited ("**Kilter**", "**we**", "**us**") respects your privacy.
+Timeless Nypo Tech ("**Kilter**", "**we**", "**us**") respects your privacy.
 This Privacy Policy explains what personal data we collect, how we use
 it, and the rights you have. It applies to:
 
@@ -31,10 +31,10 @@ policy governs.
 
 ## 1. Who is the Controller?
 
-For the purposes of this Policy, the Controller is **Kilter Limited**, a
+For the purposes of this Policy, the Controller is **Timeless Nypo Tech**, a
 company incorporated in Ghana with registered office at [ADDRESS].
 
-Contact for privacy queries: **privacy@kilter.com** (or
+Contact for privacy queries: **timelessnypotech@outlook.com** (or
 [CONTACT EMAIL]).
 
 ## 2. Personal Data We Collect
@@ -129,7 +129,7 @@ Subject to Applicable Privacy Law, you have the right to:
 - Lodge a complaint with a supervisory authority — in Ghana, the **Data
   Protection Commission** ([dataprotection.org.gh]).
 
-To exercise any of these rights, contact **privacy@kilter.com**. We will
+To exercise any of these rights, contact **timelessnypotech@outlook.com**. We will
 respond within thirty (30) days, or sooner where required by law.
 
 ## 8. Security
@@ -138,7 +138,7 @@ We protect personal data with appropriate technical and organisational
 measures, including encryption, access controls, MFA on all internal
 systems, and regular review. No system is perfectly secure; if you
 believe an account or data has been compromised, contact
-**security@kilter.com** immediately.
+**timelessnypotech@outlook.com** immediately.
 
 ## 9. Cookies
 
@@ -151,7 +151,7 @@ not use advertising or cross-site tracking cookies.
 
 Kilter is a B2B product. We do not knowingly collect personal data from
 anyone under 18. If you believe a child has provided us data, contact
-**privacy@kilter.com** and we will delete it.
+**timelessnypotech@outlook.com** and we will delete it.
 
 ## 11. Changes to this Policy
 
@@ -163,7 +163,7 @@ thirty (30) days before taking effect.
 
 | | |
 |---|---|
-| Controller | Kilter Limited |
+| Controller | Timeless Nypo Tech |
 | Address | [REGISTERED OFFICE], Ghana |
-| Email | privacy@kilter.com |
+| Email | timelessnypotech@outlook.com |
 | Data Protection Commission (Ghana) | https://www.dataprotection.org.gh |

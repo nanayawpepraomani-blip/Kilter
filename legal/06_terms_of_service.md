@@ -51,7 +51,7 @@ account.
 3.2 We may require multi-factor authentication. You may not share
 accounts or circumvent any authentication mechanism.
 
-3.3 Notify us immediately at **security@kilter.com** if you suspect
+3.3 Notify us immediately at **timelessnypotech@outlook.com** if you suspect
 unauthorised access.
 
 ## 4. Acceptable Use
@@ -149,7 +149,7 @@ of the Services.
 
 If you believe you have found a security vulnerability in our website or
 Software, we welcome a coordinated, private disclosure to
-**security@kilter.com**. Please give us reasonable time to remediate
+**timelessnypotech@outlook.com**. Please give us reasonable time to remediate
 before any public disclosure. We will not pursue legal action against
 researchers who follow good-faith responsible-disclosure practice.
 
@@ -187,11 +187,11 @@ consent. We may assign in connection with a merger, acquisition, or sale
 of substantially all of our assets.
 
 16.5 **Notices.** Notices to you may be sent by email or posted on the
-website. Notices to us shall be sent to **legal@kilter.com** with a copy
+website. Notices to us shall be sent to **timelessnypotech@outlook.com** with a copy
 to our registered office.
 
 ## Contact
 
-**Kilter Limited**
+**Timeless Nypo Tech**
 [REGISTERED OFFICE], Ghana
-legal@kilter.com
+timelessnypotech@outlook.com

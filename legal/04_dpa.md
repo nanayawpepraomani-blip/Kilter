@@ -13,7 +13,7 @@ Pilot Agreement.
 ---
 
 This Data Processing Addendum (this "**DPA**") forms part of and is
-incorporated into the agreement between **Kilter Limited** ("**Kilter**")
+incorporated into the agreement between **Timeless Nypo Tech** ("**Kilter**")
 and **[CUSTOMER]** ("**Customer**") under which Kilter provides software
 and services to Customer (the "**Principal Agreement**"). In the event of
 conflict between this DPA and the Principal Agreement on the subject of

@@ -54,7 +54,41 @@ KILTER_SECRET_KEY=PpWvB1fX...your-44-char-key...lYg=
 TZ=Africa/Accra
 ```
 
-### 1.3 Start the stack
+### 1.3 Install the license file
+
+Kilter requires a `kilter.lic` license file issued by Timeless Nypo Tech.
+Place it in the root of the project directory (same folder as `app.py`):
+
+```
+kilter.lic          ← place here
+app.py
+...
+```
+
+The license file is a JSON document. It encodes the licensed organisation,
+the expiry date, and the deployment hostname. Example:
+
+```json
+{
+  "product": "Kilter",
+  "licensee": "Example Bank",
+  "issued": "2026-05-09",
+  "expires": "2027-05-09",
+  "hostname": "kilter-prod-01",
+  "sig": "<HMAC-SHA256 signature — do not edit>"
+}
+```
+
+> **Important:** the signature binds the license to the exact hostname
+> string and expiry date. Editing any field invalidates it. If you need a
+> new hostname or renewal, contact **timelessnypotech@outlook.com**.
+
+**Grace period.** If no license file is present, Kilter enters a 14-day
+grace period and logs a warning on startup. After 14 days the application
+will refuse to start. Set `KILTER_DEV=1` in `.env` to bypass all checks
+during internal development (never set this in production).
+
+### 1.4 Start the stack
 
 ```bash
 docker compose up -d --build
@@ -69,7 +103,7 @@ scheduler spin-up. You'll see something like:
 INFO:     Uvicorn running on http://0.0.0.0:8000
 ```
 
-### 1.4 Bootstrap admin enrolment
+### 1.5 Bootstrap admin enrolment
 
 On first start the database is empty. The seeder creates a single admin
 user named `admin` with a one-time enrolment token printed in the logs.
