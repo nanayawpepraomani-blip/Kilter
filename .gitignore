@@ -66,3 +66,7 @@ htmlcov/
 # --- Temporary scratch ---------------------------------------------------
 scratch/
 *.tmp
+
+# --- License files (per-client, never commit) ----------------------------
+kilter.lic
+.kilter_grace

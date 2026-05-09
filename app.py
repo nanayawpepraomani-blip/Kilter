@@ -206,6 +206,8 @@ async def _security_headers(request: Request, call_next):
 
 @app.on_event("startup")
 def _on_startup() -> None:
+    from license_check import verify_license
+    verify_license()
     init_db()
     ensure_dirs()
     # Start the in-process scheduler daemon. The thread is daemonized so
