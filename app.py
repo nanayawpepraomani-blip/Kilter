@@ -1572,12 +1572,6 @@ def dashboard_by_account(limit: int = 10,
         conn.close()
 
 
-@app.on_event("startup")
-def _on_startup() -> None:
-    init_db()
-    ensure_dirs()
-
-
 # ---------------------------------------------------------------------------
 # POST /sessions
 # ---------------------------------------------------------------------------

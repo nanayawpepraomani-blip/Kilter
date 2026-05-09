@@ -26,6 +26,7 @@ def fresh_app(tmp_path, monkeypatch):
     db_path = tmp_path / "kilter-engine.db"
     monkeypatch.setenv("KILTER_DB_PATH", str(db_path))
     monkeypatch.setenv("KILTER_SECRET_KEY", "")
+    monkeypatch.setenv("KILTER_CARDS_REQUIRED_STAGES", "")
     monkeypatch.chdir(tmp_path)
     for mod in list(sys.modules):
         if mod in ('app', 'db', 'auth', 'secrets_vault', 'scanner', 'scheduler',

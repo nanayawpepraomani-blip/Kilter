@@ -5,7 +5,7 @@
 # Multi-stage build:
 #   1. builder:  installs pinned wheels into /install (needs build-essential
 #                + libffi-dev for cryptography).
-#   2. runtime:  thin python:3.12-slim with only runtime libs, the wheels
+#   2. runtime:  thin python:3.13-slim with only runtime libs, the wheels
 #                copied across, app code, non-root user.
 #
 # Persistent state (kilter.db, messages/, uploads/, exports/) is expected to
@@ -14,7 +14,7 @@
 # into the image.
 
 # ---------- stage 1: builder ----------
-FROM python:3.12-slim AS builder
+FROM python:3.13-slim AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -31,7 +31,7 @@ COPY requirements.txt .
 RUN pip install --prefix=/install -r requirements.txt
 
 # ---------- stage 2: runtime ----------
-FROM python:3.12-slim AS runtime
+FROM python:3.13-slim AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
