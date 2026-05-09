@@ -135,10 +135,10 @@
     /* ─────────────────────────────────────
        SLIDE 2 — WHY NOW
     ───────────────────────────────────── */
-    .problem-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 16px; margin-top: 1.2em; }
+    .problem-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; margin-top: 0.8em; }
     .problem-card {
       background: var(--bg-card); border: 1px solid var(--border);
-      border-radius: 14px; padding: 22px 20px;
+      border-radius: 14px; padding: 16px 18px;
     }
     .problem-card .p-icon {
       width: 44px; height: 44px; border-radius: 11px; display: flex; align-items: center; justify-content: center;
@@ -157,7 +157,7 @@
        SLIDE 3 — WHAT KILTER DOES
     ───────────────────────────────────── */
     .pipeline {
-      display: flex; align-items: center; gap: 0; margin: 1.4em 0;
+      display: flex; align-items: center; gap: 0; margin: 0.7em 0;
       flex-wrap: nowrap; overflow: hidden;
     }
     .pipeline-step {
@@ -283,15 +283,15 @@
     /* ─────────────────────────────────────
        SLIDE 6 — SCOPING
     ───────────────────────────────────── */
-    .scope-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; margin-top: 1.2em; }
+    .scope-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-top: 0.7em; }
     .scope-card {
-      border-radius: 14px; padding: 22px 18px; text-align: center;
+      border-radius: 14px; padding: 14px 16px; text-align: center;
       background: var(--bg-card); border: 1px solid var(--border);
     }
-    .scope-card .sc-icon { font-size: 2em; margin-bottom: 10px; }
-    .scope-card .sc-who  { font-size: 0.72em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin-bottom: 6px; }
-    .scope-card .sc-name { font-size: 1.1em; font-weight: 800; color: var(--ink); margin-bottom: 8px; }
-    .scope-card .sc-desc { font-size: 0.75em; color: var(--muted); line-height: 1.5; }
+    .scope-card .sc-icon { font-size: 1em; margin-bottom: 0; }
+    .scope-card .sc-who  { font-size: 0.68em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin-bottom: 4px; }
+    .scope-card .sc-name { font-size: 0.95em; font-weight: 800; color: var(--ink); margin-bottom: 6px; }
+    .scope-card .sc-desc { font-size: 0.72em; color: var(--muted); line-height: 1.45; }
     .scope-card.sc-hi { border-color: rgba(59,130,246,0.3); background: rgba(59,130,246,0.06); }
 
     /* ─────────────────────────────────────
@@ -326,14 +326,14 @@
     /* ─────────────────────────────────────
        SLIDE 8 — SCHEDULER
     ───────────────────────────────────── */
-    .sched-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; align-items: start; margin-top: 0.8em; }
+    .sched-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; align-items: start; margin-top: 0.4em; }
     .sched-wrap { position: relative; padding-left: 32px; }
     .sched-wrap::before {
       content: ''; position: absolute; left: 10px; top: 8px; bottom: 8px;
       width: 2px; background: linear-gradient(to bottom, var(--blue), var(--cyan));
       border-radius: 2px;
     }
-    .sched-node { position: relative; margin-bottom: 8px; display: flex; align-items: flex-start; gap: 10px; }
+    .sched-node { position: relative; margin-bottom: 5px; display: flex; align-items: flex-start; gap: 10px; }
     .sched-node::before {
       content: ''; position: absolute; left: -25px; top: 5px;
       width: 12px; height: 12px; border-radius: 50%;
@@ -344,15 +344,15 @@
     .sched-node.ng::before { border-color: var(--green); box-shadow: 0 0 10px var(--green), 0 0 20px rgba(16,185,129,0.3); }
     .sched-time { font-size: 0.68em; color: var(--dim); min-width: 4.2em; font-variant-numeric: tabular-nums; font-weight: 600; padding-top: 2px; font-family: monospace; }
     .sched-body {}
-    .sched-name { font-size: 0.8em; font-weight: 700; color: var(--ink); }
-    .sched-desc { font-size: 0.68em; color: var(--muted); line-height: 1.4; margin-top: 2px; }
-    .sched-weekly { font-size: 0.65em; color: var(--dim); font-style: italic; margin: 8px 0; }
+    .sched-name { font-size: 0.72em; font-weight: 700; color: var(--ink); }
+    .sched-desc { font-size: 0.62em; color: var(--muted); line-height: 1.35; margin-top: 1px; }
+    .sched-weekly { font-size: 0.6em; color: var(--dim); font-style: italic; margin: 4px 0; }
     .sched-callout {
       background: rgba(59,130,246,0.06); border: 1px solid rgba(59,130,246,0.2);
-      border-radius: 12px; padding: 18px 20px;
+      border-radius: 12px; padding: 12px 16px;
     }
-    .sched-callout .sc-big { font-size: 1.1em; font-weight: 800; color: var(--ink); margin-bottom: 6px; }
-    .sched-callout .sc-body { font-size: 0.78em; color: var(--muted); line-height: 1.6; }
+    .sched-callout .sc-big { font-size: 1em; font-weight: 800; color: var(--ink); margin-bottom: 4px; }
+    .sched-callout .sc-body { font-size: 0.72em; color: var(--muted); line-height: 1.5; }
 
     /* ─────────────────────────────────────
        SLIDE 9 — SECURITY
@@ -378,15 +378,15 @@
     /* ─────────────────────────────────────
        SLIDE 10 — NUMBERS
     ───────────────────────────────────── */
-    .num-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 14px; margin-top: 1.2em; }
+    .num-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 12px; margin-top: 0.7em; }
     .num-card {
       background: var(--bg-card); border: 1px solid var(--border);
-      border-radius: 14px; padding: 22px 20px;
+      border-radius: 14px; padding: 16px 18px;
     }
-    .num-card .nc-label { font-size: 0.72em; color: var(--muted); margin-bottom: 6px; font-weight: 600; }
-    .num-card .nc-before { font-size: 0.82em; color: var(--dim); text-decoration: line-through; margin-bottom: 4px; }
-    .num-card .nc-after  { font-size: 2.2em; font-weight: 900; letter-spacing: -1px; line-height: 1; }
-    .num-card .nc-note   { font-size: 0.7em; color: var(--muted); margin-top: 6px; }
+    .num-card .nc-label { font-size: 0.7em; color: var(--muted); margin-bottom: 4px; font-weight: 600; }
+    .num-card .nc-before { font-size: 0.78em; color: var(--dim); text-decoration: line-through; margin-bottom: 4px; }
+    .num-card .nc-after  { font-size: 1.8em; font-weight: 900; letter-spacing: -1px; line-height: 1; }
+    .num-card .nc-note   { font-size: 0.68em; color: var(--muted); margin-top: 5px; }
     .num-card.n-blue { border-color: rgba(59,130,246,0.25); }
     .num-card.n-blue .nc-after { background: var(--grad); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
     .num-card.n-green { border-color: rgba(16,185,129,0.25); }
@@ -419,25 +419,25 @@
     /* ─────────────────────────────────────
        SLIDE 12 — ASK
     ───────────────────────────────────── */
-    .ask-list { list-style: none; padding: 0; margin-top: 1em; }
+    .ask-list { list-style: none; padding: 0; margin-top: 0.6em; }
     .ask-list li {
-      display: flex; align-items: flex-start; gap: 16px;
-      padding: 18px 20px; margin-bottom: 12px;
-      background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px;
+      display: flex; align-items: flex-start; gap: 14px;
+      padding: 10px 16px; margin-bottom: 6px;
+      background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
     }
     .ask-num {
-      flex-shrink: 0; width: 36px; height: 36px; border-radius: 50%;
+      flex-shrink: 0; width: 30px; height: 30px; border-radius: 50%;
       background: var(--grad); display: flex; align-items: center; justify-content: center;
-      font-size: 0.9em; font-weight: 800; color: white;
-      box-shadow: 0 0 18px rgba(59,130,246,0.4);
+      font-size: 0.8em; font-weight: 800; color: white;
+      box-shadow: 0 0 14px rgba(59,130,246,0.4);
     }
-    .ask-text { font-size: 0.88em; color: var(--ink); line-height: 1.5; }
-    .ask-text strong { font-weight: 700; display: block; margin-bottom: 2px; }
+    .ask-text { font-size: 0.78em; color: var(--ink); line-height: 1.4; }
+    .ask-text strong { font-weight: 700; display: block; margin-bottom: 1px; }
     .ask-cta {
-      text-align: center; margin-top: 1.4em; padding: 18px 24px;
-      background: var(--blue-soft); border: 1px solid rgba(59,130,246,0.3); border-radius: 12px;
+      text-align: center; margin-top: 0.6em; padding: 10px 18px;
+      background: var(--blue-soft); border: 1px solid rgba(59,130,246,0.3); border-radius: 10px;
     }
-    .ask-cta p { font-size: 0.85em; color: var(--muted); margin: 0; }
+    .ask-cta p { font-size: 0.78em; color: var(--muted); margin: 0; }
     .ask-cta strong { color: var(--ink); }
   </style>
 </head>
@@ -591,7 +591,7 @@
     </div>
   </div>
 
-  <p style="margin-top:1em; font-size:0.82em; color:var(--muted); text-align:center">
+  <p style="margin-top:0.5em; font-size:0.78em; color:var(--muted); text-align:center">
     The engine does the <em>searching</em>. Ops does the <em>deciding</em>.
     &nbsp;&nbsp;<span class="pill pill-blue">Nothing auto-matches without a human confirm (except Tier 1 when enabled)</span>
   </p>
@@ -690,9 +690,9 @@
     </div>
   </div>
 
-  <p style="margin-top:1em; font-size:0.8em; color:var(--muted)">
-    Areas are configurable at deploy time — import from your existing tool's taxonomy, or define your own.
-    Changes take effect immediately across all users.
+  <p style="margin-top:0.6em; font-size:0.75em; color:var(--muted)">
+    Areas are configurable at deploy time — import from your existing tool's taxonomy or define your own.
+    Changes take effect immediately.
   </p>
 </section>
 
@@ -839,8 +839,8 @@
           The review queue is ready. Kilter ran the night shift.
         </div>
       </div>
-      <div style="margin-top:14px; padding:14px 16px; background:var(--bg-card); border:1px solid var(--border); border-radius:11px;">
-        <p style="font-size:0.76em; color:var(--muted); margin:0 0 6px;">All 7 jobs are</p>
+      <div style="margin-top:10px; padding:10px 14px; background:var(--bg-card); border:1px solid var(--border); border-radius:11px;">
+        <p style="font-size:0.72em; color:var(--muted); margin:0 0 5px;">All 7 jobs are</p>
         <div style="display:flex; gap:6px; flex-wrap:wrap">
           <span class="pill pill-green">Pre-seeded</span>
           <span class="pill pill-blue">UI-configurable</span>
@@ -944,7 +944,7 @@
       <div class="nc-note">v1.0, security-reviewed, self-hosted on your own servers.</div>
     </div>
   </div>
-  <p style="margin-top:0.8em; font-size:0.72em; color:var(--dim); font-style:italic">
+  <p style="margin-top:0.4em; font-size:0.68em; color:var(--dim); font-style:italic">
     No pilot numbers yet? Replace with: "Pilot plan: 1 currency, 1 branch, 1 month. Measure before-and-after on these four metrics."
   </p>
 </section>
@@ -991,28 +991,28 @@
      SLIDE 12 — THE ASK
 ════════════════════════════════════ -->
 <section>
-  <h2>Three things.<br><span class="grad-text">That's the ask.</span></h2>
+  <h2>Three things. <span class="grad-text">That's the ask.</span></h2>
 
   <ol class="ask-list">
     <li>
       <div class="ask-num">1</div>
       <div class="ask-text">
         <strong>Green-light a 1-branch / 1-month pilot.</strong>
-        Low-risk, parallel to the existing tool. We measure the real close-cycle and audit numbers before any commitment.
+        Low-risk, parallel run. Measure real close-cycle and audit numbers before any commitment.
       </div>
     </li>
     <li>
       <div class="ask-num">2</div>
       <div class="ask-text">
         <strong>Name an ops champion.</strong>
-        The person who works the review queue during the pilot and owns the before/after numbers.
+        One person who works the review queue and owns the before/after numbers.
       </div>
     </li>
     <li>
       <div class="ask-num">3</div>
       <div class="ask-text">
         <strong>Commit a go/no-go date.</strong>
-        <span class="fill">[FILL: ~6 weeks from pilot start]</span> &mdash; one meeting to review the numbers and decide.
+        <span class="fill">[FILL: ~6 weeks out]</span> &mdash; one meeting, the numbers, the decision.
       </div>
     </li>
   </ol>
