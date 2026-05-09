@@ -399,12 +399,12 @@
     /* ─────────────────────────────────────
        SLIDE 11 — PRODUCTION READY
     ───────────────────────────────────── */
-    .ready-wrap { display: grid; grid-template-columns: 1fr 220px; gap: 28px; align-items: center; margin-top: 0.8em; }
+    .ready-wrap { display: grid; grid-template-columns: 1fr 200px; gap: 20px; align-items: center; margin-top: 0.3em; }
     .chip-flow { display: flex; flex-wrap: wrap; gap: 8px; }
     .chip {
       display: inline-flex; align-items: center; gap: 5px;
       background: var(--bg-card); border: 1px solid var(--border); border-radius: 20px;
-      padding: 5px 13px; font-size: 0.7em; font-weight: 600; color: var(--muted);
+      padding: 4px 10px; font-size: 0.62em; font-weight: 600; color: var(--muted);
     }
     .chip .chip-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); flex-shrink: 0; box-shadow: 0 0 6px var(--green); }
     .chip.hi { background: var(--green-soft); border-color: rgba(16,185,129,0.3); color: var(--green); }
@@ -708,19 +708,19 @@
       <div class="roles-grid">
         <div class="role-card">
           <div class="rc-badge" style="background:var(--blue-soft); color:var(--blue)">ADM</div>
-          <div><div class="rc-name">admin</div><div class="rc-desc">Everything — ingest, user management, scheduler, settings.</div></div>
+          <div><div class="rc-name">admin</div><div class="rc-desc">Full access — users, jobs, settings.</div></div>
         </div>
         <div class="role-card">
           <div class="rc-badge" style="background:var(--purple-soft); color:var(--purple)">OPS</div>
-          <div><div class="rc-name">ops</div><div class="rc-desc">Reconcile, confirm/reject, export. No admin tools.</div></div>
+          <div><div class="rc-name">ops</div><div class="rc-desc">Reconcile, confirm/reject, export.</div></div>
         </div>
         <div class="role-card">
           <div class="rc-badge" style="background:var(--amber-soft); color:var(--amber)">AUD</div>
-          <div><div class="rc-name">audit</div><div class="rc-desc">Read-only: activity log and all exports. Can't touch matches.</div></div>
+          <div><div class="rc-name">audit</div><div class="rc-desc">Read-only: log and all exports.</div></div>
         </div>
         <div class="role-card">
           <div class="rc-badge" style="background:var(--green-soft); color:var(--green)">IC</div>
-          <div><div class="rc-name">internal_control</div><div class="rc-desc">Same as audit, scoped independently.</div></div>
+          <div><div class="rc-name">internal_control</div><div class="rc-desc">Same as audit, own scope.</div></div>
         </div>
       </div>
       <p style="margin-top:8px; font-size:0.76em; color:var(--muted)">
@@ -774,8 +774,8 @@
      SLIDE 8 — SCHEDULER
 ════════════════════════════════════ -->
 <section>
-  <h2>It works <span class="grad-text">while you sleep</span></h2>
-  <p class="muted small">7 automation jobs, pre-seeded, configurable in the UI. No cron tab. No scripts.</p>
+  <h2 style="font-size:1.3em">It works <span class="grad-text">while you sleep</span></h2>
+  <p class="muted small">7 automation jobs. Pre-seeded, UI-configurable. No cron, no scripts.</p>
 
   <div class="sched-cols">
     <div class="sched-wrap">
@@ -783,42 +783,42 @@
         <div class="sched-time">02:00</div>
         <div class="sched-body">
           <div class="sched-name">DB Backup</div>
-          <div class="sched-desc">SQLite online backup — 7 daily snapshots kept automatically.</div>
+          <div class="sched-desc">7 nightly SQLite copies, auto-kept.</div>
         </div>
       </div>
       <div class="sched-node nc">
         <div class="sched-time">05:45</div>
         <div class="sched-body">
           <div class="sched-name">Flexcube Extract</div>
-          <div class="sched-desc">Pulls core-banking GL from Oracle. No manual export.</div>
+          <div class="sched-desc">Oracle GL pull. No manual export.</div>
         </div>
       </div>
       <div class="sched-node">
         <div class="sched-time">06:00</div>
         <div class="sched-body">
           <div class="sched-name">Intake Scan</div>
-          <div class="sched-desc">Parses and pairs new SWIFT + Flex files from <code style="font-size:0.9em;background:rgba(255,255,255,0.07);padding:1px 5px;border-radius:3px">messages/</code>.</div>
+          <div class="sched-desc">Scans <code style="font-size:0.9em;background:rgba(255,255,255,0.07);padding:1px 5px;border-radius:3px">messages/</code>, parses SWIFT + Flex.</div>
         </div>
       </div>
       <div class="sched-node">
         <div class="sched-time">06:15</div>
         <div class="sched-body">
           <div class="sched-name">Daily Breaks Report</div>
-          <div class="sched-desc">Unmatched breaks emailed to treasury. No login needed.</div>
+          <div class="sched-desc">Breaks emailed to treasury.</div>
         </div>
       </div>
       <div class="sched-node nc">
         <div class="sched-time">08:00</div>
         <div class="sched-body">
           <div class="sched-name">SLA Check</div>
-          <div class="sched-desc">Flags accounts past break-age threshold. Teams or email alert.</div>
+          <div class="sched-desc">Teams / email if threshold breached.</div>
         </div>
       </div>
       <div class="sched-node">
         <div class="sched-time">23:55</div>
         <div class="sched-body">
           <div class="sched-name">Daily Close</div>
-          <div class="sched-desc">Evaluates sessions, rolls breaks to open-items ledger.</div>
+          <div class="sched-desc">Rolls breaks to open-items ledger.</div>
         </div>
       </div>
       <div class="sched-weekly">── weekly ──</div>
@@ -826,7 +826,7 @@
         <div class="sched-time">Mon</div>
         <div class="sched-body">
           <div class="sched-name">Session Cleanup</div>
-          <div class="sched-desc">Prunes stale sessions. Database stays lean forever.</div>
+          <div class="sched-desc">Prunes stale sessions.</div>
         </div>
       </div>
     </div>
@@ -875,35 +875,35 @@
   <div class="sec-grid">
     <div class="sec-item">
       <div class="sec-check">&#10003;</div>
-      <div class="sec-text"><strong>Non-root container</strong><span>Runs as UID 10001. Read-only root filesystem. No capability escalation.</span></div>
+      <div class="sec-text"><strong>Non-root deploy</strong><span>UID 10001 · read-only FS</span></div>
     </div>
     <div class="sec-item">
       <div class="sec-check">&#10003;</div>
-      <div class="sec-text"><strong>TOTP MFA + replay guard</strong><span>Every login requires a 6-digit TOTP code. Reuse blocked within the 30-second window.</span></div>
+      <div class="sec-text"><strong>TOTP MFA</strong><span>6-digit per login, replay-blocked</span></div>
     </div>
     <div class="sec-item">
       <div class="sec-check">&#10003;</div>
-      <div class="sec-text"><strong>Secure cookie · SameSite=Strict</strong><span>Session token cannot leak over HTTP or via cross-site requests.</span></div>
+      <div class="sec-text"><strong>SameSite=Strict</strong><span>Session can't leak via HTTP/XSS</span></div>
     </div>
     <div class="sec-item">
       <div class="sec-check">&#10003;</div>
-      <div class="sec-text"><strong>HSTS · CSP · X-Frame-Options</strong><span>Security headers on every response. Enforced at browser and proxy layer.</span></div>
+      <div class="sec-text"><strong>HSTS · CSP · XFO</strong><span>Security headers on every response</span></div>
     </div>
     <div class="sec-item">
       <div class="sec-check">&#10003;</div>
-      <div class="sec-text"><strong>Login rate-limit — 10 / min / IP</strong><span>Automated credential stuffing blocked. No brute-force path to the review queue.</span></div>
+      <div class="sec-text"><strong>Rate 10/min per IP</strong><span>Brute-force &amp; stuffing blocked</span></div>
     </div>
     <div class="sec-item">
       <div class="sec-check">&#10003;</div>
-      <div class="sec-text"><strong>Immutable audit log</strong><span>Database trigger prevents any row deletion or update. Every action is permanent.</span></div>
+      <div class="sec-text"><strong>Immutable audit</strong><span>DB trigger — no deletion ever</span></div>
     </div>
     <div class="sec-item">
       <div class="sec-check">&#10003;</div>
-      <div class="sec-text"><strong>Fernet encryption at rest</strong><span>TOTP secrets and SMTP credentials encrypted with AES-128-CBC. Key outside the database.</span></div>
+      <div class="sec-text"><strong>Fernet at rest</strong><span>AES-128, key outside database</span></div>
     </div>
     <div class="sec-item">
       <div class="sec-check">&#10003;</div>
-      <div class="sec-text"><strong>300 MB upload cap</strong><span>Request body hard-limited. No disk-fill or memory exhaustion via upload endpoint.</span></div>
+      <div class="sec-text"><strong>300 MB upload cap</strong><span>Blocks disk-fill attacks</span></div>
     </div>
   </div>
   <aside class="notes">
@@ -969,14 +969,8 @@
       <span class="chip hi"><span class="chip-dot"></span>7 automation jobs (scheduler)</span>
       <span class="chip hi"><span class="chip-dot"></span>Nightly DB backup</span>
       <span class="chip hi"><span class="chip-dot"></span>SLA alerts (Teams / email)</span>
-      <span class="chip hi"><span class="chip-dot"></span>Mobile money module</span>
-      <span class="chip hi"><span class="chip-dot"></span>Cards (Visa / Mastercard) module</span>
-      <span class="chip hi"><span class="chip-dot"></span>BYO format profiles</span>
       <span class="chip hi"><span class="chip-dot"></span>Docker single-container deploy</span>
       <span class="chip hi"><span class="chip-dot"></span>Pre-launch security review &#10003;</span>
-      <span class="chip" style="border-style:dashed; color:var(--dim)">AD / LDAP — next</span>
-      <span class="chip" style="border-style:dashed; color:var(--dim)">Postgres HA — next</span>
-      <span class="chip" style="border-style:dashed; color:var(--dim)">Redis TOTP store — next</span>
     </div>
 
     <div class="v1-badge">
