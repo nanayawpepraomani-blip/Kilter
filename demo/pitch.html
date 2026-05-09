@@ -52,7 +52,7 @@
       color: var(--ink); text-transform: none; letter-spacing: -0.4px;
     }
     .reveal h1 { font-size: 3em; font-weight: 900; }
-    .reveal h2 { font-size: 1.9em; font-weight: 800; margin-bottom: 0.3em; }
+    .reveal h2 { font-size: 1.6em; font-weight: 800; margin-bottom: 0.3em; }
     .reveal h3 { font-size: 1.1em; font-weight: 700; }
     .reveal p, .reveal li { color: var(--ink); line-height: 1.5; }
     .reveal ul { margin-left: 1.1em; }
@@ -169,6 +169,19 @@
     .pipeline-step .ps-name { font-size: 0.72em; font-weight: 700; color: var(--ink); }
     .pipeline-step .ps-sub  { font-size: 0.62em; color: var(--muted); margin-top: 2px; }
     .pipeline-arrow { flex-shrink: 0; color: var(--dim); font-size: 1.3em; padding: 0 6px; }
+
+    .ps-badge {
+      width: 38px; height: 38px; border-radius: 10px; border: 1px solid transparent;
+      display: flex; align-items: center; justify-content: center; margin: 0 auto;
+      font-family: "Inter", system-ui, sans-serif; font-size: 11px; font-weight: 900;
+      letter-spacing: -0.4px;
+    }
+    .sc-badge {
+      width: 48px; height: 48px; border-radius: 13px; border: 1px solid transparent;
+      display: flex; align-items: center; justify-content: center; margin: 0 auto 10px;
+      font-family: "Inter", system-ui, sans-serif; font-size: 13px; font-weight: 900;
+      letter-spacing: -0.5px;
+    }
 
     .feature-cols { display: grid; grid-template-columns: repeat(2,1fr); gap: 10px; margin-top: 1em; }
     .feat-item {
@@ -464,7 +477,7 @@
   <h2>Three problems.<br><span class="grad-text-warm">One tool to fix all of them.</span></h2>
   <div class="problem-grid">
     <div class="problem-card p-amber">
-      <div class="p-icon" style="font-size:1.6em">⚡</div>
+      <div class="p-icon" style="font-size:1em"><span style="font-family:'Inter',sans-serif;font-weight:900;color:var(--amber);font-size:0.85em;line-height:1">!</span></div>
       <div class="p-head">The tool is end-of-life</div>
       <div class="p-body">
         No active vendor support. No Windows 11 hardening patches.
@@ -472,7 +485,7 @@
       </div>
     </div>
     <div class="problem-card p-red">
-      <div class="p-icon" style="font-size:1.6em">📊</div>
+      <div class="p-icon" style="font-size:1em"><span style="font-family:'Inter',sans-serif;font-weight:900;color:var(--red);font-size:0.52em;letter-spacing:-0.5px;line-height:1">XLS</span></div>
       <div class="p-head">Reconciliation is still Excel</div>
       <div class="p-body">
         Ops exports from the core, pulls SWIFT statements, eyeballs matches row by row.
@@ -480,7 +493,7 @@
       </div>
     </div>
     <div class="problem-card p-purple">
-      <div class="p-icon" style="font-size:1.6em">🔍</div>
+      <div class="p-icon" style="font-size:1em"><span style="font-family:'Inter',sans-serif;font-weight:900;color:var(--purple);font-size:0.85em;line-height:1">?</span></div>
       <div class="p-head">Audit has no breadcrumbs</div>
       <div class="p-body">
         "Who cleared this on the 14th?" &rarr; a spreadsheet filename, maybe.
@@ -502,31 +515,31 @@
 
   <div class="pipeline">
     <div class="pipeline-step" style="border-color:rgba(59,130,246,0.3)">
-      <div class="ps-icon">📥</div>
+      <div class="ps-icon"><div class="ps-badge" style="background:rgba(59,130,246,0.2);border-color:rgba(59,130,246,0.3);color:#3b82f6">IN</div></div>
       <div class="ps-name" style="color:#3b82f6">Intake</div>
       <div class="ps-sub">SWIFT + Flexcube<br>auto-scanned</div>
     </div>
     <div class="pipeline-arrow">&#10132;</div>
     <div class="pipeline-step" style="border-color:rgba(34,211,238,0.3)">
-      <div class="ps-icon">⚙️</div>
+      <div class="ps-icon"><div class="ps-badge" style="background:rgba(34,211,238,0.15);border-color:rgba(34,211,238,0.3);color:#22d3ee">MT</div></div>
       <div class="ps-name" style="color:#22d3ee">Match</div>
       <div class="ps-sub">4-tier engine<br>proposes pairs</div>
     </div>
     <div class="pipeline-arrow">&#10132;</div>
     <div class="pipeline-step" style="border-color:rgba(167,139,250,0.3)">
-      <div class="ps-icon">👁</div>
+      <div class="ps-icon"><div class="ps-badge" style="background:rgba(167,139,250,0.15);border-color:rgba(167,139,250,0.3);color:#a78bfa">RV</div></div>
       <div class="ps-name" style="color:#a78bfa">Review</div>
       <div class="ps-sub">Ops confirms<br>or rejects</div>
     </div>
     <div class="pipeline-arrow">&#10132;</div>
     <div class="pipeline-step" style="border-color:rgba(16,185,129,0.3)">
-      <div class="ps-icon">📤</div>
+      <div class="ps-icon"><div class="ps-badge" style="background:rgba(16,185,129,0.15);border-color:rgba(16,185,129,0.3);color:#10b981">EX</div></div>
       <div class="ps-name" style="color:#10b981">Export</div>
       <div class="ps-sub">xlsx for finance<br>csv for audit</div>
     </div>
     <div class="pipeline-arrow">&#10132;</div>
     <div class="pipeline-step" style="border-color:rgba(245,158,11,0.3)">
-      <div class="ps-icon">🔒</div>
+      <div class="ps-icon"><div class="ps-badge" style="background:rgba(245,158,11,0.15);border-color:rgba(245,158,11,0.3);color:#f59e0b">AU</div></div>
       <div class="ps-name" style="color:#f59e0b">Audit trail</div>
       <div class="ps-sub">Every click<br>immutably logged</div>
     </div>
@@ -658,19 +671,19 @@
 
   <div class="scope-grid">
     <div class="scope-card">
-      <div class="sc-icon">🏪</div>
+      <div class="sc-icon"><div class="sc-badge" style="background:rgba(255,255,255,0.06);border-color:rgba(255,255,255,0.12);color:var(--ink)">BR</div></div>
       <div class="sc-who">Branch ops</div>
       <div class="sc-name">Single area</div>
       <div class="sc-desc">Picks their branch on login. Only sees that branch's sessions, accounts, and queue. Zero noise from the rest of the bank.</div>
     </div>
     <div class="scope-card sc-hi">
-      <div class="sc-icon">🗺️</div>
+      <div class="sc-icon"><div class="sc-badge" style="background:rgba(59,130,246,0.15);border-color:rgba(59,130,246,0.3);color:var(--blue)">RG</div></div>
       <div class="sc-who">Regional supervisors</div>
       <div class="sc-name">Multi-area</div>
       <div class="sc-desc">Ticks several branches at once. Badge reads "3 areas". Sessions list, dashboard stats, and exports all filter accordingly.</div>
     </div>
     <div class="scope-card">
-      <div class="sc-icon">🏦</div>
+      <div class="sc-icon"><div class="sc-badge" style="background:rgba(16,185,129,0.15);border-color:rgba(16,185,129,0.3);color:var(--green)">HQ</div></div>
       <div class="sc-who">Treasury leadership</div>
       <div class="sc-name">All areas</div>
       <div class="sc-desc">Leave the picker on "All areas". Full bank view, same UI — just wider scope. No separate admin mode needed.</div>
@@ -1016,6 +1029,9 @@
 <script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/notes/notes.js"></script>
 <script>
   Reveal.initialize({
+    width: 1280,
+    height: 720,
+    margin: 0.05,
     hash: true,
     slideNumber: 'c/t',
     controls: true,
