@@ -151,26 +151,26 @@
 
 <div class="stats" id="stats" style="margin-top:0">
   <a class="stat stat-volume accent-warn" href="/sessions-list?status=open" title="Open sessions with pending work">
-    <div class="stat-glyph" aria-hidden="true">⧖</div>
+    <div class="stat-glyph"><svg aria-hidden="true"><use href="#i-hourglass"/></svg></div>
     <div class="label">Pending decisions</div>
     <div class="value loading" id="s-pending">—</div>
     <div class="hint">Across open sessions</div>
   </a>
   <a class="stat stat-volume accent-success" href="/sessions-list" title="Open the sessions list">
-    <div class="stat-glyph" aria-hidden="true">✓</div>
+    <div class="stat-glyph"><svg aria-hidden="true"><use href="#i-check-circle"/></svg></div>
     <div class="label">Confirmed matches</div>
     <div class="value loading" id="s-confirmed">—</div>
     <div class="hint">Lifetime</div>
     <div class="delta" id="s-confirmed-delta" style="display:none"></div>
   </a>
   <a class="stat stat-volume accent-primary" href="/sessions-list?status=open" title="Open sessions with pending work">
-    <div class="stat-glyph" aria-hidden="true">⧉</div>
+    <div class="stat-glyph"><svg aria-hidden="true"><use href="#i-layers"/></svg></div>
     <div class="label">Open sessions</div>
     <div class="value loading" id="s-sessions">—</div>
     <div class="hint">With pending work</div>
   </a>
   <a class="stat stat-volume" href="/cash-accounts" title="Open the cash-accounts admin">
-    <div class="stat-glyph" aria-hidden="true">▤</div>
+    <div class="stat-glyph"><svg aria-hidden="true"><use href="#i-cash"/></svg></div>
     <div class="label">Registered cash accounts</div>
     <div class="value loading" id="s-accounts">—</div>
     <div class="hint">Auto-paired on scan</div>
@@ -178,7 +178,7 @@
 </div>
 
 <!-- Analytics row: trend sparkline + ageing histogram + by-group breakdown -->
-<div style="display:grid;grid-template-columns:1.6fr 1fr 1fr;gap:16px;margin-bottom:20px">
+<div class="dash-grid-3">
   <div class="card chart-card">
     <div class="card-head">
       <h2>Match activity · last 14 days</h2>
@@ -217,7 +217,7 @@
 
 <!-- Per-account + per-assignee breakdown row. The two together answer
      "where are the breaks concentrated?" and "who's carrying the load?". -->
-<div style="display:grid;grid-template-columns:1.4fr 1fr;gap:16px;margin-bottom:20px">
+<div class="dash-grid-2">
   <div class="card">
     <div class="card-head">
       <h2>Open items by account</h2>
@@ -323,9 +323,10 @@
         <tr>
           <th>ID</th><th>Created</th><th>Cash account</th><th>CCY</th>
           <th>Source</th>
-          <th class="num"><span class="th-icon" aria-hidden="true">⏱</span>Pending</th>
-          <th class="num"><span class="th-icon" aria-hidden="true">✓</span>Confirmed</th>
-          <th class="num"><span class="th-icon" aria-hidden="true">✗</span>Rejected</th><th></th>
+          <th class="num">Pending</th>
+          <th class="num">Confirmed</th>
+          <th class="num">Rejected</th>
+          <th></th>
         </tr>
       </thead>
       <tbody></tbody>
@@ -480,8 +481,10 @@ function renderSessionsTable() {
   if (rows.length === 0) {
     const msg = currentSourceFilter
       ? 'No sessions match this source filter.'
-      : 'No sessions yet. Scan the messages folder or upload files above.';
-    tbody.innerHTML = `<tr class="empty-row"><td colspan="9">${msg}</td></tr>`;
+      : 'No sessions yet — scan the messages folder or upload files to get started.';
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="9">
+      <svg class="empty-icon"><use href="#i-inbox-empty"/></svg>${msg}
+    </td></tr>`;
     return;
   }
   tbody.innerHTML = rows.slice(0, 10).map(s => {
@@ -561,7 +564,7 @@ function renderRiskCallout(ageing) {
   const n = ageing.at_risk_count;
   slot.innerHTML = `
     <div class="risk-callout">
-      <div class="icon">⚠️</div>
+      <svg class="icon" style="width:28px;height:28px;stroke:var(--c-danger);flex-shrink:0" aria-hidden="true"><use href="#i-warning"/></svg>
       <div class="body">
         <div class="title">${n} open item${n === 1 ? '' : 's'} aged over 30 days</div>
         <div>These need investigation or write-off — carrying them forward indefinitely distorts the ledger.</div>

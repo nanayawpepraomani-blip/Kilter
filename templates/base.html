@@ -4,6 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>{% block title %}Kilter{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     /* ============================================================
        Design system — one place for tokens, typography, components.
@@ -39,6 +42,7 @@
       --c-danger-soft: #fee2e2;
       --c-info:      #4338ca;
       --c-info-soft: #e0e7ff;
+      --c-info-text: #3730a3;
 
       /* --- reconciliation-state (used by badges + charts) -------------- */
       --c-state-cleared:  #10b981;
@@ -212,7 +216,7 @@
     html, body { height: 100%; margin: 0; }
     body {
       margin: 0; background: var(--c-bg); color: var(--c-text);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, Helvetica, Arial, sans-serif;
+      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       font-size: var(--t-body); line-height: 1.5;
       -webkit-font-smoothing: antialiased;
     }
@@ -1088,6 +1092,133 @@
     .empty-state h3 { margin: 0 0 8px 0; color: var(--c-text); font-weight: 600; }
     .empty-state p { margin: 4px 0; }
 
+    /* Dashboard layout helpers — replaces repetitive inline style="display:grid..." */
+    .dash-grid-3 {
+      display: grid;
+      grid-template-columns: 1.6fr 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .dash-grid-2 {
+      display: grid;
+      grid-template-columns: 1.4fr 1fr;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    @media (max-width: 1100px) {
+      .dash-grid-3 { grid-template-columns: 1fr 1fr; }
+      .dash-grid-2 { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 700px) {
+      .dash-grid-3, .dash-grid-2 { grid-template-columns: 1fr; }
+    }
+
+    /* Improved table empty row — subtler, with an icon slot */
+    .table .empty-row td {
+      text-align: center;
+      color: var(--c-text-subtle);
+      padding: 36px 20px;
+      font-style: normal;
+      font-size: var(--t-small);
+      letter-spacing: 0.01em;
+    }
+    .table .empty-row .empty-icon {
+      display: block;
+      margin: 0 auto 8px;
+      opacity: 0.4;
+      width: 28px; height: 28px;
+    }
+
+    /* SVG inside stat-glyph — same size/alignment as character glyphs */
+    .stat-glyph svg {
+      width: 22px; height: 22px;
+      stroke-width: 2; vertical-align: middle;
+    }
+
+    /* Directory card grid for open-items / account listings */
+    .dir-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+      gap: 14px;
+      margin-top: 16px;
+    }
+    .dir-card {
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: var(--radius-lg);
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+      text-decoration: none;
+      color: inherit;
+    }
+    .dir-card:hover {
+      border-color: var(--c-primary);
+      box-shadow: 0 4px 14px rgba(37, 99, 235, 0.08);
+      transform: translateY(-1px);
+    }
+    .dir-card__head {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .dir-card__title {
+      font-weight: 700;
+      font-size: var(--t-3);
+      color: var(--c-text);
+      line-height: 1.2;
+    }
+    .dir-card__meta {
+      font-size: var(--t-small);
+      color: var(--c-text-muted);
+      margin-top: 1px;
+    }
+    .dir-card__kpis {
+      display: flex;
+      gap: 16px;
+      padding-top: 10px;
+      border-top: 1px solid var(--c-border);
+    }
+    .dir-card__kpi {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .dir-card__kpi-val {
+      font-size: var(--t-2);
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+    }
+    .dir-card__kpi-label {
+      font-size: var(--t-micro);
+      color: var(--c-text-muted);
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    /* Search bar with icon */
+    .search-bar {
+      position: relative;
+      flex: 1;
+    }
+    .search-bar .search-icon {
+      position: absolute;
+      left: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--c-text-subtle);
+      pointer-events: none;
+      width: 16px; height: 16px;
+    }
+    .search-bar input {
+      width: 100%;
+      padding-left: 34px;
+    }
+
     details > summary {
       cursor: pointer; padding: 10px 0; font-size: var(--t-body);
       font-weight: 500; color: var(--c-primary); list-style: none;
@@ -1188,6 +1319,12 @@
       <symbol id="i-sparkles" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.287 1.288L3 12l5.8 1.9a2 2 0 0 1 1.288 1.287L12 21l1.9-5.8a2 2 0 0 1 1.287-1.288L21 12l-5.8-1.9a2 2 0 0 1-1.288-1.287Z"/><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/></symbol>
       <symbol id="i-calendar-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 7.5V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h3.5"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h5"/><path d="M17.5 17.5 16 16.3V14"/><circle cx="16" cy="16" r="6"/></symbol>
       <symbol id="i-activity" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.5.5 0 0 1-.96 0L9.24 2.18a.5.5 0 0 0-.96 0l-2.35 8.36A2 2 0 0 1 4 12H2"/></symbol>
+      <symbol id="i-warning" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+      <symbol id="i-check-circle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></symbol>
+      <symbol id="i-hourglass" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/></symbol>
+      <symbol id="i-layers" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+      <symbol id="i-inbox-empty" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></symbol>
     </defs>
   </svg>
 

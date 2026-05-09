@@ -27,7 +27,7 @@
   <div class="card-body tight">
     <table class="table">
       <thead><tr><th>Category</th><th class="num">Count</th><th class="num">Value</th></tr></thead>
-      <tbody id="cat-body"><tr class="empty-row"><td colspan="3">—</td></tr></tbody>
+      <tbody id="cat-body"><tr class="empty-row"><td colspan="3"><svg class="empty-icon"><use href="#i-inbox-empty"/></svg>Loading…</td></tr></tbody>
     </table>
   </div>
 </div>
@@ -76,7 +76,7 @@
       <div class="stat accent-danger"><div class="label">Written off</div><div class="value">${oi.written_off}</div></div>
       <div class="stat">
         <div class="label">Last reconciled</div>
-        <div class="value" style="font-size: 18px;">${last ? fmtDateTime(last.created_at) : 'never'}</div>
+        <div class="value" style="font-size: var(--t-2);">${last ? fmtDateTime(last.created_at) : 'never'}</div>
         <div class="hint">${last ? 'session #' + last.id : ''}</div>
       </div>`;
 
@@ -97,7 +97,7 @@
           `<tr><td><span class="badge badge-neutral">${esc(k)}</span></td>
                <td class="num">${v.count}</td>
                <td class="num">${fmtAmount(v.value)}</td></tr>`).join('')
-      : '<tr class="empty-row"><td colspan="3">No open items</td></tr>';
+      : '<tr class="empty-row"><td colspan="3"><svg class="empty-icon"><use href="#i-inbox-empty"/></svg>No open items</td></tr>';
 
     document.getElementById('open-items-link').href = `/open-items-view?account=${accountId}`;
 

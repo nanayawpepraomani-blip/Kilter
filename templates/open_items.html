@@ -15,15 +15,17 @@
      drill into a specific one. Search box filters cards by name. -->
 <div id="directory-view">
   <div class="card">
-    <div class="card-body" style="display:flex;align-items:center;gap:14px;padding:16px 20px">
-      <span style="font-size:18px">🔍</span>
-      <input id="dir-search" type="search" class="input"
-             placeholder="Search accounts by name or shortname…"
-             style="flex:1;font-size:var(--t-body)">
-      <span class="muted" id="dir-count" style="white-space:nowrap">—</span>
+    <div class="card-body" style="display:flex;align-items:center;gap:14px;padding:14px 20px">
+      <div class="search-bar">
+        <svg class="search-icon" aria-hidden="true"><use href="#i-search"/></svg>
+        <input id="dir-search" type="search" class="input"
+               placeholder="Search accounts by name or shortname…"
+               style="font-size:var(--t-body)">
+      </div>
+      <span class="muted" id="dir-count" style="white-space:nowrap;font-size:var(--t-small)">—</span>
     </div>
   </div>
-  <div id="dir-cards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px;margin-top:16px">
+  <div id="dir-cards" class="dir-grid">
     <div class="card" style="padding:24px;text-align:center;color:var(--c-text-muted)">Loading accounts…</div>
   </div>
 </div>
@@ -273,8 +275,8 @@
     }
     host.innerHTML = visible.map(d => {
       const recon = d.recon_type === 'one_sided'
-        ? '<span class="badge badge-warn" style="font-size:var(--t-micro)">one-sided</span>'
-        : '<span class="badge badge-info" style="font-size:var(--t-micro)">two-sided</span>';
+        ? '<span class="badge badge-warn">one-sided</span>'
+        : '<span class="badge badge-info">two-sided</span>';
       const b = d.buckets || {};
       const buckets = [
         {label: '0–7d',   n: b['0-7']  || 0, color: 'var(--c-success)'},
@@ -284,33 +286,31 @@
       ];
       const totalFmt = (d.total_amount || 0).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
       return `
-        <a href="?account_id=${d.account_id}" data-account-id="${d.account_id}" class="dir-card" style="display:block;text-decoration:none;color:inherit">
-          <div class="card" style="padding:16px;cursor:pointer;border:1px solid var(--c-border);transition:border-color 0.15s,box-shadow 0.15s;height:100%">
-            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px">
-              <div style="min-width:0;flex:1">
-                <div style="font-weight:600;font-size:var(--t-body);overflow:hidden;text-overflow:ellipsis">${esc(d.shortname || d.label || '')}</div>
-                <div class="muted" style="font-size:var(--t-micro);margin-top:2px;overflow:hidden;text-overflow:ellipsis">${esc(d.label || '')}</div>
-              </div>
-              ${recon}
+        <a href="?account_id=${d.account_id}" data-account-id="${d.account_id}" class="dir-card">
+          <div class="dir-card__head">
+            <div style="flex:1;min-width:0">
+              <div class="dir-card__title" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(d.shortname || d.label || '')}</div>
+              <div class="dir-card__meta" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(d.label || '')}</div>
             </div>
-            <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:14px 0 10px">
-              <div>
-                <div style="font-size:var(--t-2);font-weight:700">${d.count.toLocaleString()}</div>
-                <div class="muted" style="font-size:var(--t-micro)">open items</div>
-              </div>
-              <div style="text-align:right">
-                <div style="font-size:var(--t-body);font-weight:600">${esc(d.currency || '')} ${totalFmt}</div>
-                <div class="muted" style="font-size:var(--t-micro)">total amount</div>
-              </div>
+            ${recon}
+          </div>
+          <div class="dir-card__kpis">
+            <div class="dir-card__kpi">
+              <div class="dir-card__kpi-val">${d.count.toLocaleString()}</div>
+              <div class="dir-card__kpi-label">Open items</div>
             </div>
-            <div style="display:flex;gap:8px;font-size:var(--t-micro)">
-              ${buckets.map(bk => `
-                <div style="flex:1;text-align:center;padding:4px 6px;border-radius:4px;background:var(--c-surface-2)">
-                  <div style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${bk.color};margin-right:4px"></div>
-                  <strong>${bk.n}</strong>
-                  <div class="muted" style="font-size:9px;margin-top:1px">${bk.label}</div>
-                </div>`).join('')}
+            <div class="dir-card__kpi" style="margin-left:auto;text-align:right">
+              <div class="dir-card__kpi-val" style="font-size:var(--t-body)">${esc(d.currency || '')} ${totalFmt}</div>
+              <div class="dir-card__kpi-label">Total amount</div>
             </div>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            ${buckets.map(bk => `
+              <div style="display:flex;align-items:center;gap:4px;font-size:var(--t-micro);padding:3px 8px;border-radius:4px;background:var(--c-surface-2)">
+                <span style="width:7px;height:7px;border-radius:50%;background:${bk.color};flex-shrink:0"></span>
+                <strong>${bk.n}</strong>
+                <span class="muted">${bk.label}</span>
+              </div>`).join('')}
           </div>
         </a>`;
     }).join('');
