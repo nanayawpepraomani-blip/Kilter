@@ -157,7 +157,7 @@
        SLIDE 3 — WHAT KILTER DOES
     ───────────────────────────────────── */
     .pipeline {
-      display: flex; align-items: center; gap: 0; margin: 0.7em 0;
+      display: flex; align-items: center; gap: 0; margin: 0.4em 0;
       flex-wrap: nowrap; overflow: hidden;
     }
     .pipeline-step {
@@ -183,7 +183,7 @@
       letter-spacing: -0.5px;
     }
 
-    .feature-cols { display: grid; grid-template-columns: repeat(2,1fr); gap: 10px; margin-top: 1em; }
+    .feature-cols { display: grid; grid-template-columns: repeat(2,1fr); gap: 10px; margin-top: 0.3em; }
     .feat-item {
       display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px;
       background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px;
@@ -192,7 +192,7 @@
       flex-shrink: 0; width: 8px; height: 8px; border-radius: 50%;
       background: var(--grad); margin-top: 5px;
     }
-    .feat-item .fi-text { font-size: 0.8em; color: var(--ink); line-height: 1.45; }
+    .feat-item .fi-text { font-size: 0.68em; color: var(--ink); line-height: 1.45; }
     .feat-item .fi-text strong { display: block; font-weight: 700; margin-bottom: 1px; }
 
     /* ─────────────────────────────────────
@@ -326,14 +326,14 @@
     /* ─────────────────────────────────────
        SLIDE 8 — SCHEDULER
     ───────────────────────────────────── */
-    .sched-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; align-items: start; margin-top: 0.4em; }
+    .sched-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; align-items: start; margin-top: 0.3em; }
     .sched-wrap { position: relative; padding-left: 32px; }
     .sched-wrap::before {
       content: ''; position: absolute; left: 10px; top: 8px; bottom: 8px;
       width: 2px; background: linear-gradient(to bottom, var(--blue), var(--cyan));
       border-radius: 2px;
     }
-    .sched-node { position: relative; margin-bottom: 5px; display: flex; align-items: flex-start; gap: 10px; }
+    .sched-node { position: relative; margin-bottom: 2px; display: flex; align-items: flex-start; gap: 10px; }
     .sched-node::before {
       content: ''; position: absolute; left: -25px; top: 5px;
       width: 12px; height: 12px; border-radius: 50%;
@@ -342,11 +342,11 @@
     }
     .sched-node.nc::before { border-color: var(--cyan); box-shadow: 0 0 10px var(--cyan), 0 0 20px rgba(34,211,238,0.3); }
     .sched-node.ng::before { border-color: var(--green); box-shadow: 0 0 10px var(--green), 0 0 20px rgba(16,185,129,0.3); }
-    .sched-time { font-size: 0.68em; color: var(--dim); min-width: 4.2em; font-variant-numeric: tabular-nums; font-weight: 600; padding-top: 2px; font-family: monospace; }
+    .sched-time { font-size: 0.62em; color: var(--dim); min-width: 3.8em; font-variant-numeric: tabular-nums; font-weight: 600; padding-top: 1px; font-family: monospace; }
     .sched-body {}
-    .sched-name { font-size: 0.72em; font-weight: 700; color: var(--ink); }
-    .sched-desc { font-size: 0.62em; color: var(--muted); line-height: 1.35; margin-top: 1px; }
-    .sched-weekly { font-size: 0.6em; color: var(--dim); font-style: italic; margin: 4px 0; }
+    .sched-name { font-size: 0.65em; font-weight: 700; color: var(--ink); }
+    .sched-desc { font-size: 0.56em; color: var(--muted); line-height: 1.3; margin-top: 0; }
+    .sched-weekly { font-size: 0.55em; color: var(--dim); font-style: italic; margin: 2px 0; }
     .sched-callout {
       background: rgba(59,130,246,0.06); border: 1px solid rgba(59,130,246,0.2);
       border-radius: 12px; padding: 12px 16px;
@@ -546,10 +546,10 @@
   </div>
 
   <div class="feature-cols">
-    <div class="feat-item"><div class="fi-dot"></div><div class="fi-text"><strong>Format-agnostic intake</strong> MT940/950, camt.053/054, Flexcube xlsx, mobile money, cards — all welcome.</div></div>
-    <div class="feat-item"><div class="fi-dot"></div><div class="fi-text"><strong>Open-items ledger</strong> Unmatched breaks roll forward until cleared, written off, or investigated.</div></div>
-    <div class="feat-item"><div class="fi-dot"></div><div class="fi-text"><strong>Access-area scoping</strong> Each user sees only the branches or accounts they work in.</div></div>
-    <div class="feat-item"><div class="fi-dot"></div><div class="fi-text"><strong>7 automation jobs</strong> Nightly backup, intake scan, SLA alerts, daily close — pre-seeded, runs unattended.</div></div>
+    <div class="feat-item"><div class="fi-dot"></div><div class="fi-text"><strong>Format-agnostic intake</strong> MT940/950, camt.053/054, and Flexcube xlsx.</div></div>
+    <div class="feat-item"><div class="fi-dot"></div><div class="fi-text"><strong>Open-items ledger</strong> Unmatched breaks carry forward until resolved.</div></div>
+    <div class="feat-item"><div class="fi-dot"></div><div class="fi-text"><strong>Access-area scoping</strong> Per-user branch and account scope.</div></div>
+    <div class="feat-item"><div class="fi-dot"></div><div class="fi-text"><strong>7 automation jobs</strong> Scan, backup, SLA alerts, daily close — pre-seeded.</div></div>
   </div>
 </section>
 
@@ -702,29 +702,29 @@
 <section>
   <h2 style="margin-bottom:0.2em; line-height:1.15">Roles + an <span class="grad-text">immutable audit trail</span></h2>
 
-  <div style="display:grid; grid-template-columns:1fr 1fr; gap:18px; align-items:start; font-size:0.88em">
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:18px; align-items:start; font-size:0.82em">
     <div>
-      <p class="muted small" style="margin-bottom:0.6em">Four roles. Each sees exactly what they need.</p>
+      <p class="muted small" style="margin-bottom:0.5em">Four roles, each with own scope.</p>
       <div class="roles-grid">
         <div class="role-card">
           <div class="rc-badge" style="background:var(--blue-soft); color:var(--blue)">ADM</div>
-          <div><div class="rc-name">admin</div><div class="rc-desc">Full access — users, jobs, settings.</div></div>
+          <div><div class="rc-name">admin</div><div class="rc-desc">Full access to all features.</div></div>
         </div>
         <div class="role-card">
           <div class="rc-badge" style="background:var(--purple-soft); color:var(--purple)">OPS</div>
-          <div><div class="rc-name">ops</div><div class="rc-desc">Reconcile, confirm/reject, export.</div></div>
+          <div><div class="rc-name">ops</div><div class="rc-desc">Reconcile and export results.</div></div>
         </div>
         <div class="role-card">
           <div class="rc-badge" style="background:var(--amber-soft); color:var(--amber)">AUD</div>
-          <div><div class="rc-name">audit</div><div class="rc-desc">Read-only: log and all exports.</div></div>
+          <div><div class="rc-name">audit</div><div class="rc-desc">View logs and export only.</div></div>
         </div>
         <div class="role-card">
           <div class="rc-badge" style="background:var(--green-soft); color:var(--green)">IC</div>
-          <div><div class="rc-name">internal_control</div><div class="rc-desc">Same as audit, own scope.</div></div>
+          <div><div class="rc-name">internal_control</div><div class="rc-desc">Same as audit, own scope area.</div></div>
         </div>
       </div>
-      <p style="margin-top:8px; font-size:0.76em; color:var(--muted)">
-        MFA on every account — Microsoft Authenticator, Google Authenticator, Authy, or any TOTP app. Enrollment via one-time token.
+      <p style="margin-top:6px; font-size:0.76em; color:var(--muted)">
+        TOTP MFA on every account. Works with any authenticator app.
       </p>
     </div>
     <div>
@@ -774,8 +774,8 @@
      SLIDE 8 — SCHEDULER
 ════════════════════════════════════ -->
 <section>
-  <h2 style="font-size:1.3em">It works <span class="grad-text">while you sleep</span></h2>
-  <p class="muted small">7 automation jobs. Pre-seeded, UI-configurable. No cron, no scripts.</p>
+  <h2 style="font-size:1.1em">It works <span class="grad-text">while you sleep</span></h2>
+  <p class="muted small" style="margin:0 0 4px">7 pre-seeded jobs. No cron, no scripts.</p>
 
   <div class="sched-cols">
     <div class="sched-wrap">
@@ -783,7 +783,7 @@
         <div class="sched-time">02:00</div>
         <div class="sched-body">
           <div class="sched-name">DB Backup</div>
-          <div class="sched-desc">7 nightly SQLite copies, auto-kept.</div>
+          <div class="sched-desc">7 nightly copies, auto-kept.</div>
         </div>
       </div>
       <div class="sched-node nc">
@@ -797,7 +797,7 @@
         <div class="sched-time">06:00</div>
         <div class="sched-body">
           <div class="sched-name">Intake Scan</div>
-          <div class="sched-desc">Scans <code style="font-size:0.9em;background:rgba(255,255,255,0.07);padding:1px 5px;border-radius:3px">messages/</code>, parses SWIFT + Flex.</div>
+          <div class="sched-desc">SWIFT + Flex file parser.</div>
         </div>
       </div>
       <div class="sched-node">
@@ -811,14 +811,14 @@
         <div class="sched-time">08:00</div>
         <div class="sched-body">
           <div class="sched-name">SLA Check</div>
-          <div class="sched-desc">Teams / email if threshold breached.</div>
+          <div class="sched-desc">Teams/email SLA alert.</div>
         </div>
       </div>
       <div class="sched-node">
         <div class="sched-time">23:55</div>
         <div class="sched-body">
           <div class="sched-name">Daily Close</div>
-          <div class="sched-desc">Rolls breaks to open-items ledger.</div>
+          <div class="sched-desc">Rolls breaks to open items.</div>
         </div>
       </div>
       <div class="sched-weekly">── weekly ──</div>
@@ -834,9 +834,8 @@
     <div>
       <div class="sched-callout">
         <div class="sc-big">You walk in at 08:00.<br><span class="grad-text">All of this is already done.</span></div>
-        <div class="sc-body" style="margin-top:12px; color:var(--muted)">
-          Database backed up. Files scanned. Breaks emailed to treasury. SLA check sent.
-          The review queue is ready. Kilter ran the night shift.
+        <div class="sc-body" style="margin-top:10px; color:var(--muted)">
+          DB backed up. Files parsed. Breaks emailed. SLA sent. Queue ready.
         </div>
       </div>
       <div style="margin-top:10px; padding:10px 14px; background:var(--bg-card); border:1px solid var(--border); border-radius:11px;">
