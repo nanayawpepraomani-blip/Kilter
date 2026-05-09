@@ -161,12 +161,31 @@ ship them to your SIEM via the host's log forwarder.
 
 ### Backing up
 
-The only state worth backing up is the volume `kilter-data` (the SQLite
-file).
+The only state worth backing up is the volume `kilter-data` (the SQLite file).
+
+**Built-in backup job (recommended).** Kilter ships a `db_backup` scheduler
+job pre-enabled at 02:00 UTC. It uses SQLite's online backup API — safe while
+the DB is live under WAL mode. Backups go to `./backups/` inside the container
+by default. To redirect to a host-mounted volume set the env var:
+
+```
+KILTER_BACKUP_DIR=/backups
+```
+
+and mount the path in `docker-compose.yml`:
+
+```yaml
+volumes:
+  - /host/path/backups:/backups
+```
+
+The job keeps 7 daily snapshots by default; edit `keep_days` in the job's
+params JSON via Scheduler Admin to change retention.
+
+**Manual / external backup (alternative).** If you prefer host-level snapshots:
 
 ```bash
-# Pause writes for a clean snapshot. SQLite WAL means a hot copy is
-# usually safe, but a 5-second pause guarantees consistency.
+# SQLite WAL makes a hot copy safe, but a brief pause guarantees consistency.
 docker compose pause kilter
 docker run --rm \
   -v kilter_kilter-data:/data:ro \
@@ -175,9 +194,8 @@ docker run --rm \
 docker compose unpause kilter
 ```
 
-Encrypt the resulting `.db` file (it contains the encrypted TOTP secrets,
-but encrypt the backup at rest anyway) and ship it to your backup
-target. A daily cron job is plenty.
+Either way, encrypt the `.db` file at rest and ship it offsite — it contains
+encrypted TOTP secrets, so treat it like a credential store.
 
 ### Restoring
 
@@ -303,6 +321,14 @@ Usually the scheduler running a long job blocks the worker. Check
 `docker compose logs --tail 200 kilter` for stack traces. If the
 scheduler is the cause, raise the healthcheck `start_period` and
 `timeout` and consider running uvicorn with `--workers 2`.
+
+> ⚠️ **Single-worker constraint for TOTP.** Kilter's TOTP replay cache
+> (which prevents a 6-digit code from being used twice within its 30-second
+> window) is stored in-process. If you run `uvicorn --workers N` with N > 1,
+> each worker has its own cache — a code used against worker 1 can be
+> replayed against worker 2. **Run single-process (`--workers 1`) until a
+> Redis-backed replay store is added.** For the vast majority of deployments
+> (single host, bank-internal network) one worker handles the load comfortably.
 
 ## 5b. MySQL Deployment
 

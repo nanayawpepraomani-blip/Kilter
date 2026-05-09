@@ -190,6 +190,8 @@
     <tr><td>SLA alerts (morning fan-out)</td><td>sla_check</td><td>daily 07:30 UTC</td><td>ON</td></tr>
     <tr><td>Daily breaks report</td><td>daily_breaks_report</td><td>daily 07:00 UTC</td><td>ON</td></tr>
     <tr><td>Flexcube pull (pre-scan)</td><td>flex_extract</td><td>daily 05:45 UTC</td><td>OFF — enable when Oracle creds are provisioned</td></tr>
+    <tr><td>DB backup (nightly)</td><td>db_backup</td><td>daily 02:00 UTC</td><td>ON — writes to <code>./backups/</code> (or <code>KILTER_BACKUP_DIR</code>). Keeps 7 snapshots; set <code>keep_days</code> in params JSON to adjust.</td></tr>
+    <tr><td>Session cleanup (weekly)</td><td>session_cleanup</td><td>every 10 080 min (≈ weekly)</td><td>ON — prunes expired/revoked login sessions older than 90 days. Prevents unbounded table growth.</td></tr>
   </tbody>
 </table>
 

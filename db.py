@@ -663,7 +663,7 @@ CREATE INDEX IF NOT EXISTS idx_channels_active ON notification_channels(active);
 CREATE TABLE IF NOT EXISTS scheduled_jobs (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     name           TEXT NOT NULL UNIQUE,
-    job_type       TEXT NOT NULL,                 -- 'scan'|'daily_close'|'sla_check'|'flex_extract'|'daily_breaks_report'
+    job_type       TEXT NOT NULL,                 -- 'scan'|'daily_close'|'sla_check'|'flex_extract'|'daily_breaks_report'|'db_backup'|'session_cleanup'
     schedule_kind  TEXT NOT NULL,                 -- 'interval' | 'daily_at'
     interval_minutes INTEGER,                     -- for 'interval': run every N minutes
     daily_at_utc   TEXT,                          -- for 'daily_at': 'HH:MM' in UTC
@@ -1062,6 +1062,17 @@ def _seed_scheduled_jobs(conn) -> None:
         # FCUBS_PASSWD env vars are set and oracledb is installed. Runs
         # before the morning scan so the breaks report has fresh data.
         ('Flexcube pull (pre-scan)', 'flex_extract', 'daily_at', None, '05:45', None, 0),
+        # DB backup — SQLite online backup via sqlite3.backup() (safe
+        # while the DB is live under WAL mode). Writes to ./backups/ by
+        # default; set KILTER_BACKUP_DIR env var to redirect to a mounted
+        # volume. Keeps 7 daily snapshots; configure keep_days via params.
+        ('DB backup (nightly)', 'db_backup', 'daily_at', None, '02:00',
+         '{"keep_days": 7}', 1),
+        # Session cleanup — prunes revoked/expired user_sessions rows.
+        # Prevents unbounded table growth at ~1 row per login.
+        # Runs weekly (every 7 days × 24 h × 60 min = 10 080 min).
+        ('Session cleanup (weekly)', 'session_cleanup', 'interval', 10080, None,
+         '{"revoked_keep_days": 90, "expired_keep_days": 7}', 1),
     ]
     existing = {r[0] for r in conn.execute(
         "SELECT name FROM scheduled_jobs").fetchall()}
