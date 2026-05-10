@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /pitch.html
+Disallow: /pitch_pilot_bank.html
+Disallow: /script.html
+
+Sitemap: https://www.kilter-app.com/sitemap.xml

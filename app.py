@@ -236,6 +236,27 @@ def _healthz() -> dict:
     return {"status": "ok"}
 
 
+@app.get("/favicon.ico", include_in_schema=False)
+@app.get("/favicon.svg", include_in_schema=False)
+def _favicon():
+    """Inline SVG favicon so the deployed app stops 404-ing on browser favicon
+    requests. Matches the marketing site's gradient K mark."""
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">'
+        '<defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">'
+        '<stop offset="0%" stop-color="#1f3ec4"/>'
+        '<stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs>'
+        '<rect width="64" height="64" rx="14" fill="url(#g)"/>'
+        '<text x="50%" y="50%" text-anchor="middle" dominant-baseline="central"'
+        ' font-family="-apple-system,BlinkMacSystemFont,sans-serif"'
+        ' font-weight="900" font-size="44" fill="white" letter-spacing="-2">K</text>'
+        '</svg>'
+    )
+    from fastapi.responses import Response
+    return Response(content=svg, media_type="image/svg+xml",
+                    headers={"Cache-Control": "public, max-age=86400"})
+
+
 ROLES = ('admin', 'ops', 'audit', 'internal_control')
 
 

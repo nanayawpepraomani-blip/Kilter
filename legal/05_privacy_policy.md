@@ -2,7 +2,7 @@
 
 **Status:** DRAFT for lawyer review.
 **Form:** Public-facing privacy policy for the Kilter marketing site
-(`kilter.com` or equivalent) and customer onboarding wizard.
+(`www.kilter-app.com`) and customer onboarding wizard.
 
 > Lawyer note: Kilter is sold to banks as on-premises / private-cloud
 > software. The bank, not Kilter, is the Controller of bank end-customer
@@ -19,7 +19,7 @@ Timeless Nypo Tech ("**Kilter**", "**we**", "**us**") respects your privacy.
 This Privacy Policy explains what personal data we collect, how we use
 it, and the rights you have. It applies to:
 
-- Visitors to our website at [kilter.com] and any related subdomains.
+- Visitors to our website at https://www.kilter-app.com and any related subdomains.
 - Prospective customers who request a demo or pilot.
 - Authorised Users at customer organisations who contact our support
   team or attend our training.
