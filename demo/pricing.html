@@ -225,6 +225,15 @@
       .addon-bar { flex-direction: column; align-items: flex-start; }
       .addon-bar .addon-price { text-align: left; }
       .hero h1 { font-size: 1.6em; }
+      .summary-grid { grid-template-columns: 1fr !important; }
+      .comp-table { font-size: 0.72em; }
+      .wrap { padding: 0 16px; }
+      section { padding: 36px 0; }
+    }
+    @media (max-width: 480px) {
+      .hero { padding: 40px 20px 36px; }
+      .hero h1 { font-size: 1.4em; }
+      .plan-card { padding: 24px 20px; }
     }
   </style>
 </head>
@@ -523,7 +532,7 @@
     <h2>What you pay in year one</h2>
     <p class="section-sub">Implementation fee + first year license, all-in.</p>
 
-    <div style="display:grid; grid-template-columns: repeat(3,1fr); gap:16px;">
+    <div class="summary-grid" style="display:grid; grid-template-columns: repeat(3,1fr); gap:16px;">
 
       <div style="background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:24px; text-align:center;">
         <div style="font-size:0.8em; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); margin-bottom:8px;">Pilot</div>
