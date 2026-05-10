@@ -41,6 +41,34 @@
       --shadow-lg:  0 12px 32px rgba(30,27,75,0.12), 0 4px 10px rgba(30,27,75,0.08);
     }
 
+    /* ── Mobile orientation hint (portrait phones only) ── */
+    .mobile-hint {
+      display: none;
+      position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+      background: rgba(34,211,238,0.95); color: #060c16;
+      padding: 8px 16px; font-size: 12px; font-weight: 700;
+      text-align: center; backdrop-filter: blur(8px);
+    }
+    .mobile-hint svg { vertical-align: -3px; margin-right: 6px; }
+    @media (max-width: 768px) and (orientation: portrait) {
+      .mobile-hint { display: block; }
+      .reveal { padding-top: 36px; }
+    }
+
+    /* ── Mobile font/control sizing overrides ── */
+    @media (max-width: 700px) {
+      .reveal h1 { font-size: 1.7em !important; }
+      .reveal h2 { font-size: 1em !important; }
+      .reveal h3 { font-size: 0.9em !important; }
+      .reveal p, .reveal li, .reveal table { font-size: 0.78em !important; line-height: 1.4; }
+      .reveal .controls { right: 8px; bottom: 8px; }
+      .reveal .progress { height: 4px; }
+      .reveal .slide-number { font-size: 12px; padding: 3px 6px; }
+    }
+
+    /* Touch-friendly minimum tap target */
+    .reveal .controls button { min-width: 44px; min-height: 44px; }
+
     .reveal {
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       color: var(--ink);
@@ -835,6 +863,11 @@
   </div>
 </div>
 
+<div class="mobile-hint" role="note">
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+  Rotate device or open on desktop for best experience
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/notes/notes.js"></script>
 <script>
@@ -842,7 +875,9 @@
     hash: true,
     slideNumber: 'c/t',
     controls: true,
+    controlsTutorial: false,
     progress: true,
+    touch: true,
     transition: 'fade',
     width: 1280,
     height: 780,
