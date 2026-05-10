@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from byo_csv_loader import CsvProfile, load_csv as load_byo_csv
@@ -162,7 +162,7 @@ def ingest_card_settlement(
         # Persist file row + records in one transaction. SQLite default
         # is autocommit per connection; using a `with conn:` block (or
         # explicit BEGIN) wraps the inserts atomically.
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         with conn:
             cur = conn.execute(
                 "INSERT INTO card_settlement_files "

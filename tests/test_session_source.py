@@ -17,7 +17,7 @@ What we're pinning:
 import json
 import sqlite3
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -43,7 +43,7 @@ def app_with_seed(tmp_path, monkeypatch):
     db_module.init_db()
 
     conn = db_module.get_conn()
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     conn.execute(
         "INSERT INTO users (username, display_name, role, active, created_at, "
         "created_by, totp_secret, totp_enrolled_at) VALUES "

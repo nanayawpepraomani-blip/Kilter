@@ -28,7 +28,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from io import BytesIO
 
 import pyotp
@@ -133,7 +133,7 @@ def qr_data_url(secret: str, username: str) -> str:
 def issue_session(conn, username: str, user_agent: str | None = None) -> dict:
     """Insert a row into user_sessions and return the token + expiry."""
     token = secrets.token_urlsafe(32)
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     expires = now + SESSION_LIFETIME
     conn.execute(
         "INSERT INTO user_sessions (token, username, created_at, expires_at, "
@@ -158,7 +158,7 @@ def resolve_session(conn, token: str) -> str | None:
     ).fetchone()
     if row is None or row['revoked_at']:
         return None
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     try:
         exp = datetime.fromisoformat(row['expires_at'])
     except (ValueError, TypeError):
@@ -192,7 +192,7 @@ def resolve_session(conn, token: str) -> str | None:
 def revoke_session(conn, token: str) -> None:
     conn.execute(
         "UPDATE user_sessions SET revoked_at=? WHERE token=? AND revoked_at IS NULL",
-        (datetime.utcnow().isoformat(), token),
+        (datetime.now(timezone.utc).replace(tzinfo=None).isoformat(), token),
     )
 
 
@@ -201,7 +201,7 @@ def revoke_all_sessions_for(conn, username: str) -> None:
     conn.execute(
         "UPDATE user_sessions SET revoked_at=? "
         "WHERE username=? AND revoked_at IS NULL",
-        (datetime.utcnow().isoformat(), username),
+        (datetime.now(timezone.utc).replace(tzinfo=None).isoformat(), username),
     )
 
 
@@ -236,7 +236,7 @@ def generate_recovery_codes(count: int = 8) -> list[str]:
 
 def store_recovery_codes(conn, username: str, codes: list[str]) -> None:
     """Replace existing recovery codes with a fresh set (hashed)."""
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     conn.execute("DELETE FROM user_recovery_codes WHERE username=?", (username,))
     rows = [(username, _hash_recovery_code(c.replace('-', '')), now) for c in codes]
     conn.executemany(
@@ -257,6 +257,6 @@ def consume_recovery_code(conn, username: str, code: str) -> bool:
         return False
     conn.execute(
         "UPDATE user_recovery_codes SET used_at=? WHERE id=?",
-        (datetime.utcnow().isoformat(), row['id']),
+        (datetime.now(timezone.utc).replace(tzinfo=None).isoformat(), row['id']),
     )
     return True

@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import io
 import json
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from typing import Any
 
 from openpyxl import Workbook
@@ -132,7 +132,7 @@ def compute_figures(conn, account_id: int, period_start: str,
             'by_category': by_category,
             'by_group': by_group,
         },
-        'generated_at': datetime.utcnow().isoformat(),
+        'generated_at': datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
     }
 
 

@@ -24,7 +24,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from account_meta import extract_flex_meta, extract_swift_meta
@@ -319,7 +319,7 @@ def ingest_pair(swift_path: Path, flex_path: Path, user: str,
         candidates = propose_candidates(swift_txns, flex_txns, tol=tol)
         resolution = resolve(candidates, swift_txns, flex_txns)
 
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         cur = conn.cursor()
         cur.execute(
             "INSERT INTO sessions (created_at, created_by, swift_filename, flex_filename, "
@@ -664,7 +664,7 @@ def ingest_proof_seed(flex_path: Path, account_id: int, user: str,
         # is deferred until the operator clicks Run matching.
         swift_side, flex_side = _split_flex_for_self_match(flex_txns)
 
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         cur = conn.cursor()
         # session_kind='seed' so reports / dashboards can filter the
         # seed session out of recon-volume metrics. swift_filename is
@@ -898,7 +898,7 @@ def ingest_flex_only(flex_path: Path, account_id: int, user: str,
         period_start = min(value_dates) if value_dates else as_of
         period_end   = max(value_dates) if value_dates else as_of
 
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         cur = conn.cursor()
         # opening_balance_amount/sign captured from the file's stated
         # opening (which we just continuity-checked) so the review-page
@@ -1109,7 +1109,7 @@ def run_matching(session_id: int, user: str = 'system', *,
     import time as _time
     import uuid as _uuid
 
-    started = datetime.utcnow().isoformat()
+    started = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     t0 = _time.time()
 
     conn = get_conn()
@@ -1215,7 +1215,7 @@ def run_matching(session_id: int, user: str = 'system', *,
             # for these — only safe at high-confidence tiers (per
             # Ecobank Ghana ops policy: T1 strict ref+amount). The
             # match_tiers row controls per-tier eligibility.
-            now_decided = datetime.utcnow().isoformat()
+            now_decided = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
             assignment_rows = []
             auto_confirmed_count = 0
             for a in resolution.assignments:
@@ -1317,7 +1317,7 @@ def run_matching(session_id: int, user: str = 'system', *,
             auto = apply_auto_rules(conn, session_id, actor='system_auto')
             auto_confirmed = (auto or {}).get('auto_confirmed', 0)
 
-        finished = datetime.utcnow().isoformat()
+        finished = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         elapsed = _time.time() - t0
         cur.execute(
             "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "

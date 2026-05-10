@@ -37,7 +37,7 @@ from __future__ import annotations
 
 import shutil
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from account_meta import extract_flex_meta, extract_swift_meta
@@ -457,7 +457,7 @@ def _record_discovery(kind: str, identifier: str, currency: str,
 
     bic is populated from SWIFT Block 2 for kind='swift'; it stays null for
     kind='flexcube' because Flex files don't carry a correspondent BIC."""
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     conn = get_conn()
     try:
         row = conn.execute(

@@ -15,7 +15,7 @@ What we're pinning:
 import json
 import sqlite3
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -41,8 +41,8 @@ def fresh_app(tmp_path, monkeypatch):
 def _seed_file(conn, *, scheme='visa', role='issuer',
                 settlement_date='2026-04-15', sha=None,
                 ingested_by='test') -> int:
-    sha = sha or f'sha-{datetime.utcnow().timestamp()}-{role}-{settlement_date}'
-    now = datetime.utcnow().isoformat()
+    sha = sha or f'sha-{datetime.now(timezone.utc).replace(tzinfo=None).timestamp()}-{role}-{settlement_date}'
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     cur = conn.execute(
         "INSERT INTO card_settlement_files "
         "(sha256, scheme, role, processing_date, settlement_date, "

@@ -25,7 +25,7 @@ import shutil
 import sqlite3
 import sys
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
 
@@ -444,7 +444,7 @@ def gen_flex_xlsx(account: Account, day: date, flex_txns: list[Txn], out_path: P
 # DB seeding.
 # ---------------------------------------------------------------------------
 def seed_banks_and_accounts(db_path: Path) -> None:
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     conn = sqlite3.connect(db_path)
     try:
         # Insert own bank + 10 correspondents.

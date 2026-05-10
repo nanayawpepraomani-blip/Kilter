@@ -14,7 +14,7 @@ Pins:
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -93,7 +93,7 @@ def _seed_one_sided_account(db_path: Path, *, label='BTW',
                               flex_ac_no='1441000601589',
                               currency='GHS') -> int:
     conn = sqlite3.connect(db_path)
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     conn.execute(
         "INSERT INTO accounts (label, swift_account, flex_ac_no, currency, "
         "active, created_at, created_by, access_area, account_recon_type) "
@@ -218,7 +218,7 @@ def test_per_account_tolerance_override(fresh_db, tmp_path):
 
     # Bump tolerance to 1.00 on this account.
     conn = sqlite3.connect(fresh_db)
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     conn.execute(
         "INSERT INTO tolerance_rules (account_id, amount_tol_abs, amount_tol_pct, "
         "date_tol_days, min_ref_len, fx_tol_bps, continuity_tol_abs, "

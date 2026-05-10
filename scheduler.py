@@ -33,7 +33,7 @@ import json
 import threading
 import time
 import traceback
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from db import get_conn
 
@@ -76,7 +76,7 @@ def _job_daily_close(conn, params: dict) -> str:
     in the scheduler's run history."""
     from open_items import close_session
     min_age_hours = int((params or {}).get('min_age_hours', 12))
-    cutoff = (datetime.utcnow() - timedelta(hours=min_age_hours)).isoformat()
+    cutoff = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=min_age_hours)).isoformat()
     rows = conn.execute(
         "SELECT id FROM sessions WHERE status='open' "
         "AND account_id IS NOT NULL "
@@ -111,7 +111,7 @@ def _job_daily_breaks_report(conn, params: dict) -> str:
     actual xlsx is generated on-demand by GET /reports/daily-breaks — this
     job exists to put the daily rhythm into the scheduler history (ops can
     point at the audit log and say 'the report was ready at 07:00')."""
-    from datetime import date as _date
+    from datetime import date as _date, timezone
     as_of = (params or {}).get('as_of') or _date.today().isoformat()
     count = conn.execute(
         "SELECT COUNT(*) FROM open_items WHERE status='open' "
@@ -168,7 +168,7 @@ def _job_db_backup(conn, params: dict) -> str:
     """
     import sqlite3 as _sqlite3
     from pathlib import Path as _Path
-    from datetime import date as _date
+    from datetime import date as _date, timezone
     import glob as _glob
 
     p = params or {}
@@ -314,7 +314,7 @@ def compute_next_run(job: dict, after: datetime | None = None) -> datetime | Non
     (default: now). Returns None when the job is disabled."""
     if not job['enabled']:
         return None
-    base = after or datetime.utcnow()
+    base = after or datetime.now(timezone.utc).replace(tzinfo=None)
     if job['schedule_kind'] == 'interval':
         mins = int(job['interval_minutes'] or 0)
         if mins <= 0:
@@ -392,7 +392,7 @@ def _execute(conn, job: dict, actor: str = 'system_scheduler') -> dict:
             params = {}
 
     handler = JOBS.get(job['job_type'])
-    started_at = datetime.utcnow().isoformat()
+    started_at = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     run_cur = conn.execute(
         "INSERT INTO job_runs (job_id, started_at) VALUES (?, ?)",
         (job['id'], started_at),
@@ -429,7 +429,7 @@ def _execute(conn, job: dict, actor: str = 'system_scheduler') -> dict:
         else:
             status, output = result[0], result[1]
     duration_ms = int((time.monotonic() - t0) * 1000)
-    ended_at = datetime.utcnow().isoformat()
+    ended_at = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
 
     conn.execute(
         "UPDATE job_runs SET ended_at=?, status=?, output=?, duration_ms=? WHERE id=?",
@@ -493,7 +493,7 @@ def _loop() -> None:
                 rows = conn.execute(
                     "SELECT * FROM scheduled_jobs WHERE enabled=1"
                 ).fetchall()
-                now = datetime.utcnow()
+                now = datetime.now(timezone.utc).replace(tzinfo=None)
                 for r in rows:
                     if _stop_event.is_set():
                         break
@@ -509,7 +509,7 @@ def _loop() -> None:
                 conn.execute(
                     "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
                     "VALUES (NULL, 'scheduler_tick_error', 'system', ?, ?)",
-                    (datetime.utcnow().isoformat(),
+                    (datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
                      json.dumps({'traceback': traceback.format_exc()[-1500:]})),
                 )
                 conn.commit()

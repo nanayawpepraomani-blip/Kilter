@@ -39,7 +39,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Iterable
 
 # Default amount-equivalence tolerance, in the settlement currency's
@@ -220,7 +220,7 @@ def apply_match_status(conn, groups: Iterable[MatchGroup], *,
     counts = {'matched': 0, 'mismatched': 0, 'unmatched': 0, 'incomplete': 0}
     updated = 0
     protected = 0
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
 
     with conn:
         for g in groups:

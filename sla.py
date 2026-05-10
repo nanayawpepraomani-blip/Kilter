@@ -23,7 +23,7 @@ import smtplib
 import ssl
 import urllib.request
 import urllib.error
-from datetime import datetime
+from datetime import datetime, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -267,7 +267,7 @@ def _dispatch_email(config: dict, channel: dict,
     </tbody>
   </table>
   <p style="margin-top:20px;font-size:12px;color:#9aa5b1">
-    Sent by Kilter · channel <code>{_h(channel['name'])}</code> at {datetime.utcnow().isoformat(timespec='seconds')} UTC.<br>
+    Sent by Kilter · channel <code>{_h(channel['name'])}</code> at {datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec='seconds')} UTC.<br>
     This is an automated message. Do not reply.
   </p>
 </div>
@@ -382,7 +382,7 @@ def _dispatch_log(channel: dict, items: list[dict]) -> None:
     conn.execute(
         "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
         "VALUES (NULL, 'sla_alert_log', 'system', ?, ?)",
-        (datetime.utcnow().isoformat(),
+        (datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
          json.dumps({'channel_id': channel['id'], 'items': len(items),
                      'first_five': [
                          {'account': i['account_label'], 'amount': i['amount'],
@@ -396,5 +396,5 @@ def _dispatch_log(channel: dict, items: list[dict]) -> None:
 def _update_channel_run(conn, channel_id: int, result: str) -> None:
     conn.execute(
         "UPDATE notification_channels SET last_run_at=?, last_result=? WHERE id=?",
-        (datetime.utcnow().isoformat(), result, channel_id),
+        (datetime.now(timezone.utc).replace(tzinfo=None).isoformat(), result, channel_id),
     )

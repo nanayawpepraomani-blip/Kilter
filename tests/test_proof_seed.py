@@ -14,7 +14,7 @@ Pins:
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -47,7 +47,7 @@ def _insert_one_sided_account(db_path: Path, *, label='BTW GL',
     """One-sided account fixture: swift_account is empty-string sentinel
     (preserves the UNIQUE constraint without needing a real BIC pair)."""
     conn = sqlite3.connect(db_path)
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     conn.execute(
         "INSERT INTO accounts (label, swift_account, flex_ac_no, currency, "
         "active, created_at, created_by, access_area, account_recon_type) "

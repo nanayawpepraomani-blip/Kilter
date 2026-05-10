@@ -17,7 +17,7 @@ import os
 import shutil
 import sqlite3
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -152,7 +152,7 @@ def _seed_account_and_profile(db_path: Path, *, with_currency_in_profile: bool,
     import json
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     conn.execute(
         "INSERT INTO accounts (label, swift_account, flex_ac_no, currency, "
         "active, created_at, created_by, access_area) "

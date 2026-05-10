@@ -841,8 +841,8 @@ def _seed_match_tiers(conn) -> None:
     Admin edits to seeded rows survive re-init; only missing rows are
     created."""
     import json
-    from datetime import datetime
-    now = datetime.utcnow().isoformat()
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
 
     # All seeded defaults ship DISABLED. Operator must explicitly
     # enable via the Matching tiers page (or build their own custom
@@ -910,8 +910,8 @@ def _seed_access_areas(conn) -> None:
     """First-run seed of a generic access-area taxonomy. Idempotent — only
     inserts names not already present, so admins can delete or rename
     seeded rows without them being restored on next startup."""
-    from datetime import datetime
-    now = datetime.utcnow().isoformat()
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     existing = {r[0] for r in conn.execute("SELECT name FROM access_areas").fetchall()}
     to_insert = [(name, 'SYSTEM', 1, now, 'system')
                  for name in _DEFAULT_ACCESS_AREAS if name not in existing]
@@ -964,8 +964,8 @@ def _seed_grouping_rules(conn) -> None:
     """First-run seed of auto_grouping_rules. Idempotent — only inserts rule
     names not already present. Admins can delete, edit, or deactivate seeded
     rules via the admin UI and they stay gone."""
-    from datetime import datetime
-    now = datetime.utcnow().isoformat()
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     existing = {r[0] for r in conn.execute("SELECT name FROM auto_grouping_rules").fetchall()}
     to_insert = [
         (name, priority, narr, ref, grp, 1, now, 'system')
@@ -1018,8 +1018,8 @@ _INITIAL_CURRENCIES = [
 def _seed_currencies(conn) -> None:
     """First-run seed of the 24 Corona-compatible currencies. Idempotent —
     only inserts codes not already present, so admin-managed edits persist."""
-    from datetime import datetime
-    now = datetime.utcnow().isoformat()
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     existing = {r[0] for r in conn.execute("SELECT iso_code FROM currencies").fetchall()}
     to_insert = [
         (code, name, dec, euro, 1, now, 'system')
@@ -1038,8 +1038,8 @@ def _seed_scheduled_jobs(conn) -> None:
     """First-run seed of the default automation schedule. Admins can
     tweak times / disable jobs via the scheduler admin UI. Re-seeding
     is a no-op — only inserts names that aren't already present."""
-    from datetime import datetime
-    now = datetime.utcnow().isoformat()
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     # Shape: (name, job_type, schedule_kind, interval_minutes, daily_at_utc, params_json)
     # Tuple shape: (name, job_type, schedule_kind, interval_minutes,
     #               daily_at_utc, params_json, enabled_default)
@@ -1100,8 +1100,8 @@ def _seed_mobile_money_profiles(conn) -> None:
     overwrites a profile an admin has customised after the first seed.
     """
     import json
-    from datetime import datetime
-    now = datetime.utcnow().isoformat()
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
 
     # Each operator publishes its statement export in a slightly
     # different shape. The mappings below match the official downloads
@@ -1312,8 +1312,8 @@ def _seed_mobile_money_profiles(conn) -> None:
 def _seed_fx_identity(conn) -> None:
     """Guarantee same-currency identity rows exist so the FX-tolerance lookup
     always finds a row when the two sides share a currency. Idempotent."""
-    from datetime import datetime
-    today = datetime.utcnow().date().isoformat()
+    from datetime import datetime, timezone
+    today = datetime.now(timezone.utc).replace(tzinfo=None).date().isoformat()
     codes = [r[0] for r in conn.execute(
         "SELECT iso_code FROM currencies WHERE active=1").fetchall()]
     existing = {(r[0], r[1], r[2]) for r in conn.execute(
@@ -1323,7 +1323,7 @@ def _seed_fx_identity(conn) -> None:
         key = (c, c, today)
         if key not in existing:
             to_insert.append((c, c, 1.0, today, 'identity', 1,
-                              datetime.utcnow().isoformat(), 'system'))
+                              datetime.now(timezone.utc).replace(tzinfo=None).isoformat(), 'system'))
     if to_insert:
         conn.executemany(
             "INSERT INTO fx_rates (from_ccy, to_ccy, rate, valid_from, source, "
@@ -1337,8 +1337,8 @@ def _seed_banks(conn) -> None:
     on cash_accounts, so strict-BIC enforcement doesn't orphan historic rows.
     Placeholder name = the BIC itself; ops is expected to rename via the
     admin page. Idempotent — only inserts BICs not already present."""
-    from datetime import datetime
-    now = datetime.utcnow().isoformat()
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     existing = {r[0] for r in conn.execute("SELECT bic FROM banks").fetchall()}
     rows = conn.execute(
         "SELECT DISTINCT bic FROM accounts "
@@ -1362,7 +1362,7 @@ def _seed_bootstrap_admin(conn) -> None:
     so someone can bootstrap MFA and log in. The token is printed to the
     uvicorn console AND written to first_login.txt in the project root so
     it isn't lost if the terminal scrolls past it."""
-    from datetime import datetime
+    from datetime import datetime, timezone
     import secrets
     from pathlib import Path
 
@@ -1372,7 +1372,7 @@ def _seed_bootstrap_admin(conn) -> None:
         conn.execute(
             "INSERT INTO users (username, display_name, role, active, created_at, "
             "created_by, enrollment_token) VALUES (?, ?, 'admin', 1, ?, 'system', ?)",
-            ('admin', 'Administrator', datetime.utcnow().isoformat(), token),
+            ('admin', 'Administrator', datetime.now(timezone.utc).replace(tzinfo=None).isoformat(), token),
         )
         enroll_url = f"http://localhost:8000/enroll?user=admin&token={token}"
         print("")

@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, List, Tuple
 
@@ -68,6 +68,35 @@ TEMPLATES_DIR = Path(__file__).resolve().parent / 'templates'
 STATIC_DIR = Path(__file__).resolve().parent / 'static'
 STATIC_DIR.mkdir(exist_ok=True)
 
+from contextlib import asynccontextmanager
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    """Startup + shutdown hook (replaces the deprecated @app.on_event API).
+
+    Startup: license check → DB init → directory scaffolding → in-process
+    scheduler daemon. Shutdown: best-effort scheduler stop.
+    """
+    # ── Startup ──────────────────────────────────────────────────────────
+    from license_check import verify_license
+    verify_license()
+    init_db()
+    ensure_dirs()
+    try:
+        from scheduler import start as _start_scheduler
+        _start_scheduler()
+    except Exception as exc:
+        print(f"[scheduler] failed to start: {exc}")
+    yield
+    # ── Shutdown ─────────────────────────────────────────────────────────
+    try:
+        from scheduler import stop as _stop_scheduler
+        _stop_scheduler()
+    except Exception:
+        pass
+
+
 app = FastAPI(
     title="Kilter",
     # Auto-generated docs disclose every endpoint + payload schema. Kilter is
@@ -76,6 +105,7 @@ app = FastAPI(
     # than it helps integrators. Internal teams can re-enable behind admin
     # auth if needed; default off.
     docs_url=None, redoc_url=None, openapi_url=None,
+    lifespan=_lifespan,
 )
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 app.mount('/static', StaticFiles(directory=str(STATIC_DIR)), name='static')
@@ -204,28 +234,9 @@ async def _security_headers(request: Request, call_next):
     return response
 
 
-@app.on_event("startup")
-def _on_startup() -> None:
-    from license_check import verify_license
-    verify_license()
-    init_db()
-    ensure_dirs()
-    # Start the in-process scheduler daemon. The thread is daemonized so
-    # uvicorn reload / Ctrl-C cleanly terminates it along with the worker.
-    try:
-        from scheduler import start as _start_scheduler
-        _start_scheduler()
-    except Exception as exc:
-        print(f"[scheduler] failed to start: {exc}")
-
-
-@app.on_event("shutdown")
-def _on_shutdown() -> None:
-    try:
-        from scheduler import stop as _stop_scheduler
-        _stop_scheduler()
-    except Exception:
-        pass
+# Startup / shutdown logic lives in the `_lifespan` async context manager
+# above, passed to FastAPI() as `lifespan=`. The legacy @app.on_event API
+# was removed (deprecated in FastAPI ≥0.115 / Starlette 0.36).
 
 
 @app.get("/healthz", include_in_schema=False)
@@ -294,7 +305,7 @@ def current_user(request: Request,
             raise HTTPException(403, "Your account is deactivated.")
         try:
             conn.execute("UPDATE users SET last_seen_at=? WHERE username=?",
-                         (datetime.utcnow().isoformat(), username))
+                         (datetime.now(timezone.utc).replace(tzinfo=None).isoformat(), username))
             conn.commit()
         except Exception:
             pass
@@ -538,7 +549,7 @@ def login(payload: LoginPayload, request: Request):
 
         ua = request.headers.get('user-agent', '')[:250]
         session = issue_session(conn, username, user_agent=ua)
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         if ldap_dn is not None:
             conn.execute(
                 "UPDATE users SET last_seen_at=?, ldap_dn=? WHERE username=?",
@@ -573,7 +584,7 @@ def _audit_login_failure(conn, username: str, request: Request, *, reason: str) 
         conn.execute(
             "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
             "VALUES (NULL, 'login_failed', ?, ?, ?)",
-            (username, datetime.utcnow().isoformat(),
+            (username, datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
              json.dumps({"user_agent": ua, "reason": reason})),
         )
         conn.commit()
@@ -593,7 +604,7 @@ def logout(x_session_token: str = Header(default="")):
             conn.execute(
                 "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
                 "VALUES (NULL, 'logout', ?, ?, NULL)",
-                (username, datetime.utcnow().isoformat()),
+                (username, datetime.now(timezone.utc).replace(tzinfo=None).isoformat()),
             )
             conn.commit()
         return {"ok": True}
@@ -671,7 +682,7 @@ def enroll_complete(payload: EnrollCompletePayload):
         if not verify_totp(row['totp_secret'], payload.totp_code):
             raise HTTPException(400, "Code didn't match. Make sure your phone's time is in sync and try the next rotation.")
 
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         conn.execute(
             "UPDATE users SET totp_enrolled_at=?, enrollment_token=NULL "
             "WHERE username=?",
@@ -917,7 +928,7 @@ def set_my_access_scope(
         conn.execute(
             "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
             "VALUES (NULL, 'access_scope_change', ?, ?, ?)",
-            (user['username'], datetime.utcnow().isoformat(),
+            (user['username'], datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
              json.dumps({"areas": areas})),
         )
         conn.commit()
@@ -968,7 +979,7 @@ def export_users(user: dict = Depends(require_role('admin'))):
                     r['created_by'] or '', r['last_seen_at'] or '',
                     r['totp_enrolled_at'] or ''])
     _audit_export(user['username'], 'users_export', {"rows": len(rows)})
-    fname = f"kilter_users_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
+    fname = f"kilter_users_{datetime.now(timezone.utc).replace(tzinfo=None).strftime('%Y%m%d_%H%M%S')}.csv"
     return StreamingResponse(
         iter([buf.getvalue()]),
         media_type='text/csv',
@@ -1011,7 +1022,7 @@ def export_activity(
         "rows": len(rows),
         "filters": {"actor": actor, "action": action, "session_id": session_id},
     })
-    fname = f"kilter_activity_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
+    fname = f"kilter_activity_{datetime.now(timezone.utc).replace(tzinfo=None).strftime('%Y%m%d_%H%M%S')}.csv"
     return StreamingResponse(
         iter([buf.getvalue()]),
         media_type='text/csv',
@@ -1026,7 +1037,7 @@ def _audit_export(actor: str, action: str, details: dict) -> None:
         conn.execute(
             "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
             "VALUES (NULL, ?, ?, ?, ?)",
-            (action, actor, datetime.utcnow().isoformat(), json.dumps(details)),
+            (action, actor, datetime.now(timezone.utc).replace(tzinfo=None).isoformat(), json.dumps(details)),
         )
         conn.commit()
     finally:
@@ -1058,7 +1069,7 @@ def create_user(payload: UserPayload, user: dict = Depends(require_role('admin')
     if not username:
         raise HTTPException(400, "username is required")
     token = generate_enrollment_token()
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     conn = get_conn()
     try:
         try:
@@ -1138,7 +1149,7 @@ def update_user(target: str, payload: UserPatch, user: dict = Depends(require_ro
                 or payload.auth_source is not None):
             revoke_all_sessions_for(conn, target)
 
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         conn.execute(
             "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
             "VALUES (NULL, 'user_updated', ?, ?, ?)",
@@ -1174,7 +1185,7 @@ def reset_recovery_codes(target: str, user: dict = Depends(require_role('admin')
             raise HTTPException(404, f"User '{target}' not found")
         codes = generate_recovery_codes(8)
         store_recovery_codes(conn, target, codes)
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         conn.execute(
             "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
             "VALUES (NULL, 'recovery_codes_reset', ?, ?, ?)",
@@ -1277,7 +1288,7 @@ def dashboard_trend(days: int = 14,
     """Daily totals of assignment state-changes over the last N days, used to
     draw the match-rate sparkline. Returns one row per calendar day from
     (today - days + 1) to today, zero-filled when nothing happened."""
-    from datetime import date, timedelta
+    from datetime import date, timedelta, timezone
     days = max(1, min(90, int(days)))
     today = date.today()
     start = today - timedelta(days=days - 1)
@@ -1322,8 +1333,8 @@ def dashboard_trend(days: int = 14,
 def dashboard_ageing(scope: Optional[List[str]] = Depends(active_scope)):
     """Histogram of currently-open items by age bucket. Drives the ageing bar
     chart on the dashboard and the at-risk (> 30d) callout."""
-    from datetime import datetime, timedelta
-    now = datetime.utcnow()
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     buckets = [
         ('0-1d',  0,  1),
         ('2-3d',  2,  3),
@@ -1410,7 +1421,7 @@ def dashboard_kpis(scope: Optional[List[str]] = Depends(active_scope)):
         total_open_items   — same denominator as the ageing card; convenient
                              to surface alongside the SLA count.
     """
-    from datetime import date as _date, datetime as _dt
+    from datetime import date as _date, datetime as _dt, timezone
     conn = get_conn()
     try:
         where, scope_params = _scope_clause(scope, alias='a')
@@ -1420,8 +1431,8 @@ def dashboard_kpis(scope: Optional[List[str]] = Depends(active_scope)):
             f"WHERE {where} {account_filter}"
         )
 
-        from datetime import timedelta as _td
-        cutoff = (_dt.utcnow() - _td(days=14)).isoformat()
+        from datetime import timedelta as _td, timezone
+        cutoff = (_dt.now(timezone.utc).replace(tzinfo=None) - _td(days=14)).isoformat()
         decided = conn.execute(
             f"SELECT tier, COUNT(*) AS n FROM assignments "
             f"WHERE decided_at >= ? AND status='confirmed' "
@@ -1440,7 +1451,7 @@ def dashboard_kpis(scope: Optional[List[str]] = Depends(active_scope)):
         # each side, so total rows = flex_rows + swift_rows for those sessions.
         # Excludes proof/seed sessions (session_kind != 'recon') to avoid
         # inflating the denominator with anchor-only rows.
-        row_cutoff = (_dt.utcnow() - _td(days=14)).isoformat()
+        row_cutoff = (_dt.now(timezone.utc).replace(tzinfo=None) - _td(days=14)).isoformat()
         recon_sess_subq = (
             f"SELECT s.id FROM sessions s LEFT JOIN accounts a ON a.id = s.account_id "
             f"WHERE s.created_at >= '{row_cutoff}' "
@@ -1480,7 +1491,7 @@ def dashboard_kpis(scope: Optional[List[str]] = Depends(active_scope)):
         if oldest_row and oldest_row['first_opened']:
             try:
                 opened = _dt.fromisoformat(oldest_row['first_opened'])
-                oldest_open_days = (_dt.utcnow() - opened).days
+                oldest_open_days = (_dt.now(timezone.utc).replace(tzinfo=None) - opened).days
             except (ValueError, TypeError):
                 pass
 
@@ -1525,7 +1536,7 @@ def dashboard_case_load(scope: Optional[List[str]] = Depends(active_scope)):
     Returns one row per assignee (including the synthetic '(unassigned)'
     bucket for null assignees) sorted by descending pending count.
     """
-    from datetime import date as _date
+    from datetime import date as _date, timezone
     conn = get_conn()
     try:
         where, scope_params = _scope_clause(scope, alias='a')
@@ -2201,7 +2212,7 @@ def patch_case(assignment_id: int, payload: CasePatch,
         conn.execute(
             f"UPDATE assignments SET {', '.join(fields)} WHERE id=?", params,
         )
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         conn.execute(
             "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
             "VALUES (?, 'case_updated', ?, ?, ?)",
@@ -2261,7 +2272,7 @@ def post_decision(
         if a['status'] != 'pending':
             raise HTTPException(400, f"Assignment already {a['status']}")
 
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
 
         # Two-person approval gate: confirmations by ops go to pending_approval.
         if payload.action == 'confirm' and REQUIRE_APPROVAL:
@@ -2329,7 +2340,7 @@ def post_bulk_confirm(
         raise HTTPException(400, "Bulk confirm is only allowed at tier 1")
 
     username = user['username']
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     conn = get_conn()
     try:
         _assert_session_not_locked(conn, session_id)
@@ -2418,7 +2429,7 @@ def approve_decision(
         if ar and ar['requested_by'] == username:
             raise HTTPException(403, "You cannot approve your own decisions")
 
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         new_status = 'confirmed' if payload.action == 'approved' else 'rejected'
 
         conn.execute(
@@ -2695,7 +2706,7 @@ async def force_accept_delta(
             "A reason is required for force-accept — it goes into the "
             "audit log alongside the anchor jump.")
 
-    dest = UPLOAD_DIR / f"force_{account_id}_{int(datetime.utcnow().timestamp())}_{Path(file.filename).name}"
+    dest = UPLOAD_DIR / f"force_{account_id}_{int(datetime.now(timezone.utc).replace(tzinfo=None).timestamp())}_{Path(file.filename).name}"
     with dest.open('wb') as f:
         while chunk := await file.read(UPLOAD_CHUNK_BYTES):
             f.write(chunk)
@@ -2921,7 +2932,7 @@ def export_session(session_id: int, user: dict = Depends(current_user)):
                 Path(sess['swift_filename']), Path(sess['flex_filename']), out_path,
             )
 
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         conn.execute(
             "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
             "VALUES (?, 'export', ?, ?, ?)",
@@ -3122,7 +3133,7 @@ def create_access_area(payload: AccessAreaPayload,
     parent = (payload.parent or '').strip() or None
     conn = get_conn()
     try:
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         try:
             cur = conn.execute(
                 "INSERT INTO access_areas (name, parent, active, created_at, created_by) "
@@ -3189,7 +3200,7 @@ def update_access_area(area_id: int, payload: AccessAreaPatchPayload,
         conn.execute(
             "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
             "VALUES (NULL, 'access_area_updated', ?, ?, ?)",
-            (user['username'], datetime.utcnow().isoformat(),
+            (user['username'], datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
              json.dumps({"id": area_id, "previous_name": existing['name'],
                           "changes": changes})),
         )
@@ -3254,7 +3265,7 @@ def create_currency(payload: CurrencyPayload,
         raise HTTPException(400, "name is required.")
     conn = get_conn()
     try:
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         try:
             conn.execute(
                 "INSERT INTO currencies (iso_code, name, decimals, euro_currency, "
@@ -3303,7 +3314,7 @@ def update_currency(iso_code: str, payload: CurrencyPatchPayload,
         conn.execute(
             "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
             "VALUES (NULL, 'currency_updated', ?, ?, ?)",
-            (user['username'], datetime.utcnow().isoformat(),
+            (user['username'], datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
              json.dumps({"iso_code": code,
                          "changes": {k: getattr(payload, k)
                                      for k in ('name', 'decimals', 'euro_currency', 'active')
@@ -3333,7 +3344,7 @@ def delete_currency(iso_code: str,
         conn.execute(
             "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
             "VALUES (NULL, 'currency_deactivated', ?, ?, ?)",
-            (user['username'], datetime.utcnow().isoformat(),
+            (user['username'], datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
              json.dumps({"iso_code": code})),
         )
         conn.commit()
@@ -3408,7 +3419,7 @@ def create_bank(payload: BankPayload,
         raise HTTPException(400, "type must be 'bank' or 'broker'.")
     conn = get_conn()
     try:
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         try:
             conn.execute(
                 "INSERT INTO banks (bic, name, nickname, origin, type, access_area, "
@@ -3464,7 +3475,7 @@ def update_bank(bic: str, payload: BankPatchPayload,
         conn.execute(
             "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
             "VALUES (NULL, 'bank_updated', ?, ?, ?)",
-            (user['username'], datetime.utcnow().isoformat(),
+            (user['username'], datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
              json.dumps({"bic": code,
                          "changes": {k: getattr(payload, k)
                                      for k in ('name', 'nickname', 'origin', 'type',
@@ -3505,7 +3516,7 @@ def delete_bank(bic: str,
         conn.execute(
             "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
             "VALUES (NULL, 'bank_deactivated', ?, ?, ?)",
-            (user['username'], datetime.utcnow().isoformat(),
+            (user['username'], datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
              json.dumps({"bic": code})),
         )
         conn.commit()
@@ -3560,7 +3571,7 @@ def list_fx_rates(include_inactive: bool = False,
 @app.post("/fx-rates")
 def create_fx_rate(payload: FxRatePayload,
                    user: dict = Depends(require_role('admin'))):
-    from datetime import date as _date
+    from datetime import date as _date, timezone
     frm = payload.from_ccy.strip().upper()
     to  = payload.to_ccy.strip().upper()
     if len(frm) != 3 or len(to) != 3 or not frm.isalpha() or not to.isalpha():
@@ -3576,7 +3587,7 @@ def create_fx_rate(payload: FxRatePayload,
             "UPDATE fx_rates SET active=0 WHERE from_ccy=? AND to_ccy=? AND active=1",
             (frm, to),
         )
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         try:
             cur = conn.execute(
                 "INSERT INTO fx_rates (from_ccy, to_ccy, rate, valid_from, source, "
@@ -3621,7 +3632,7 @@ def update_fx_rate(rate_id: int, payload: FxRatePatchPayload,
         conn.execute(
             "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
             "VALUES (NULL, 'fx_rate_updated', ?, ?, ?)",
-            (user['username'], datetime.utcnow().isoformat(),
+            (user['username'], datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
              json.dumps({"rate_id": rate_id,
                          "changes": {k: getattr(payload, k)
                                      for k in ('rate','source','active')
@@ -3686,7 +3697,7 @@ def create_certificate(account_id: int, period_start: str, period_end: str,
         ).fetchone()
         if existing:
             return dict(existing)
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         cur = conn.execute(
             "INSERT INTO reconciliation_certificates "
             "(account_id, period_start, period_end, generated_at, generated_by, status) "
@@ -3722,7 +3733,7 @@ def _transition_cert(conn, cert_id: int, expected_statuses: tuple,
             f"certificate is {row['status']}; cannot transition to {new_status}")
     if row['status'] == 'signed':
         raise HTTPException(409, "certificate is already signed and immutable")
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     conn.execute(
         f"UPDATE reconciliation_certificates SET status=?, "
         f"{field_user}=?, {field_at}=? WHERE id=?",
@@ -3792,7 +3803,7 @@ def sign_certificate(cert_id: int, payload: CertActionPayload,
                 f"certificate is {row['status']}; must be reviewed before signing")
         figures = compute_figures(conn, row['account_id'],
                                    row['period_start'], row['period_end'])
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         conn.execute(
             "UPDATE reconciliation_certificates SET status='signed', "
             "signed_by=?, signed_at=?, snapshot_json=? WHERE id=?",
@@ -3987,7 +3998,7 @@ def create_channel(payload: ChannelPayload,
     except Exception:
         raise HTTPException(400, "config_json must be valid JSON")
     config_json_enc = _encrypt_channel_config(payload.config_json)
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     conn = get_conn()
     try:
         cur = conn.execute(
@@ -4226,7 +4237,7 @@ def create_scheduled_job(payload: JobPayload,
         raise HTTPException(400, "interval schedule needs interval_minutes > 0")
     if payload.schedule_kind == 'daily_at' and not payload.daily_at_utc:
         raise HTTPException(400, "daily_at schedule needs daily_at_utc ('HH:MM')")
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     conn = get_conn()
     try:
         try:
@@ -4279,7 +4290,7 @@ def update_scheduled_job(job_id: int, payload: JobPatchPayload,
         conn.execute(
             "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
             "VALUES (NULL, 'scheduled_job_updated', ?, ?, ?)",
-            (user['username'], datetime.utcnow().isoformat(),
+            (user['username'], datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
              json.dumps({'job_id': job_id,
                          'changes': {k: getattr(payload, k)
                                      for k in ('name','schedule_kind','interval_minutes',
@@ -4349,10 +4360,10 @@ _MANUALS = [
 
 
 def _manual_context():
-    from datetime import datetime
+    from datetime import datetime, timezone
     return {
         'app_version': '1.0',
-        'generated_at': datetime.utcnow().strftime('%Y-%m-%d'),
+        'generated_at': datetime.now(timezone.utc).replace(tzinfo=None).strftime('%Y-%m-%d'),
         'manuals': _MANUALS,
     }
 
@@ -4411,7 +4422,7 @@ def update_account(account_id: int, payload: AccountPatchPayload,
         conn.execute(
             "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
             "VALUES (NULL, 'account_updated', ?, ?, ?)",
-            (user['username'], datetime.utcnow().isoformat(),
+            (user['username'], datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
              json.dumps({"account_id": account_id,
                          "changes": {k: getattr(payload, k)
                                      for k in ('label','shortname','access_area','bic','notes','active')
@@ -4497,7 +4508,7 @@ def create_account(payload: AccountPayload, user: dict = Depends(require_role('a
     conn = get_conn()
     try:
         _require_registered_bic(conn, payload.bic)
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         try:
             cur = conn.execute(
                 "INSERT INTO accounts (label, shortname, access_area, bic, swift_account, "
@@ -4571,7 +4582,7 @@ async def seed_proof_for_account(
 
     # Stash the upload to a temp path so the proof loader can openpyxl-read
     # from disk (it needs random access; can't be streamed).
-    dest = UPLOAD_DIR / f"proof_{account_id}_{int(datetime.utcnow().timestamp())}_{Path(file.filename).name}"
+    dest = UPLOAD_DIR / f"proof_{account_id}_{int(datetime.now(timezone.utc).replace(tzinfo=None).timestamp())}_{Path(file.filename).name}"
     with dest.open('wb') as f:
         while chunk := await file.read(UPLOAD_CHUNK_BYTES):
             f.write(chunk)
@@ -4630,7 +4641,7 @@ def clear_account_anchor(
                 f"Account {prior['label']!r} is not seeded — there is no "
                 "anchor to clear.")
 
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         conn.execute(
             "UPDATE accounts SET last_closing_balance=NULL, last_closing_date=NULL, "
             "last_session_id=NULL WHERE id=?", (account_id,))
@@ -4704,7 +4715,7 @@ def register_discovery(payload: RegisterDiscoveryPayload,
         raise HTTPException(400, "swift_account, flex_ac_no, currency, and label are required.")
 
     username = user['username']
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     conn = get_conn()
     try:
         try:
@@ -4794,7 +4805,7 @@ def ignore_discovery(disc_id: int, user: dict = Depends(require_role('admin'))):
             raise HTTPException(404, "Not found")
         if row['status'] != 'pending':
             raise HTTPException(409, f"Discovery already {row['status']}")
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         conn.execute(
             "UPDATE discovered_accounts SET status='ignored', resolved_at=?, resolved_by=? "
             "WHERE id=?",
@@ -4863,7 +4874,7 @@ def list_open_items(
             (*params, limit),
         ).fetchall()
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         out = []
         for r in rows:
             age_days = _age_in_days(r['opened_at'], now)
@@ -4900,7 +4911,7 @@ def open_items_by_account(
             f"WHERE oi.status = ? AND {scope_sql} AND a.id IS NOT NULL",
             (status, *scope_params),
         ).fetchall()
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         by_account: dict[int, dict] = {}
         for r in rows:
             aid = r['account_id']
@@ -4944,7 +4955,7 @@ def open_items_aging(account_id: int, user: dict = Depends(current_user)):
             "WHERE account_id=? AND status='open'",
             (account_id,),
         ).fetchall()
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         buckets = {'0-7': 0, '8-30': 0, '31-90': 0, '90+': 0}
         values  = {'0-7': 0.0, '8-30': 0.0, '31-90': 0.0, '90+': 0.0}
         by_category: dict[str, dict] = {}
@@ -5060,13 +5071,13 @@ def snooze_open_item(item_id: int, payload: SnoozePayload,
         row = conn.execute("SELECT id, status FROM open_items WHERE id=?", (item_id,)).fetchone()
         if row is None: raise HTTPException(404, "Open item not found")
         if row['status'] != 'open': raise HTTPException(400, "Only open items can be snoozed")
-        from datetime import timedelta
-        until = (datetime.utcnow() + timedelta(days=payload.days)).isoformat()
+        from datetime import timedelta, timezone
+        until = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=payload.days)).isoformat()
         conn.execute("UPDATE open_items SET snoozed_until=? WHERE id=?", (until, item_id))
         conn.execute(
             "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
             "VALUES (NULL, 'open_item_snoozed', ?, ?, ?)",
-            (user['username'], datetime.utcnow().isoformat(),
+            (user['username'], datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
              json.dumps({"item_id": item_id, "days": payload.days, "until": until})),
         )
         conn.commit()
@@ -5081,7 +5092,7 @@ def acknowledge_open_item(item_id: int, user: dict = Depends(current_user)):
         row = conn.execute("SELECT id, status FROM open_items WHERE id=?", (item_id,)).fetchone()
         if row is None: raise HTTPException(404, "Open item not found")
         if row['status'] != 'open': raise HTTPException(400, "Only open items can be acknowledged")
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         conn.execute("UPDATE open_items SET acknowledged_by=?, acknowledged_at=? WHERE id=?",
                      (user['username'], now, item_id))
         conn.execute(
@@ -5114,7 +5125,7 @@ def set_open_item_category(open_item_id: int,
                            (open_item_id,)).fetchone()
         if row is None:
             raise HTTPException(404, "open_item not found")
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         conn.execute(
             "UPDATE open_items SET category=?, category_source='manual', "
             "category_rule_id=NULL WHERE id=?",
@@ -5184,7 +5195,7 @@ def manual_match(session_id: int, payload: ManualMatchPayload,
                 f"Flex row {payload.flex_row} already on a {blocker_f['status']} "
                 f"assignment (id {blocker_f['id']}). Reject it first.")
 
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         amount_diff = (f['amount'] or 0) - (s['amount'] or 0)
         reason = f"manual force-match by {user['username']}"
         if payload.reason:
@@ -5278,7 +5289,7 @@ def manual_split(session_id: int, payload: ManualSplitPayload,
             (session_id, fr)).fetchone()[0] or 0 for fr in payload.flex_rows)
         amount_diff = flex_total - swift_total
 
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         grp = uuid.uuid4().hex[:12]
         reason = (f"manual split by {user['username']}: "
                   f"{len(payload.swift_rows)} SWIFT vs {len(payload.flex_rows)} Flex")
@@ -5357,7 +5368,7 @@ def split_group_decision(
         if not rows:
             raise HTTPException(404, "No pending assignments found for this split group")
 
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         ids = [r['id'] for r in rows]
 
         if payload.action == 'confirm' and REQUIRE_APPROVAL:
@@ -5423,7 +5434,7 @@ def add_comment(payload: CommentPayload,
         if exists is None:
             raise HTTPException(404, f"{payload.target_type} {payload.target_id} not found")
 
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         cur = conn.execute(
             "INSERT INTO break_comments (target_type, target_id, session_id, author, "
             "created_at, body) VALUES (?,?,?,?,?,?)",
@@ -5522,7 +5533,7 @@ def put_tolerance(account_id: int, payload: TolerancePayload,
                               (account_id,)).fetchone()
         if exists is None:
             raise HTTPException(404, "Account not found")
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         prior = conn.execute(
             "SELECT amount_tol_abs, amount_tol_pct, date_tol_days, min_ref_len "
             "FROM tolerance_rules WHERE account_id=?", (account_id,),
@@ -5667,7 +5678,7 @@ def get_match_tier(tier_id: int, user: dict = Depends(current_user)):
 def create_match_tier(payload: MatchTierPayload,
                        user: dict = Depends(require_role('admin'))):
     _validate_tier_payload(payload)
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     conds = [c.model_dump(exclude_none=True) for c in payload.conditions]
     conn = get_conn()
     try:
@@ -5738,7 +5749,7 @@ def update_match_tier(tier_id: int, payload: MatchTierUpdatePayload,
 
         if not sets:
             return _serialize_tier(existing)
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         sets.append("updated_at=?"); params.append(now)
         params.append(tier_id)
         conn.execute(f"UPDATE match_tiers SET {', '.join(sets)} WHERE id=?", params)
@@ -5782,7 +5793,7 @@ def reorder_match_tiers(payload: MatchTierReorderPayload,
         missing = [tid for tid in payload.tier_ids if tid not in existing_ids]
         if missing:
             raise HTTPException(400, f"Unknown tier ids: {missing}")
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         for new_priority, tier_id in enumerate(payload.tier_ids, start=1):
             conn.execute(
                 "UPDATE match_tiers SET priority=?, updated_at=? WHERE id=?",
@@ -5810,7 +5821,7 @@ def delete_match_tier(tier_id: int,
         existing = conn.execute("SELECT * FROM match_tiers WHERE id=?", (tier_id,)).fetchone()
         if existing is None:
             raise HTTPException(404, "Tier not found")
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         conn.execute("DELETE FROM match_tiers WHERE id=?", (tier_id,))
         conn.execute(
             "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
@@ -6240,7 +6251,7 @@ def create_auto_cat_rule(payload: AutoCatRulePayload,
         raise HTTPException(400, f"category must be one of {BREAK_CATEGORIES}")
     if payload.side and payload.side not in ('swift', 'flex'):
         raise HTTPException(400, "side must be 'swift', 'flex', or null")
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     conn = get_conn()
     try:
         cur = conn.execute(
@@ -6298,7 +6309,7 @@ def create_grouping_rule(payload: AutoGroupingRulePayload,
         pass
     if payload.side and payload.side not in ('swift', 'flex'):
         raise HTTPException(400, "side must be 'swift', 'flex', or null")
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     conn = get_conn()
     try:
         cur = conn.execute(
@@ -6352,7 +6363,7 @@ def deactivate_auto_cat_rule(rule_id: int,
         conn.execute(
             "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
             "VALUES (NULL, 'auto_cat_rule_deactivated', ?, ?, ?)",
-            (user['username'], datetime.utcnow().isoformat(),
+            (user['username'], datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
              json.dumps({'rule_id': rule_id})),
         )
         conn.commit()
@@ -6401,7 +6412,7 @@ def account_recon_status(account_id: int, user: dict = Depends(current_user)):
             "SELECT source_side, category, amount, opened_at FROM open_items "
             "WHERE account_id=? AND status='open'", (account_id,),
         ).fetchall()
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         buckets = {'0-7': 0, '8-30': 0, '31-90': 0, '90+': 0}
         values  = {'0-7': 0.0, '8-30': 0.0, '31-90': 0.0, '90+': 0.0}
         by_category: dict[str, dict] = {}
@@ -6592,7 +6603,7 @@ def create_auto_rule(payload: AutoRulePayload,
                      user: dict = Depends(require_role('admin'))):
     conn = get_conn()
     try:
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         cur = conn.execute(
             "INSERT INTO auto_match_rules "
             "(name, description, priority, active, require_tier, require_amount_exact, "
@@ -6621,7 +6632,7 @@ def update_auto_rule(rule_id: int, payload: AutoRulePayload,
         row = conn.execute("SELECT id FROM auto_match_rules WHERE id=?", (rule_id,)).fetchone()
         if row is None:
             raise HTTPException(404, "Rule not found")
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         conn.execute(
             "UPDATE auto_match_rules SET name=?, description=?, priority=?, active=?, "
             "require_tier=?, require_amount_exact=?, require_ref_match=?, "
@@ -6647,7 +6658,7 @@ def deactivate_auto_rule(rule_id: int, user: dict = Depends(require_role('admin'
         row = conn.execute("SELECT id FROM auto_match_rules WHERE id=?", (rule_id,)).fetchone()
         if row is None:
             raise HTTPException(404, "Rule not found")
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         conn.execute("UPDATE auto_match_rules SET active=0, updated_at=? WHERE id=?", (now, rule_id))
         conn.execute(
             "INSERT INTO audit_log (session_id, action, actor, timestamp, details) "
@@ -6787,7 +6798,7 @@ def create_csv_profile(payload: CsvProfilePayload,
                     f"account_id {payload.account_id} does not exist or is inactive.")
         finally:
             conn.close()
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     conn = get_conn()
     try:
         try:
@@ -6834,7 +6845,7 @@ def delete_csv_profile(profile_id: int,
         ).fetchone()
         if row is None:
             raise HTTPException(404, "profile not found")
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         conn.execute("UPDATE csv_format_profiles SET active=0, updated_at=? "
                      "WHERE id=?", (now, profile_id))
         conn.execute(
@@ -7188,7 +7199,7 @@ def export_card_files(user: dict = Depends(current_user)):
                     r['currency'] or '', r['original_filename'] or '',
                     r['ingested_at'], r['ingested_by'], r['sha256']])
     _audit_export(user['username'], 'cards_files_export', {"rows": len(rows)})
-    fname = f"kilter_cards_files_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
+    fname = f"kilter_cards_files_{datetime.now(timezone.utc).replace(tzinfo=None).strftime('%Y%m%d_%H%M%S')}.csv"
     return StreamingResponse(
         iter([buf.getvalue()]),
         media_type='text/csv',
@@ -7240,7 +7251,7 @@ def export_card_match_groups(
                     "settlement_date_from": settlement_date_from,
                     "settlement_date_to": settlement_date_to},
     })
-    fname = f"kilter_cards_matches_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
+    fname = f"kilter_cards_matches_{datetime.now(timezone.utc).replace(tzinfo=None).strftime('%Y%m%d_%H%M%S')}.csv"
     return StreamingResponse(
         iter([buf.getvalue()]),
         media_type='text/csv',
@@ -7287,7 +7298,7 @@ def export_card_records(file_id: int, user: dict = Depends(current_user)):
     _audit_export(user['username'], 'cards_records_export',
                   {"file_id": file_id, "rows": len(rows)})
     fname = (f"kilter_cards_records_file{file_id}_"
-             f"{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv")
+             f"{datetime.now(timezone.utc).replace(tzinfo=None).strftime('%Y%m%d_%H%M%S')}.csv")
     return StreamingResponse(
         iter([buf.getvalue()]),
         media_type='text/csv',
@@ -7459,7 +7470,7 @@ def report_sessions(
                 for r in out
             ]
             return _csv_response(data, headers,
-                f"kilter_sessions_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv")
+                f"kilter_sessions_{datetime.now(timezone.utc).replace(tzinfo=None).strftime('%Y%m%d_%H%M%S')}.csv")
         return out
     finally:
         conn.close()
@@ -7534,7 +7545,7 @@ def report_cleared_items(
                 for r in out
             ]
             return _csv_response(data, headers,
-                f"kilter_cleared_items_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv")
+                f"kilter_cleared_items_{datetime.now(timezone.utc).replace(tzinfo=None).strftime('%Y%m%d_%H%M%S')}.csv")
         return out
     finally:
         conn.close()
@@ -7610,7 +7621,7 @@ def report_account_history(
             ]
             return _csv_response(data, headers,
                 f"kilter_account_{account_id}_history_"
-                f"{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv")
+                f"{datetime.now(timezone.utc).replace(tzinfo=None).strftime('%Y%m%d_%H%M%S')}.csv")
         return {"account": dict(acc), "sessions": series}
     finally:
         conn.close()
@@ -7708,7 +7719,7 @@ def report_break_analysis(
             for r in by_tier:
                 data.append(['tier', f"T{r['tier']}", r['source'], r['cnt'], ''])
             return _csv_response(data, headers,
-                f"kilter_break_analysis_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv")
+                f"kilter_break_analysis_{datetime.now(timezone.utc).replace(tzinfo=None).strftime('%Y%m%d_%H%M%S')}.csv")
 
         return {
             "by_category": by_category,
@@ -7800,7 +7811,7 @@ def report_decisions(
             headers = ['actor', 'status', 'source', 'count']
             data = [[r['actor'] or '', r['status'], r['source'], r['cnt']] for r in by_user]
             return _csv_response(data, headers,
-                f"kilter_decisions_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv")
+                f"kilter_decisions_{datetime.now(timezone.utc).replace(tzinfo=None).strftime('%Y%m%d_%H%M%S')}.csv")
 
         return {
             "by_user": by_user,
@@ -7840,8 +7851,8 @@ def report_daily_breaks(
     from db import FUNCTIONAL_GROUPS
 
     as_of_iso = _parse_ymd_end(as_of) if as_of else _parse_ymd_end(
-        datetime.utcnow().strftime('%Y-%m-%d'))
-    as_of_label = (as_of or datetime.utcnow().strftime('%Y-%m-%d'))
+        datetime.now(timezone.utc).replace(tzinfo=None).strftime('%Y-%m-%d'))
+    as_of_label = (as_of or datetime.now(timezone.utc).replace(tzinfo=None).strftime('%Y-%m-%d'))
 
     conn = get_conn()
     try:
@@ -7863,7 +7874,7 @@ def report_daily_breaks(
             params,
         ).fetchall()
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         items = []
         for r in rows:
             d = dict(r)
@@ -8019,7 +8030,7 @@ async def _save_upload(upload: UploadFile, prefix: str) -> Path:
     settlement files don't materialize in worker RAM. Enforces
     MAX_REQUEST_BYTES inline as a defence-in-depth check (the middleware
     catches honest Content-Length, this catches chunked-transfer abuse)."""
-    ts = datetime.utcnow().strftime('%Y%m%d_%H%M%S_%f')
+    ts = datetime.now(timezone.utc).replace(tzinfo=None).strftime('%Y%m%d_%H%M%S_%f')
     safe_name = f"{ts}_{prefix}_{Path(upload.filename).name}"
     path = UPLOAD_DIR / safe_name
     written = 0

@@ -34,7 +34,7 @@ from __future__ import annotations
 import bisect
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 
 from recon_engine import MIRROR_SIGN, Tolerance, normalize_ref
 
@@ -250,7 +250,7 @@ def carry_forward_match(conn, session_id: int, tol: Tolerance) -> dict:
 
     cleared_swift = 0
     cleared_flex = 0
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
 
     # Build ref + amount indexes once for each side, then mark rows
     # as used via a set instead of list.remove. This collapses the
@@ -526,7 +526,7 @@ def _date_close(d1, d2, tol_days: int) -> bool:
             return False
         if a == b:
             return True
-        from datetime import datetime as _dt
+        from datetime import datetime as _dt, timezone
         da = _dt.strptime(str(a), '%Y%m%d')
         db = _dt.strptime(str(b), '%Y%m%d')
         return abs((da - db).days) <= tol_days
@@ -568,7 +568,7 @@ def seed_open_items_for_session(conn, session_id: int) -> int:
 
     rules = _load_active_rules(conn)
     grouping_rules = _load_active_grouping_rules(conn)
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     seeded = 0
 
     for s in swift_rows:
@@ -718,7 +718,7 @@ def close_session(conn, session_id: int, actor: str) -> dict:
                          "cannot seed open items")
 
     seeded = seed_open_items_for_session(conn, session_id)
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     conn.execute(
         "UPDATE sessions SET status='closed', closed_at=?, closed_by=?, "
         "functional_groups_applied=1 WHERE id=?",
@@ -772,7 +772,7 @@ def clear_open_item_manually(conn, open_item_id: int, session_id: int,
 
     counterpart_side is 'swift' or 'flex' — it's the side of the row in
     the current session being paired with the (opposite-side) open_item."""
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     oi = conn.execute("SELECT * FROM open_items WHERE id=?", (open_item_id,)).fetchone()
     if oi is None:
         raise ValueError("open_item not found")
@@ -819,7 +819,7 @@ def clear_open_item_manually(conn, open_item_id: int, session_id: int,
 def write_off_open_item(conn, open_item_id: int, user: str, reason: str) -> None:
     """Terminal state — ageing-out item the ops team has given up on.
     Logged so auditors can see who wrote off what and why."""
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     oi = conn.execute("SELECT id, status FROM open_items WHERE id=?",
                       (open_item_id,)).fetchone()
     if oi is None:

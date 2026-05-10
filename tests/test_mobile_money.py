@@ -16,7 +16,7 @@ What we're pinning:
 import json
 import sqlite3
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -44,7 +44,7 @@ def fresh_app(tmp_path, monkeypatch):
     db_module.init_db()
 
     conn = db_module.get_conn()
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     conn.execute(
         "INSERT INTO users (username, display_name, role, active, created_at, "
         "created_by, totp_secret, totp_enrolled_at) VALUES "
@@ -79,7 +79,7 @@ def test_default_account_type_is_cash_nostro(fresh_app):
     inherit the 'cash_nostro' default — no NULL leaks for legacy data."""
     _, db_path = fresh_app
     conn = sqlite3.connect(db_path)
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     conn.execute(
         "INSERT INTO accounts (label, swift_account, flex_ac_no, currency, "
         "active, created_at, created_by) VALUES "

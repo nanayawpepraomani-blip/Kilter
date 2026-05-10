@@ -1,8 +1,9 @@
 # Pilot Evaluation Agreement — Kilter
 
 **Status:** DRAFT for lawyer review.
-**Form:** Free 60–90 day pilot. Designed to be short and signable in one
-day (a real bank legal team will redline anyway, so don't gold-plate it).
+**Form:** Paid 90-day pilot at USD 5,000, fully credited against Year 1
+fees on conversion. Designed to be short and signable in one day (a real
+bank legal team will redline anyway, so don't gold-plate it).
 
 ---
 
@@ -15,32 +16,51 @@ into as of [EFFECTIVE DATE] between:
 ## 1. Purpose
 
 Kilter wishes to enable Bank to evaluate Kilter's reconciliation software
-(the "**Software**") in Bank's environment without charge for a limited
-period, and Bank wishes to evaluate the Software's fit for its nostro and
-general-ledger reconciliation operations.
+(the "**Software**") in Bank's own environment for a limited period at a
+fixed fee, and Bank wishes to evaluate the Software's fit for its nostro,
+mobile-money, and (where elected) card-scheme reconciliation operations.
 
-## 2. Pilot Term
+## 2. Pilot Term and Fee
 
 2.1 The pilot evaluation period (the "**Pilot Term**") begins on the
-Effective Date and runs for [SIXTY (60) / NINETY (90)] calendar days
-unless extended by written agreement.
+Effective Date and runs for ninety (90) calendar days unless extended by
+written agreement.
 
-2.2 Either Party may terminate the pilot at any time on five (5)
-business days' written notice, with no penalty.
+2.2 In consideration of access to the Software and the implementation
+support set out in Section 3.2, Bank shall pay Kilter a one-time pilot
+fee of **USD 5,000** (or local-currency equivalent at the rate agreed at
+signing). The fee shall be invoiced on the Effective Date and is payable
+net 30.
+
+2.3 The pilot fee is **fully creditable against Year 1 production
+licence fees** if Bank signs a Master Services Agreement and Order Form
+within thirty (30) days after the Pilot Term ends (Section 5.2).
+
+2.4 Either Party may terminate the pilot at any time on five (5)
+business days' written notice. If Bank terminates without cause before
+day forty-five (45) of the Pilot Term, Kilter shall refund 50% of the
+pilot fee. Termination after day forty-five (45) is non-refundable.
 
 ## 3. Scope of Pilot
 
 3.1 Bank shall provide:
-- Sample SWIFT MT940/MT950 and/or ISO 20022 camt.053/054 statements for
-  up to [TEN (10)] nostro accounts and [TEN (10)] general-ledger
-  accounts.
+- Sample SWIFT MT940/MT950 and/or ISO 20022 camt.053/054 statements
+  covering up to three (3) nostro / GL account pairs.
+- Up to two (2) mobile-money / wallet account feeds, where Bank elects
+  to exercise the mobile-money module during the pilot.
+- One (1) card-acquirer or card-issuer settlement feed, where Bank
+  elects to exercise the cards module during the pilot.
 - One technical contact authorised to coordinate with Kilter.
 - Access to a non-production environment (Bank-controlled VM, Docker
   host, or air-gapped laptop) for Software installation.
 
 3.2 Kilter shall provide:
-- A licensed copy of the Software for the Pilot Term.
-- Up to [TEN (10) HOURS] of remote implementation support.
+- A licensed copy of the Software for the Pilot Term with **all
+  modules unlocked** for evaluation, hard-capped at the account counts
+  in Section 3.1.
+- Deployment and initial onboarding session (typically 90 minutes).
+- Up to ten (10) hours of remote implementation support during the
+  Pilot Term.
 - Documentation, including the operator manual and onboarding wizard.
 
 3.3 The Software shall be deployed **on-premises or in Bank's private
@@ -75,17 +95,32 @@ the Pilot Term:
 faith to enter into a Master Services Agreement and Order Form within
 thirty (30) days after the Pilot Term ends.
 
-5.2 As a design-partner incentive, if Bank executes a paid Order Form
-within sixty (60) days after the Pilot Term, Bank shall be entitled to:
-- A [50%] discount on Year 1 fees and a [25%] discount on Year 2 fees.
+5.2 **Pilot fee credit.** If Bank executes a paid Order Form within
+thirty (30) days after the Pilot Term ends, the full pilot fee paid
+under Section 2.2 (USD 5,000) shall be credited against Year 1
+production licence fees.
+
+5.3 **Design-partner incentive.** If, in addition, the success criteria
+in Section 4 have been demonstrated to Bank's reasonable satisfaction
+and Bank executes a paid Order Form within sixty (60) days after the
+Pilot Term ends, Bank shall additionally be entitled to:
+- A [50%] discount on Year 1 production licence fees (applied after the
+  pilot fee credit in Section 5.2).
+- A [25%] discount on Year 2 production licence fees.
 - A right to be named as a reference customer (subject to Bank's prior
   written approval of any specific reference text or logo use).
 
-5.3 If the success criteria are **not** met, neither Party has any
+> Sales/legal note: the credit (5.2) is automatic — pilot fee always
+> returns to Bank on conversion. The discount stack (5.3) is gated by
+> Section 4 success criteria. Both can apply simultaneously and the
+> order matters: credit first, then discount on the remainder.
+
+5.4 If the success criteria are **not** met, neither Party has any
 obligation to proceed. Bank shall return or destroy the Software within
 fifteen (15) business days. Kilter shall destroy or return any Bank data
 shared during the pilot within the same period and certify destruction in
-writing on request.
+writing on request. The pilot fee paid under Section 2.2 is non-refundable
+in this scenario.
 
 ## 6. Confidentiality
 

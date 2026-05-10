@@ -17,7 +17,7 @@ Design choices:
 import sqlite3
 import re
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import openpyxl
@@ -223,7 +223,7 @@ def main():
           f"(same flex_ac_no + currency seen earlier)")
 
     # Insert.
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     created_by = 'bulk-import'
     inserted = 0
     errors = []

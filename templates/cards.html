@@ -135,7 +135,9 @@
 </div>
 
 <div class="pci-banner">
-  <span>🔒</span>
+  <span aria-hidden="true">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+  </span>
   <div>
     <b>PCI-DSS posture:</b> Kilter never stores full PAN. Settlement files
     are masked at parser level into <code>first6</code> + <code>last4</code>;

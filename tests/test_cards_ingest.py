@@ -18,7 +18,7 @@ populated by db.init_db() and seeded via direct sqlite3 inserts.
 import json
 import sqlite3
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -57,7 +57,7 @@ def _seed_csv_profile(db_path: Path) -> int:
         'type': None, 'currency': 'Ccy',
         'ac_no': None, 'ac_branch': None,
     }
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     conn.execute(

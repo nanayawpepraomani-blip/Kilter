@@ -3,7 +3,7 @@ session lifecycle (issue / resolve / idle-timeout / revoke)."""
 
 import re
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pyotp
 
@@ -113,7 +113,7 @@ def test_session_idle_timeout_blocks_stale_session(monkeypatch):
     conn = _make_session_db()
     sess = issue_session(conn, "alice")
     # Backdate last_used_at by 2 minutes — past the idle window.
-    stale = (datetime.utcnow() - timedelta(minutes=2)).isoformat()
+    stale = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=2)).isoformat()
     conn.execute("UPDATE user_sessions SET last_used_at=? WHERE token=?",
                  (stale, sess['token']))
     conn.commit()
@@ -145,7 +145,7 @@ def test_legacy_session_without_last_used_at_still_resolves(monkeypatch):
     monkeypatch.setattr(auth_module, "SESSION_IDLE_TIMEOUT", timedelta(minutes=1))
     conn = _make_session_db()
     # Insert a legacy-shape row by hand: last_used_at left NULL.
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     expires = now + SESSION_LIFETIME
     conn.execute(
         "INSERT INTO user_sessions (token, username, created_at, expires_at) "
@@ -158,7 +158,7 @@ def test_legacy_session_without_last_used_at_still_resolves(monkeypatch):
 
 def test_absolutely_expired_session_does_not_resolve():
     conn = _make_session_db()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     past = now - timedelta(hours=1)
     conn.execute(
         "INSERT INTO user_sessions (token, username, created_at, expires_at, last_used_at) "

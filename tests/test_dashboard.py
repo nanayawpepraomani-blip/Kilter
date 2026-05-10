@@ -15,7 +15,7 @@ What we're pinning:
 import os
 import sys
 import sqlite3
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
@@ -40,7 +40,7 @@ def app_with_temp_db(tmp_path, monkeypatch):
     db_module.init_db()
 
     conn = db_module.get_conn()
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     conn.execute(
         "INSERT INTO users (username, display_name, role, active, created_at, "
         "created_by, totp_secret, totp_enrolled_at) VALUES "
@@ -81,7 +81,7 @@ def test_kpis_tier1_rate_computed_correctly(app_with_temp_db):
     the headline KPI on the dashboard misleads ops."""
     client, db_path = app_with_temp_db
     conn = sqlite3.connect(db_path)
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     conn.execute("INSERT INTO sessions (created_at, created_by, swift_filename, "
                  "flex_filename) VALUES (?, 'test', 'a', 'b')", (now,))
     sess_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
@@ -106,8 +106,8 @@ def test_kpis_oldest_open_days(app_with_temp_db):
     30 — the MAX, not the MIN or average."""
     client, db_path = app_with_temp_db
     conn = sqlite3.connect(db_path)
-    five_days_ago = (datetime.utcnow() - timedelta(days=5)).isoformat()
-    thirty_days_ago = (datetime.utcnow() - timedelta(days=30)).isoformat()
+    five_days_ago = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=5)).isoformat()
+    thirty_days_ago = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=30)).isoformat()
     # Distinct src_row_number values needed — UNIQUE constraint covers
     # (account_id, source_side, src_session_id, src_row_number).
     for i, opened in enumerate([five_days_ago, thirty_days_ago]):
@@ -131,7 +131,7 @@ def test_kpis_sla_breached_count(app_with_temp_db):
     must report exactly 1."""
     client, db_path = app_with_temp_db
     conn = sqlite3.connect(db_path)
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     conn.execute("INSERT INTO sessions (created_at, created_by, swift_filename, "
                  "flex_filename) VALUES (?, 'test', 'a', 'b')", (now,))
     sess_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
@@ -159,7 +159,7 @@ def test_case_load_groups_and_counts(app_with_temp_db):
     bob has 1, one is unassigned. Endpoint groups correctly."""
     client, db_path = app_with_temp_db
     conn = sqlite3.connect(db_path)
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     conn.execute("INSERT INTO sessions (created_at, created_by, swift_filename, "
                  "flex_filename) VALUES (?, 'test', 'a', 'b')", (now,))
     sess_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
@@ -198,7 +198,7 @@ def test_by_account_orders_by_count_desc(app_with_temp_db):
     must return them ordered by count descending."""
     client, db_path = app_with_temp_db
     conn = sqlite3.connect(db_path)
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     # Create three accounts, then open items against them.
     for i, label in enumerate(['Citibank USD', 'JPM EUR', 'BoNY GBP'], start=1):
         conn.execute(

@@ -14,7 +14,7 @@ is confirmed with decided_by='system_auto:<rule_name>' and audit-logged.
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 def apply_auto_rules(conn, session_id: int, actor: str = 'system_auto') -> dict:
@@ -47,7 +47,7 @@ def apply_auto_rules(conn, session_id: int, actor: str = 'system_auto') -> dict:
     auto_confirmed = 0
     rules_fired: dict[int, int] = {}
     skipped = 0
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
 
     for assignment in pending:
         matched_rule = None

@@ -19,7 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from db import get_conn, init_db
 from open_items import close_session
@@ -37,7 +37,7 @@ def main():
 
     init_db()  # make sure migrations are current before we touch rows
 
-    cutoff_iso = (datetime.utcnow() - timedelta(hours=args.min_age_hours)).isoformat()
+    cutoff_iso = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=args.min_age_hours)).isoformat()
     conn = get_conn()
     try:
         candidates = conn.execute(
@@ -48,11 +48,11 @@ def main():
         ).fetchall()
 
         if not candidates:
-            print(f"[{datetime.utcnow().isoformat()}] No open sessions older than "
+            print(f"[{datetime.now(timezone.utc).replace(tzinfo=None).isoformat()}] No open sessions older than "
                   f"{args.min_age_hours}h. Nothing to do.")
             return 0
 
-        print(f"[{datetime.utcnow().isoformat()}] {len(candidates)} session(s) "
+        print(f"[{datetime.now(timezone.utc).replace(tzinfo=None).isoformat()}] {len(candidates)} session(s) "
               f"to close (min-age-hours={args.min_age_hours}):")
         total_seeded = 0
         for row in candidates:
