@@ -32,6 +32,8 @@ kilter.db
 kilter.db-shm
 kilter.db-wal
 kilter.db.backup-*
+kilter.db.bak_*
+Data/
 messages/swift/*
 messages/flexcube/*
 messages/processed/
