@@ -36,6 +36,10 @@ import sys
 from datetime import date, datetime
 from pathlib import Path
 
+import logging
+logger = logging.getLogger(__name__)
+
+
 # ---------------------------------------------------------------------------
 # PRIVATE: embedded signing key.  Change before distributing to a new client
 # tier, or after any suspected key compromise.  This value is hidden once the
@@ -91,7 +95,7 @@ def verify_license() -> None:
     if the license is invalid or missing beyond the grace period.
     """
     if os.environ.get("KILTER_DEV") == "1":
-        print("[license] DEV mode — license check bypassed.")
+        logger.info("[license] DEV mode — license check bypassed.")
         return
 
     # ── No license file ────────────────────────────────────────────────────
@@ -103,7 +107,7 @@ def verify_license() -> None:
                 "  Install kilter.lic in the application directory.\n"
                 "  Contact: timelessnypotech@outlook.com | https://www.kilter-app.com"
             )
-        print(
+        logger.warning(
             f"[license] WARNING: no kilter.lic found.  "
             f"Grace period: {remaining} day(s) remaining.\n"
             f"           Contact timelessnypotech@outlook.com | https://www.kilter-app.com to obtain a license."
@@ -141,7 +145,7 @@ def verify_license() -> None:
 
     days_left = (expires - today).days
     if days_left <= 30:
-        print(
+        logger.warning(
             f"[license] WARNING: license expires in {days_left} day(s) "
             f"({data['expires']}).  Contact timelessnypotech@outlook.com | https://www.kilter-app.com to renew."
         )
@@ -156,17 +160,17 @@ def verify_license() -> None:
             f"  Contact      : timelessnypotech@outlook.com | https://www.kilter-app.com"
         )
 
-    print(
+    logger.info(
         f"[license] Valid — Licensee: {data['licensee']} | "
         f"Expires: {data['expires']} ({days_left} days)"
     )
 
 
 def _abort(msg: str) -> None:
-    print(f"\n{'='*60}")
-    print("  KILTER — LICENSE ERROR")
-    print(f"{'='*60}")
+    logger.info(f"\n{'='*60}")
+    logger.error("  KILTER — LICENSE ERROR")
+    logger.info(f"{'='*60}")
     for line in msg.splitlines():
-        print(f"  {line}")
-    print(f"{'='*60}\n")
+        logger.info(f"  {line}")
+    logger.info(f"{'='*60}\n")
     sys.exit(1)

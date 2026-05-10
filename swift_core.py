@@ -28,6 +28,10 @@ from decimal import Decimal
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
+import logging
+logger = logging.getLogger(__name__)
+
+
 
 # ---------------------------------------------------------------------------
 # SWIFT format rules — expressed as regular expressions.
@@ -447,19 +451,18 @@ def run_batch(expected_type: str, input_dir: Path, output_dir: Path) -> int:
     (Skipped wrong-type files don't count as failures.)
     """
     banner = f"SWIFT MT{expected_type} -> Excel converter"
-    print(banner)
-    print("-" * 60)
-    print(f"Input folder  : {input_dir}")
-    print(f"Output folder : {output_dir}")
-    print()
-
+    logger.info(banner)
+    logger.info("-" * 60)
+    logger.info(f"Input folder  : {input_dir}")
+    logger.info(f"Output folder : {output_dir}")
+    logger.info()
     # Create output/ if missing.
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Stop with a friendly message if input/ is missing.
     if not input_dir.exists():
-        print(f"ERROR: the input folder does not exist at {input_dir}.")
-        print(f"Create it and drop your MT{expected_type} files inside, then re-run.")
+        logger.error(f"ERROR: the input folder does not exist at {input_dir}.")
+        logger.info(f"Create it and drop your MT{expected_type} files inside, then re-run.")
         input("\nPress Enter to exit...")
         return 1
 
@@ -469,38 +472,36 @@ def run_batch(expected_type: str, input_dir: Path, output_dir: Path) -> int:
     )
 
     if not input_files:
-        print(f"No files found in {input_dir}.")
-        print(f"Drop your MT{expected_type} files in there and re-run.")
+        logger.info(f"No files found in {input_dir}.")
+        logger.info(f"Drop your MT{expected_type} files in there and re-run.")
         input("\nPress Enter to exit...")
         return 0
 
-    print(f"Found {len(input_files)} file(s).")
-    print()
-
+    logger.info(f"Found {len(input_files)} file(s).")
+    logger.info()
     succeeded = 0
     skipped = []   # list of (filename, reason) — wrong message type etc.
     failed = []    # list of (filename, exception string)
 
     for input_path in input_files:
         output_path = output_dir / f"{input_path.stem}_parsed.xlsx"
-        print(f"Processing: {input_path.name}")
-
+        logger.info(f"Processing: {input_path.name}")
         try:
             raw = input_path.read_text(encoding='latin-1', errors='replace')
             file_type = detect_message_type(raw)
 
             if file_type is None:
-                print("  -> SKIPPED: no SWIFT message type found. "
+                logger.warning("  -> SKIPPED: no SWIFT message type found. "
                       "Is this actually a SWIFT file?")
                 skipped.append((input_path.name, 'not a SWIFT message'))
-                print()
+                logger.info()
                 continue
 
             if file_type != expected_type:
-                print(f"  -> SKIPPED: this is an MT{file_type} message, "
+                logger.warning(f"  -> SKIPPED: this is an MT{file_type} message, "
                       f"not MT{expected_type}. Move it to input_mt{file_type}/.")
                 skipped.append((input_path.name, f'MT{file_type}'))
-                print()
+                logger.info()
                 continue
 
             # Right type — parse and write.
@@ -529,30 +530,28 @@ def run_batch(expected_type: str, input_dir: Path, output_dir: Path) -> int:
                 else:
                     balance_note = f"WARNING: off by {diff:,.2f}"
 
-            print(f"  -> wrote {output_path.name}")
-            print(f"  -> {len(txns)} transactions, "
+            logger.info(f"  -> wrote {output_path.name}")
+            logger.error(f"  -> {len(txns)} transactions, "
                   f"{parse_errors} parse error(s), {balance_note}")
             succeeded += 1
 
         except Exception as exc:
-            print(f"  -> FAILED: {exc}")
+            logger.error(f"  -> FAILED: {exc}")
             failed.append((input_path.name, str(exc)))
 
-        print()
-
+        logger.info()
     # Summary.
-    print("-" * 60)
-    print(f"Done. {succeeded} succeeded, "
+    logger.info("-" * 60)
+    logger.error(f"Done. {succeeded} succeeded, "
           f"{len(skipped)} skipped (wrong type), "
           f"{len(failed)} failed.")
     if skipped:
-        print("\nSkipped files (move to the right folder and re-run):")
+        logger.info("\nSkipped files (move to the right folder and re-run):")
         for name, reason in skipped:
-            print(f"  {name}: {reason}")
+            logger.info(f"  {name}: {reason}")
     if failed:
-        print("\nFailed files:")
+        logger.info("\nFailed files:")
         for name, err in failed:
-            print(f"  {name}: {err}")
-
+            logger.info(f"  {name}: {err}")
     input("\nPress Enter to exit...")
     return 0 if not failed else 1

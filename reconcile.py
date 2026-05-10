@@ -60,6 +60,10 @@ from collections import Counter
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
+import logging
+logger = logging.getLogger(__name__)
+
+
 
 # ---------------------------------------------------------------------------
 # Configuration — change these if the bank's conventions ever shift.
@@ -816,20 +820,19 @@ def main():
     flex_dir = script_dir / 'input_flexcube'
     out_dir = script_dir / 'output_reconciled'
 
-    print("SWIFT ↔ Flexcube Reconciliation")
-    print("-" * 60)
-    print(f"SWIFT input    : {swift_dir}")
-    print(f"Flexcube input : {flex_dir}")
-    print(f"Output         : {out_dir}")
-    print()
-
+    logger.info("SWIFT ↔ Flexcube Reconciliation")
+    logger.info("-" * 60)
+    logger.info(f"SWIFT input    : {swift_dir}")
+    logger.info(f"Flexcube input : {flex_dir}")
+    logger.info(f"Output         : {out_dir}")
+    logger.info()
     out_dir.mkdir(parents=True, exist_ok=True)
 
     missing = [d for d in (swift_dir, flex_dir) if not d.exists()]
     if missing:
         for d in missing:
-            print(f"ERROR: folder missing — {d}")
-        print("\nCreate the missing folder(s), drop your files inside, and re-run.")
+            logger.error(f"ERROR: folder missing — {d}")
+        logger.info("\nCreate the missing folder(s), drop your files inside, and re-run.")
         input("\nPress Enter to exit...")
         return 1
 
@@ -841,31 +844,29 @@ def main():
                         and not p.name.startswith('.') and not p.name.startswith('~$'))
 
     if not swift_files:
-        print(f"No .xlsx files in {swift_dir}.")
+        logger.info(f"No .xlsx files in {swift_dir}.")
         input("\nPress Enter to exit...")
         return 0
     if not flex_files:
-        print(f"No .xlsx files in {flex_dir}.")
+        logger.info(f"No .xlsx files in {flex_dir}.")
         input("\nPress Enter to exit...")
         return 0
 
     # Pair by sort order. Warn if counts differ — something is probably off.
     pair_count = min(len(swift_files), len(flex_files))
     if len(swift_files) != len(flex_files):
-        print(f"WARNING: {len(swift_files)} SWIFT file(s) vs {len(flex_files)} Flexcube file(s). "
+        logger.warning(f"WARNING: {len(swift_files)} SWIFT file(s) vs {len(flex_files)} Flexcube file(s). "
               f"Pairing the first {pair_count} of each by sort order; extras ignored.")
-        print()
-
+        logger.info()
     succeeded = 0
     failed = []
 
     for swift_path, flex_path in zip(swift_files[:pair_count], flex_files[:pair_count]):
-        print(f"Reconciling: {swift_path.name}  <>  {flex_path.name}")
+        logger.info(f"Reconciling: {swift_path.name}  <>  {flex_path.name}")
         try:
             swift_txns = load_swift(swift_path)
             flex_txns = load_flexcube(flex_path)
-            print(f"  Loaded {len(swift_txns)} SWIFT rows, {len(flex_txns)} Flexcube rows")
-
+            logger.info(f"  Loaded {len(swift_txns)} SWIFT rows, {len(flex_txns)} Flexcube rows")
             matches = match(swift_txns, flex_txns)
             tiers = Counter(m['tier'] for m in matches)
 
@@ -873,27 +874,25 @@ def main():
             output_path = out_dir / output_name
             write_report(matches, swift_txns, flex_txns, swift_path, flex_path, output_path)
 
-            print(f"  Matched: {len(matches)}  "
+            logger.info(f"  Matched: {len(matches)}  "
                   f"(T1={tiers.get(1, 0)}, T2={tiers.get(2, 0)}, "
                   f"T3={tiers.get(3, 0)}, T4={tiers.get(4, 0)})")
-            print(f"  Unmatched SWIFT: {sum(1 for s in swift_txns if not s['_used'])}  "
+            logger.info(f"  Unmatched SWIFT: {sum(1 for s in swift_txns if not s['_used'])}  "
                   f"Unmatched Flexcube: {sum(1 for f in flex_txns if not f['_used'])}")
-            print(f"  Wrote {output_name}")
+            logger.info(f"  Wrote {output_name}")
             succeeded += 1
 
         except Exception as exc:
-            print(f"  FAILED: {exc}")
+            logger.error(f"  FAILED: {exc}")
             failed.append((swift_path.name, flex_path.name, str(exc)))
 
-        print()
-
-    print("-" * 60)
-    print(f"Done. {succeeded} reconciliation(s) written, {len(failed)} failed.")
+        logger.info()
+    logger.info("-" * 60)
+    logger.error(f"Done. {succeeded} reconciliation(s) written, {len(failed)} failed.")
     if failed:
-        print("\nFailures:")
+        logger.info("\nFailures:")
         for s, f, err in failed:
-            print(f"  {s} <> {f}: {err}")
-
+            logger.info(f"  {s} <> {f}: {err}")
     input("\nPress Enter to exit...")
     return 0 if not failed else 1
 

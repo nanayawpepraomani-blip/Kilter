@@ -22,6 +22,10 @@ import os
 import sqlite3
 from pathlib import Path
 
+import logging
+logger = logging.getLogger(__name__)
+
+
 # DB location is env-overridable so containerised deployments can mount the
 # database file on a persistent volume (e.g. /data/kilter.db). Defaults to
 # kilter.db next to this file for local / dev runs.
@@ -1375,19 +1379,19 @@ def _seed_bootstrap_admin(conn) -> None:
             ('admin', 'Administrator', datetime.now(timezone.utc).replace(tzinfo=None).isoformat(), token),
         )
         enroll_url = f"http://localhost:8000/enroll?user=admin&token={token}"
-        print("")
-        print("=" * 66)
-        print("  FIRST-RUN ADMIN ENROLLMENT")
-        print("")
-        print(f"  {enroll_url}")
-        print("")
-        print("  Step 1: Open the URL above in your browser.")
-        print("  Step 2: Scan the QR code with any authenticator app")
-        print("          (Microsoft Authenticator, Google Authenticator, Authy).")
-        print("  Step 3: Go to http://localhost:8000/login")
-        print("          Username: admin   Code: 6-digit code from the app")
-        print("=" * 66)
-        print("")
+        logger.info("")
+        logger.info("=" * 66)
+        logger.info("  FIRST-RUN ADMIN ENROLLMENT")
+        logger.info("")
+        logger.info(f"  {enroll_url}")
+        logger.info("")
+        logger.info("  Step 1: Open the URL above in your browser.")
+        logger.info("  Step 2: Scan the QR code with any authenticator app")
+        logger.info("          (Microsoft Authenticator, Google Authenticator, Authy).")
+        logger.info("  Step 3: Go to http://localhost:8000/login")
+        logger.info("          Username: admin   Code: 6-digit code from the app")
+        logger.info("=" * 66)
+        logger.info("")
         # Also write to first_login.txt so the URL isn't lost on scroll.
         try:
             txt_path = Path(__file__).resolve().parent / "first_login.txt"
@@ -1405,8 +1409,8 @@ def _seed_bootstrap_admin(conn) -> None:
                 "      Keep it private until then — anyone with the link can enroll.\n",
                 encoding="utf-8",
             )
-            print(f"  [Saved enrollment link to: {txt_path}]")
-            print("")
+            logger.info(f"  [Saved enrollment link to: {txt_path}]")
+            logger.info("")
         except OSError:
             pass
 
@@ -1423,7 +1427,7 @@ def _migrate_encrypt_secrets_at_rest(conn) -> None:
     try:
         from secrets_vault import encrypt, is_encrypted
     except Exception as exc:
-        print(f"[migrate] secrets_vault unavailable, skipping encryption migration: {exc}")
+        logger.info(f"[migrate] secrets_vault unavailable, skipping encryption migration: {exc}")
         return
 
     # Users.totp_secret
@@ -1440,8 +1444,7 @@ def _migrate_encrypt_secrets_at_rest(conn) -> None:
                 )
                 n_users += 1
             except Exception as exc:
-                print(f"[migrate] failed to encrypt totp_secret for {r['username']}: {exc}")
-
+                logger.error(f"[migrate] failed to encrypt totp_secret for {r['username']}: {exc}")
     # notification_channels.config_json — encrypt the smtp_password sub-field
     import json as _json
     n_channels = 0
@@ -1465,13 +1468,10 @@ def _migrate_encrypt_secrets_at_rest(conn) -> None:
                 )
                 n_channels += 1
             except Exception as exc:
-                print(f"[migrate] failed to encrypt smtp_password for channel {r['id']}: {exc}")
-
+                logger.error(f"[migrate] failed to encrypt smtp_password for channel {r['id']}: {exc}")
     if n_users or n_channels:
         conn.commit()
-        print(f"[migrate] encrypted {n_users} TOTP secret(s) and {n_channels} SMTP password(s) at rest.")
-
-
+        logger.info(f"[migrate] encrypted {n_users} TOTP secret(s) and {n_channels} SMTP password(s) at rest.")
 def _migrate_add_session_account_columns(conn) -> None:
     """Additive migrations — SQLite ALTER TABLE is column-at-a-time and
     CREATE TABLE IF NOT EXISTS won't add new columns to existing tables."""

@@ -402,6 +402,10 @@ See [docs/MYSQL.md](MYSQL.md) for the full MySQL guide including migration from 
 | `KILTER_LDAP_URL` | No | — | LDAP server URL: `ldaps://dc.yourbank.com:636` |
 | `KILTER_LDAP_BASE_DN` | No | — | LDAP search base: `DC=yourbank,DC=com` |
 | `KILTER_LDAP_CA_CERTS_FILE` | No | — | Path to CA bundle for LDAP TLS verification |
+| `KILTER_LOG_LEVEL` | No | `INFO` | Application log level (DEBUG / INFO / WARNING / ERROR) |
+| `KILTER_JOB_TIMEOUT` | No | `1800` | Scheduler job hard timeout, in seconds |
+| `KILTER_BACKUP_DIR` | No | `./backups` | Where the nightly DB backup job writes snapshots |
+| `KILTER_DEV` | No | unset | Set to `1` to bypass the license check (development only — never set in production) |
 
 ---
 

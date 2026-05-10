@@ -32,10 +32,13 @@ Public API:
 
 from __future__ import annotations
 
+import logging
 import os
 import stat
 import sys
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from cryptography.fernet import Fernet, InvalidToken
 
@@ -72,7 +75,7 @@ def _load_or_generate_key() -> bytes:
         os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
     except OSError:
         pass
-    print(
+    logger.info(
         f"[secrets_vault] Generated a new encryption key at {path}. "
         f"For production deployments, move this value into the "
         f"{_ENV_VAR} environment variable and delete the file.",

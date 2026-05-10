@@ -32,6 +32,37 @@
       --grad-green: linear-gradient(135deg, #10b981 0%, #06b6d4 100%);
     }
 
+    /* ── Mobile orientation hint (visible only on portrait phones) ── */
+    .mobile-hint {
+      display: none;
+      position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+      background: rgba(34,211,238,0.95); color: #060c16;
+      padding: 8px 16px; font-size: 12px; font-weight: 700;
+      text-align: center; backdrop-filter: blur(8px);
+    }
+    .mobile-hint svg { vertical-align: -3px; margin-right: 6px; }
+    @media (max-width: 768px) and (orientation: portrait) {
+      .mobile-hint { display: block; }
+      .reveal { padding-top: 36px; }
+    }
+
+    /* ── Mobile sizing overrides — Reveal.js scales the whole slide, but
+       text gets cramped at <600px. Reduce some sizes manually. ── */
+    @media (max-width: 700px) {
+      .reveal h1 { font-size: 2em !important; }
+      .reveal h2 { font-size: 1.2em !important; }
+      .reveal h3 { font-size: 0.95em !important; }
+      .reveal p, .reveal li { font-size: 0.82em; line-height: 1.45; }
+      .reveal .controls { right: 8px; bottom: 8px; }
+      .reveal .progress { height: 4px; }
+      .reveal .slide-number { font-size: 12px; padding: 3px 6px; }
+    }
+
+    /* Touch-friendly minimum tap target for next/prev controls */
+    .reveal .controls button {
+      min-width: 44px; min-height: 44px;
+    }
+
     /* ── Global overrides ── */
     .reveal { font-family: "Inter", system-ui, sans-serif; background: var(--bg); color: var(--ink); }
     .reveal .slides { background: var(--bg); }
@@ -1018,6 +1049,11 @@
 </div><!-- /slides -->
 </div><!-- /reveal -->
 
+<div class="mobile-hint" role="note">
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+  Rotate device or open on desktop for best experience
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/notes/notes.js"></script>
 <script>
@@ -1025,13 +1061,22 @@
     width: 1280,
     height: 720,
     margin: 0.05,
+    // Allow aggressive down-scaling on phones, and slight up-scaling on
+    // ultra-wide displays. Default minScale=0.2 is fine but defaults to
+    // 100% on small screens which crops content. These let Reveal.js
+    // pick the right scale automatically.
+    minScale: 0.2,
+    maxScale: 1.5,
     hash: true,
     slideNumber: 'c/t',
     controls: true,
+    controlsTutorial: false,
     progress: true,
+    touch: true,                 // explicit swipe nav on mobile
     transition: 'fade',
     transitionSpeed: 'fast',
     backgroundTransition: 'fade',
+    embedded: false,
     plugins: [ RevealNotes ],
   });
 </script>

@@ -54,6 +54,19 @@ from auth import (
     SESSION_LIFETIME, ISSUER,
 )
 
+import logging
+# Configure root logger once, at import time, before anything else does. Uvicorn
+# usually owns the access log, but our application-level logs (license check,
+# scheduler, scanner, ingest, db migrations) all flow through this format. The
+# level is INFO by default; export KILTER_LOG_LEVEL=DEBUG to make it chatty.
+logging.basicConfig(
+    level=os.getenv("KILTER_LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)-7s %(name)s - %(message)s",
+    datefmt="%Y-%m-%dT%H:%M:%S",
+)
+logger = logging.getLogger(__name__)
+
+
 
 EXPORT_DIR = Path(__file__).resolve().parent / 'exports'
 EXPORT_DIR.mkdir(exist_ok=True)
@@ -87,7 +100,7 @@ async def _lifespan(_app: FastAPI):
         from scheduler import start as _start_scheduler
         _start_scheduler()
     except Exception as exc:
-        print(f"[scheduler] failed to start: {exc}")
+        logger.error(f"[scheduler] failed to start: {exc}")
     yield
     # ── Shutdown ─────────────────────────────────────────────────────────
     try:
