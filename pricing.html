@@ -4,591 +4,1378 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Kilter — Pricing</title>
+  <meta name="description" content="Self-hosted reconciliation for banks. Pilot from $5K, production from $24K/year. Unlimited users on every plan. No per-seat fees.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <style>
     :root {
-      --ink: #0f172a; --muted: #52606d; --subtle: #8899aa;
-      --primary: #1f3a8a; --primary-soft: #eff4fb; --primary-mid: #2d4faa;
-      --accent: #0891b2;
+      --ink: #0f172a; --muted: #475569; --subtle: #64748b;
+      --primary: #1f3a8a; --primary-soft: #eff4fb; --primary-mid: #2d4faa; --primary-dark: #163580;
+      --accent: #0891b2; --accent-cyan: #06b6d4;
       --success: #059669; --success-soft: #d1fae5;
       --warn: #b45309; --warn-soft: #fef3c7;
       --danger: #b91c1c; --danger-soft: #fee2e2;
-      --border: #e4e7eb; --surface: #ffffff; --bg: #f7f8fa;
-      --radius: 12px;
+      --border: #e4e7eb; --border-strong: #cbd5e1;
+      --surface: #ffffff; --bg: #f7f8fa; --bg-2: #f0f2f7;
+      --radius: 12px; --radius-lg: 16px;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.06);
+      --shadow-md: 0 4px 16px rgba(0,0,0,0.08);
+      --shadow-lg: 0 16px 48px rgba(0,0,0,0.12);
     }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html { scroll-behavior: smooth; }
+    html { scroll-behavior: smooth; scroll-padding-top: 24px; }
     body {
       font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       background: var(--bg); color: var(--ink); font-size: 15px; line-height: 1.55;
+      -webkit-tap-highlight-color: transparent;
+    }
+    a { color: inherit; text-decoration: none; }
+    button { font-family: inherit; cursor: pointer; }
+    img, svg { display: block; max-width: 100%; }
+
+    /* ── focus rings ── */
+    *:focus { outline: none; }
+    *:focus-visible {
+      outline: 2px solid var(--accent-cyan);
+      outline-offset: 3px;
+      border-radius: 4px;
+    }
+    .skip-link {
+      position: absolute; top: -48px; left: 12px; z-index: 200;
+      background: var(--primary); color: white;
+      padding: 12px 20px; border-radius: 8px;
+      font-weight: 700; font-size: 0.875rem;
+      transition: top 0.18s ease; box-shadow: var(--shadow-md);
+    }
+    .skip-link:focus { top: 12px; }
+
+    /* ── reduced-motion ── */
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+      }
     }
 
     /* ── Header ── */
     .hero {
-      background: linear-gradient(135deg, var(--primary) 0%, #163580 50%, var(--accent) 100%);
-      color: white; padding: 52px 32px 48px; text-align: center;
+      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 50%, var(--accent) 100%);
+      color: white; padding: 56px 32px 56px; text-align: center;
+      position: relative; overflow: hidden;
     }
-    .hero .brand { display: inline-flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+    .hero::before {
+      content: ''; position: absolute; top: -50%; right: -10%; width: 60%; height: 200%;
+      background: radial-gradient(ellipse, rgba(6,182,212,0.20), transparent 60%);
+      pointer-events: none;
+    }
+    .hero-inner { position: relative; z-index: 1; }
+    .hero .brand { display: inline-flex; align-items: center; gap: 12px; margin-bottom: 24px; }
     .hero .brand-badge {
-      width: 48px; height: 48px; border-radius: 10px;
-      background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.25);
+      width: 44px; height: 44px; border-radius: 10px;
+      background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.25);
       display: flex; align-items: center; justify-content: center;
-      font-size: 1.5em; font-weight: 800; color: white; letter-spacing: -1px;
+      font-size: 1.3em; font-weight: 900; color: white; letter-spacing: -1px;
     }
-    .hero .brand-name { font-size: 1.5em; font-weight: 700; letter-spacing: -0.3px; }
-    .hero h1 { font-size: 2.2em; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 10px; }
-    .hero p { font-size: 1.05em; opacity: 0.88; max-width: 540px; margin: 0 auto 28px; }
+    .hero .brand-name { font-size: 1.4em; font-weight: 800; letter-spacing: -0.3px; }
+    .hero h1 { font-size: 2.4em; font-weight: 900; letter-spacing: -0.6px; margin-bottom: 12px; line-height: 1.1; }
+    .hero p.lede { font-size: 1.08em; opacity: 0.88; max-width: 580px; margin: 0 auto 28px; line-height: 1.5; }
+    .hero .hero-stat-row {
+      display: inline-flex; gap: 24px; flex-wrap: wrap;
+      margin-bottom: 28px; justify-content: center;
+      font-size: 0.85em; opacity: 0.88;
+    }
+    .hero .hero-stat-row span { display: inline-flex; align-items: center; gap: 6px; }
+    .hero .hero-stat-row svg { opacity: 0.85; }
 
     /* ── Currency toggle ── */
     .currency-toggle {
-      display: inline-flex; background: rgba(255,255,255,0.12);
-      border: 1px solid rgba(255,255,255,0.2); border-radius: 30px;
-      padding: 4px; gap: 2px;
+      display: inline-flex; background: rgba(255,255,255,0.10);
+      border: 1px solid rgba(255,255,255,0.22); border-radius: 30px;
+      padding: 4px; gap: 2px; flex-wrap: wrap; justify-content: center;
     }
     .currency-toggle button {
-      border: none; border-radius: 24px; padding: 7px 22px;
-      font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
-      transition: all 0.18s ease; background: transparent; color: rgba(255,255,255,0.75);
+      border: none; border-radius: 24px; padding: 7px 18px;
+      font-size: 12.5px; font-weight: 600; cursor: pointer;
+      transition: all 0.18s ease; background: transparent; color: rgba(255,255,255,0.78);
+      min-width: 60px;
     }
+    .currency-toggle button:hover { color: white; }
     .currency-toggle button.active {
       background: white; color: var(--primary);
     }
 
+    /* ── unlimited-users banner ── */
+    .banner {
+      background: linear-gradient(90deg, rgba(8,145,178,0.08), rgba(31,58,138,0.06));
+      border-bottom: 1px solid var(--border);
+      padding: 12px 16px; text-align: center; font-size: 0.88em; color: var(--muted);
+    }
+    .banner strong { color: var(--primary); font-weight: 700; }
+    .banner svg { display: inline; vertical-align: -3px; margin-right: 6px; color: var(--accent); }
+
     /* ── Layout ── */
-    .wrap { max-width: 1060px; margin: 0 auto; padding: 0 24px; }
-    section { padding: 56px 0; }
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 0 24px; }
+    .wrap-sm { max-width: 980px; margin: 0 auto; padding: 0 24px; }
+    section { padding: 64px 0; }
     section + section { border-top: 1px solid var(--border); }
 
     h2 {
-      font-size: 1.6em; font-weight: 700; letter-spacing: -0.3px;
-      color: var(--primary); margin-bottom: 6px;
+      font-size: 1.7em; font-weight: 800; letter-spacing: -0.4px;
+      color: var(--ink); margin-bottom: 8px;
     }
-    .section-sub { color: var(--muted); font-size: 0.92em; margin-bottom: 32px; }
+    h2 .accent { color: var(--accent); }
+    .section-sub { color: var(--muted); font-size: 0.94em; margin-bottom: 36px; max-width: 580px; }
 
-    /* ── Pricing cards ── */
+    .eyebrow {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 1px; color: var(--accent); margin-bottom: 8px;
+    }
+    .eyebrow::before {
+      content: ''; width: 20px; height: 2px; background: var(--accent); border-radius: 2px;
+    }
+
+    /* ── Pricing cards (4 columns) ── */
     .plan-grid {
-      display: grid; grid-template-columns: repeat(3, 1fr);
-      gap: 18px; align-items: start; margin-bottom: 24px;
+      display: grid; grid-template-columns: repeat(4, 1fr);
+      gap: 14px; align-items: stretch; margin-bottom: 28px;
     }
     .plan-card {
       background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--radius); padding: 28px 24px;
+      border-radius: var(--radius); padding: 26px 22px;
       display: flex; flex-direction: column;
-    }
-    .plan-card.featured {
-      border-color: var(--primary); border-width: 2px;
-      box-shadow: 0 4px 24px rgba(31,58,138,0.12);
+      transition: transform 0.18s ease, box-shadow 0.18s ease;
       position: relative;
+    }
+    .plan-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+    .plan-card.featured {
+      border: 2px solid var(--primary);
+      box-shadow: 0 8px 32px rgba(31,58,138,0.18);
     }
     .plan-card.featured::before {
       content: "Most popular";
-      position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
+      position: absolute; top: -11px; left: 50%; transform: translateX(-50%);
       background: var(--primary); color: white;
-      font-size: 11px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase;
-      padding: 3px 14px; border-radius: 20px;
+      font-size: 10.5px; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase;
+      padding: 4px 12px; border-radius: 20px; white-space: nowrap;
     }
+    .plan-card.custom {
+      background: linear-gradient(160deg, #0f172a 0%, #1e293b 100%);
+      color: white; border-color: #1e293b;
+    }
+    .plan-card.custom .plan-name { color: white; }
+    .plan-card.custom .plan-desc { color: rgba(255,255,255,0.7); }
+    .plan-card.custom .plan-impl { background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.1); color: rgba(255,255,255,0.7); }
+    .plan-card.custom .plan-impl strong { color: white; }
+    .plan-card.custom .plan-features li { color: rgba(255,255,255,0.88); border-bottom-color: rgba(255,255,255,0.08); }
+    .plan-card.custom .plan-features li .ck { background: rgba(6,182,212,0.2); color: var(--accent-cyan); }
+    .plan-card.custom .plan-price .amount { color: white; }
+    .plan-card.custom .plan-cta {
+      background: white; color: var(--ink); border-color: white;
+    }
+    .plan-card.custom .plan-cta:hover { background: var(--accent-cyan); border-color: var(--accent-cyan); color: white; }
+
     .plan-label {
-      font-size: 11px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase;
-      color: var(--muted); margin-bottom: 8px;
+      font-size: 10.5px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase;
+      color: var(--subtle); margin-bottom: 8px;
     }
+    .plan-card.custom .plan-label { color: var(--accent-cyan); }
     .plan-name {
-      font-size: 1.35em; font-weight: 700; color: var(--ink); margin-bottom: 6px;
+      font-size: 1.45em; font-weight: 800; color: var(--ink); margin-bottom: 6px; letter-spacing: -0.3px;
     }
     .plan-desc {
-      font-size: 0.83em; color: var(--muted); margin-bottom: 20px; line-height: 1.5;
+      font-size: 0.82em; color: var(--muted); margin-bottom: 20px; line-height: 1.5; min-height: 64px;
     }
-    .plan-price {
-      margin-bottom: 6px;
-    }
+    .plan-price { margin-bottom: 8px; }
     .plan-price .amount {
-      font-size: 2.2em; font-weight: 800; color: var(--primary); letter-spacing: -1px; line-height: 1;
+      font-size: 2.4em; font-weight: 900; color: var(--ink); letter-spacing: -1.5px; line-height: 1;
     }
+    .plan-price .amount.small { font-size: 1.6em; }
+    .plan-price .currency-sym {
+      font-size: 0.6em; font-weight: 700; color: var(--muted); vertical-align: top; margin-top: 4px; display: inline-block;
+    }
+    .plan-card.custom .plan-price .currency-sym { color: rgba(255,255,255,0.6); }
     .plan-price .period {
       font-size: 0.8em; color: var(--muted); font-weight: 500; margin-left: 2px;
     }
+    .plan-card.custom .plan-price .period { color: rgba(255,255,255,0.6); }
     .plan-price .alt-currency {
-      font-size: 0.82em; color: var(--muted); margin-top: 3px;
+      font-size: 0.78em; color: var(--muted); margin-top: 4px;
     }
     .plan-impl {
-      background: var(--bg); border-radius: 6px; padding: 8px 10px;
-      font-size: 0.78em; color: var(--muted); margin-bottom: 22px;
-      border: 1px solid var(--border);
+      background: var(--bg); border-radius: 7px; padding: 8px 11px;
+      font-size: 0.76em; color: var(--muted); margin-bottom: 20px;
+      border: 1px solid var(--border); line-height: 1.5;
     }
     .plan-impl strong { color: var(--ink); }
     .plan-cta {
-      display: block; text-align: center; padding: 11px 20px; border-radius: 8px;
-      font-size: 0.9em; font-weight: 600; cursor: pointer; text-decoration: none;
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+      padding: 12px 20px; border-radius: 8px;
+      font-size: 0.92em; font-weight: 700; text-decoration: none;
       border: 2px solid var(--primary); color: var(--primary); background: transparent;
       transition: all 0.15s ease; margin-bottom: 22px;
     }
+    .plan-cta svg { transition: transform 0.15s; }
+    .plan-cta:hover svg { transform: translateX(2px); }
     .plan-card.featured .plan-cta {
       background: var(--primary); color: white;
     }
     .plan-cta:hover { background: var(--primary); color: white; }
-    .plan-divider { border: none; border-top: 1px solid var(--border); margin-bottom: 18px; }
+    .plan-divider { border: none; border-top: 1px solid var(--border); margin-bottom: 16px; }
+    .plan-card.custom .plan-divider { border-top-color: rgba(255,255,255,0.1); }
     .plan-features { list-style: none; padding: 0; flex: 1; }
     .plan-features li {
       display: flex; align-items: flex-start; gap: 9px;
-      font-size: 0.83em; color: var(--ink); padding: 5px 0;
-      border-bottom: 1px solid #f5f7fa;
+      font-size: 0.82em; color: var(--ink); padding: 6px 0;
+      border-bottom: 1px solid #f3f5f8; line-height: 1.45;
     }
     .plan-features li:last-child { border-bottom: none; }
     .plan-features li .ck {
       flex-shrink: 0; width: 16px; height: 16px; border-radius: 50%;
       background: var(--success-soft); color: var(--success);
       display: flex; align-items: center; justify-content: center;
-      font-size: 9px; font-weight: 800; margin-top: 1px;
+      margin-top: 1px;
     }
     .plan-features li .ck.dim { background: #f0f0f0; color: var(--subtle); }
-    .plan-features li .txt { line-height: 1.4; }
-    .plan-features li .txt .note { color: var(--muted); font-size: 0.92em; }
+    .plan-features li .txt { line-height: 1.45; }
+    .plan-features li .txt .note { color: var(--muted); font-size: 0.94em; }
 
-    /* ── Add-on card ── */
-    .addon-bar {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--radius); padding: 20px 24px;
-      display: flex; align-items: center; gap: 20px; flex-wrap: wrap;
+    /* discount callout under Pilot */
+    .pilot-discount {
+      background: linear-gradient(135deg, #d1fae5, #a7f3d0);
+      border: 1px solid #6ee7b7;
+      border-radius: 8px; padding: 10px 12px; margin-top: -8px; margin-bottom: 16px;
+      font-size: 0.78em; color: #047857; line-height: 1.4;
     }
-    .addon-bar .addon-info { flex: 1; min-width: 200px; }
-    .addon-bar .addon-name { font-weight: 700; font-size: 0.95em; color: var(--ink); }
-    .addon-bar .addon-desc { font-size: 0.82em; color: var(--muted); margin-top: 2px; }
-    .addon-bar .addon-price { text-align: right; }
-    .addon-bar .addon-price .amount { font-size: 1.4em; font-weight: 800; color: var(--primary); }
-    .addon-bar .addon-price .period { font-size: 0.8em; color: var(--muted); }
-    .addon-bar .addon-price .alt { font-size: 0.78em; color: var(--muted); display: block; }
+    .pilot-discount strong { color: #065f46; }
+
+    @media (max-width: 1100px) {
+      .plan-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 560px) {
+      .plan-grid { grid-template-columns: 1fr; }
+    }
+
+    /* ── Calculator ── */
+    .calc {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); padding: 36px 40px;
+      box-shadow: var(--shadow-md);
+      display: grid; grid-template-columns: 1fr 1.2fr; gap: 36px;
+    }
+    @media (max-width: 860px) {
+      .calc { grid-template-columns: 1fr; padding: 28px 24px; gap: 28px; }
+    }
+    .calc-inputs h3, .calc-output h3 {
+      font-size: 1em; font-weight: 800; color: var(--ink);
+      margin-bottom: 18px; letter-spacing: -0.2px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .calc-inputs h3 svg, .calc-output h3 svg { color: var(--accent); }
+    .calc-row {
+      display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px;
+    }
+    .calc-row label {
+      font-size: 0.88em; font-weight: 600; color: var(--ink);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .calc-row label .val {
+      font-size: 1em; font-weight: 800; color: var(--primary);
+      font-variant-numeric: tabular-nums;
+    }
+    .calc-row .hint { font-size: 0.78em; color: var(--subtle); margin-top: -2px; }
+    .calc-row input[type="range"] {
+      width: 100%; height: 6px; -webkit-appearance: none; appearance: none;
+      background: var(--border); border-radius: 3px; outline: none;
+      cursor: pointer;
+    }
+    .calc-row input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none; appearance: none;
+      width: 22px; height: 22px; border-radius: 50%;
+      background: var(--primary); cursor: pointer;
+      border: 3px solid white; box-shadow: 0 2px 6px rgba(31,58,138,0.4);
+      transition: transform 0.12s;
+    }
+    .calc-row input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.15); }
+    .calc-row input[type="range"]::-moz-range-thumb {
+      width: 22px; height: 22px; border-radius: 50%;
+      background: var(--primary); cursor: pointer; border: 3px solid white;
+      box-shadow: 0 2px 6px rgba(31,58,138,0.4);
+    }
+    .calc-toggle {
+      display: flex; gap: 8px;
+    }
+    .calc-toggle button {
+      flex: 1; padding: 9px 12px; border-radius: 8px;
+      border: 1.5px solid var(--border); background: var(--surface);
+      font-size: 0.84em; font-weight: 600; color: var(--muted);
+      transition: all 0.15s ease;
+    }
+    .calc-toggle button:hover { border-color: var(--primary); color: var(--primary); }
+    .calc-toggle button.active {
+      background: var(--primary); color: white; border-color: var(--primary);
+    }
+    .calc-checkbox {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 14px; border-radius: 8px;
+      border: 1.5px solid var(--border); background: var(--surface);
+      cursor: pointer; transition: all 0.15s;
+    }
+    .calc-checkbox:hover { border-color: var(--primary); }
+    .calc-checkbox input { width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary); }
+    .calc-checkbox span { font-size: 0.88em; color: var(--ink); }
+    .calc-checkbox .pill {
+      margin-left: auto; font-size: 0.74em; font-weight: 700; color: var(--accent);
+      background: rgba(8,145,178,0.10); padding: 2px 8px; border-radius: 999px;
+    }
+
+    .calc-output {
+      background: linear-gradient(160deg, var(--primary) 0%, var(--primary-dark) 100%);
+      color: white; border-radius: var(--radius); padding: 26px 28px;
+      position: relative; overflow: hidden;
+    }
+    .calc-output::before {
+      content: ''; position: absolute; top: -40%; right: -20%; width: 70%; height: 200%;
+      background: radial-gradient(ellipse, rgba(6,182,212,0.18), transparent 60%);
+      pointer-events: none;
+    }
+    .calc-output h3 { color: white; position: relative; z-index: 1; }
+    .calc-output h3 svg { color: var(--accent-cyan); }
+    .calc-tier {
+      position: relative; z-index: 1;
+      font-size: 0.72em; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 1px; color: var(--accent-cyan); margin-bottom: 4px;
+    }
+    .calc-total {
+      position: relative; z-index: 1;
+      font-size: 2.8em; font-weight: 900; letter-spacing: -1.5px; line-height: 1;
+      font-variant-numeric: tabular-nums; margin-bottom: 4px;
+    }
+    .calc-total .sym {
+      font-size: 0.5em; vertical-align: top; margin-top: 8px; display: inline-block;
+      opacity: 0.7; font-weight: 700;
+    }
+    .calc-period {
+      position: relative; z-index: 1;
+      font-size: 0.84em; opacity: 0.75; margin-bottom: 16px;
+    }
+    .calc-breakdown {
+      position: relative; z-index: 1;
+      border-top: 1px solid rgba(255,255,255,0.15); padding-top: 14px;
+      font-size: 0.82em;
+    }
+    .calc-row-out {
+      display: flex; justify-content: space-between; padding: 5px 0;
+      opacity: 0.85;
+    }
+    .calc-row-out .v { font-weight: 700; font-variant-numeric: tabular-nums; }
+    .calc-row-out.recurring { opacity: 1; font-weight: 700; padding-top: 10px; border-top: 1px dashed rgba(255,255,255,0.15); margin-top: 6px; }
+    .calc-payback {
+      position: relative; z-index: 1;
+      margin-top: 16px; padding: 10px 14px;
+      background: rgba(255,255,255,0.10); border: 1px solid rgba(255,255,255,0.18);
+      border-radius: 8px; font-size: 0.82em; display: flex; align-items: center; gap: 8px;
+    }
+    .calc-payback svg { color: #34d399; flex-shrink: 0; }
+    .calc-payback strong { color: white; font-weight: 700; }
+
+    .calc-cta {
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+      width: 100%; margin-top: 14px; padding: 12px;
+      background: var(--accent-cyan); color: white; border-radius: 8px;
+      font-weight: 700; font-size: 0.92em; text-decoration: none;
+      transition: background 0.15s; position: relative; z-index: 1;
+    }
+    .calc-cta:hover { background: #0e7490; }
+
+    /* ── Add-on shelf ── */
+    .addons {
+      display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;
+    }
+    @media (max-width: 700px) {
+      .addons { grid-template-columns: 1fr; }
+    }
+    .addon {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 18px 20px;
+      display: flex; align-items: flex-start; gap: 14px;
+      transition: border-color 0.15s, transform 0.15s;
+    }
+    .addon:hover { border-color: var(--primary); transform: translateY(-1px); }
+    .addon-icon {
+      width: 40px; height: 40px; flex-shrink: 0; border-radius: 9px;
+      background: var(--primary-soft); color: var(--primary);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .addon-body { flex: 1; min-width: 0; }
+    .addon-name { font-weight: 700; font-size: 0.92em; color: var(--ink); margin-bottom: 2px; }
+    .addon-meta { font-size: 0.74em; color: var(--accent); font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; }
+    .addon-desc { font-size: 0.8em; color: var(--muted); margin-top: 6px; line-height: 1.5; }
+    .addon-price {
+      text-align: right; flex-shrink: 0;
+    }
+    .addon-price .amount {
+      font-size: 1.15em; font-weight: 800; color: var(--primary);
+      font-variant-numeric: tabular-nums;
+    }
+    .addon-price .period { font-size: 0.74em; color: var(--muted); display: block; margin-top: -2px; }
+
+    /* ── ROI comparison ── */
+    .roi-compare {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px;
+    }
+    @media (max-width: 760px) {
+      .roi-compare { grid-template-columns: 1fr; }
+    }
+    .roi-card {
+      border-radius: var(--radius); padding: 24px 22px;
+      border: 1px solid var(--border); background: var(--surface);
+      position: relative; overflow: hidden;
+    }
+    .roi-card.legacy { border-color: #fecaca; background: linear-gradient(160deg, #fef2f2, #ffffff); }
+    .roi-card.manual { border-color: #fde68a; background: linear-gradient(160deg, #fffbeb, #ffffff); }
+    .roi-card.kilter { border-color: var(--primary); border-width: 2px; background: linear-gradient(160deg, var(--primary-soft), #ffffff); }
+    .roi-label {
+      font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px;
+      margin-bottom: 6px;
+    }
+    .roi-card.legacy .roi-label { color: var(--danger); }
+    .roi-card.manual .roi-label { color: var(--warn); }
+    .roi-card.kilter .roi-label { color: var(--primary); }
+    .roi-name { font-size: 1.05em; font-weight: 800; margin-bottom: 12px; color: var(--ink); }
+    .roi-cost {
+      font-size: 1.9em; font-weight: 900; letter-spacing: -1px;
+      color: var(--ink); font-variant-numeric: tabular-nums; line-height: 1;
+      margin-bottom: 6px;
+    }
+    .roi-cost.kilter { color: var(--primary); }
+    .roi-detail { font-size: 0.8em; color: var(--muted); line-height: 1.5; }
+    .roi-card.kilter .roi-detail { color: var(--ink); font-weight: 500; }
+
+    /* ── Year 1 summary tiles ── */
+    .summary-grid {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px;
+    }
+    @media (max-width: 1000px) { .summary-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 560px) { .summary-grid { grid-template-columns: 1fr; } }
+    .summary-tile {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 22px 20px; text-align: center;
+      transition: transform 0.15s;
+    }
+    .summary-tile:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+    .summary-tile.featured {
+      border: 2px solid var(--primary); background: var(--primary-soft);
+    }
+    .summary-tile .tier-name {
+      font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.8px; color: var(--muted); margin-bottom: 8px;
+    }
+    .summary-tile.featured .tier-name { color: var(--primary); }
+    .summary-tile .price {
+      font-size: 1.9em; font-weight: 900; color: var(--primary); letter-spacing: -1.5px;
+      line-height: 1; font-variant-numeric: tabular-nums;
+    }
+    .summary-tile .breakdown { font-size: 0.78em; color: var(--muted); margin-top: 6px; }
+    .summary-tile .year2 {
+      font-size: 0.74em; font-weight: 700; color: var(--accent); margin-top: 8px;
+      padding-top: 8px; border-top: 1px solid var(--border);
+    }
+    .summary-tile.featured .year2 { border-top-color: rgba(31,58,138,0.18); }
 
     /* ── Comparison table ── */
-    .comp-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.85em; }
+    .comp-wrap { overflow-x: auto; border-radius: var(--radius); border: 1px solid var(--border); }
+    .comp-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.85em; background: var(--surface); }
     .comp-table th {
-      background: #f5f7fa; padding: 11px 14px; border-bottom: 2px solid var(--border);
-      text-align: left; font-weight: 600; color: var(--muted); font-size: 0.9em;
+      background: var(--bg-2); padding: 13px 14px; border-bottom: 2px solid var(--border);
+      text-align: left; font-weight: 700; color: var(--ink); font-size: 0.85em;
+      position: sticky; top: 0; z-index: 1;
     }
-    .comp-table th.plan-col { text-align: center; min-width: 110px; }
+    .comp-table th.plan-col { text-align: center; min-width: 110px; font-size: 0.9em; }
     .comp-table th.plan-col.hi { background: var(--primary-soft); color: var(--primary); }
     .comp-table td {
       padding: 10px 14px; border-bottom: 1px solid #f0f2f5; vertical-align: middle;
     }
     .comp-table td.plan-col { text-align: center; }
-    .comp-table td.plan-col.hi { background: #fafcff; }
+    .comp-table td.plan-col.hi { background: rgba(31,58,138,0.03); }
     .comp-table tr:last-child td { border-bottom: none; }
-    .comp-table .cat-row td { background: #f5f7fa; font-weight: 700; font-size: 0.82em; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; padding: 7px 14px; }
-    .comp-tick { color: var(--success); font-weight: 800; font-size: 1.1em; }
-    .comp-dash { color: #d0d5dd; font-size: 1.2em; }
+    .comp-table .cat-row td {
+      background: var(--bg-2); font-weight: 700; font-size: 0.78em;
+      color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px;
+      padding: 8px 14px;
+    }
+    .comp-tick { color: var(--success); font-weight: 800; display: inline-flex; }
+    .comp-dash { color: #cbd5e1; }
     .comp-val { font-weight: 600; color: var(--ink); }
+    .comp-table tbody tr:hover td { background: rgba(0,0,0,0.015); }
+    .comp-table tbody tr:hover td.plan-col.hi { background: rgba(31,58,138,0.06); }
 
     /* ── FAQ ── */
-    .faq-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-    .faq-item { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; }
-    .faq-item h3 { font-size: 0.92em; font-weight: 700; color: var(--ink); margin-bottom: 8px; }
-    .faq-item p { font-size: 0.83em; color: var(--muted); line-height: 1.6; }
-    .faq-item p strong { color: var(--ink); }
+    .faq-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    @media (max-width: 680px) { .faq-grid { grid-template-columns: 1fr; } }
+    .faq-item {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 20px 22px;
+      transition: border-color 0.15s;
+    }
+    .faq-item:hover { border-color: var(--primary); }
+    .faq-item h3 { font-size: 0.95em; font-weight: 700; color: var(--ink); margin-bottom: 10px; line-height: 1.4; }
+    .faq-item p { font-size: 0.84em; color: var(--muted); line-height: 1.65; }
+    .faq-item p strong { color: var(--ink); font-weight: 700; }
 
     /* ── CTA footer ── */
     .cta-footer {
-      background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
-      border-radius: var(--radius); padding: 40px 36px; text-align: center; color: white;
+      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 50%, var(--accent) 100%);
+      border-radius: var(--radius-lg); padding: 52px 40px; text-align: center; color: white;
+      position: relative; overflow: hidden;
     }
-    .cta-footer h2 { color: white; font-size: 1.5em; margin-bottom: 10px; }
-    .cta-footer p { opacity: 0.88; font-size: 0.92em; max-width: 480px; margin: 0 auto 24px; }
-    .cta-footer .cta-btn {
-      display: inline-block; background: white; color: var(--primary);
-      padding: 12px 32px; border-radius: 8px; font-weight: 700; font-size: 0.95em;
-      text-decoration: none; transition: opacity 0.15s;
+    .cta-footer::before {
+      content: ''; position: absolute; inset: 0;
+      background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23ffffff' fill-opacity='0.04'%3E%3Ccircle cx='30' cy='30' r='1.5'/%3E%3C/g%3E%3C/svg%3E");
     }
-    .cta-footer .cta-btn:hover { opacity: 0.9; }
-    .cta-footer .contact-line { margin-top: 18px; font-size: 0.82em; opacity: 0.75; }
+    .cta-footer > * { position: relative; z-index: 1; }
+    .cta-footer h2 { color: white; font-size: 1.8em; margin-bottom: 12px; font-weight: 900; letter-spacing: -0.5px; }
+    .cta-footer p { opacity: 0.88; font-size: 1.02em; max-width: 540px; margin: 0 auto 28px; }
+    .cta-buttons { display: inline-flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+    .cta-btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: white; color: var(--primary);
+      padding: 14px 28px; border-radius: 10px; font-weight: 700; font-size: 0.95em;
+      text-decoration: none; transition: transform 0.15s, box-shadow 0.15s;
+    }
+    .cta-btn:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(0,0,0,0.25); }
+    .cta-btn.outline {
+      background: transparent; color: white; border: 1.5px solid rgba(255,255,255,0.4);
+    }
+    .cta-btn.outline:hover { background: rgba(255,255,255,0.08); border-color: white; }
+    .cta-footer .contact-line { margin-top: 22px; font-size: 0.84em; opacity: 0.78; }
+    .cta-footer .contact-line a { color: white; text-decoration: underline; text-underline-offset: 3px; }
 
     /* ── FX notice ── */
     .fx-notice {
-      background: var(--warn-soft); border: 1px solid rgba(180,83,9,0.2);
-      border-radius: 8px; padding: 10px 14px;
-      font-size: 0.8em; color: var(--warn); margin-top: 16px;
+      background: var(--bg-2); border: 1px solid var(--border);
+      border-radius: 8px; padding: 12px 16px;
+      font-size: 0.8em; color: var(--muted); margin-top: 20px;
       display: flex; align-items: flex-start; gap: 8px;
+      line-height: 1.5;
     }
-    .fx-notice::before { content: "⚠"; flex-shrink: 0; }
+    .fx-notice svg { flex-shrink: 0; margin-top: 2px; color: var(--warn); }
+    .fx-notice strong { color: var(--ink); }
+
+    /* ── Footer ── */
+    footer.page-footer {
+      background: var(--ink); color: rgba(255,255,255,0.65);
+      padding: 32px 24px; text-align: center; font-size: 0.84em;
+    }
+    footer.page-footer a { color: white; text-decoration: underline; text-underline-offset: 3px; }
+
+    /* ── Mobile breakpoints ── */
+    @media (max-width: 760px) {
+      .hero { padding: 44px 20px 40px; }
+      .hero h1 { font-size: 1.7em; }
+      .hero .hero-stat-row { gap: 14px; font-size: 0.78em; }
+      h2 { font-size: 1.4em; }
+      section { padding: 44px 0; }
+      .wrap, .wrap-sm { padding: 0 18px; }
+    }
+    @media (max-width: 480px) {
+      .hero h1 { font-size: 1.5em; }
+      .calc { padding: 22px 18px; }
+      .plan-card { padding: 22px 18px; }
+    }
 
     /* ── Print ── */
     @media print {
-      body { background: white; font-size: 12px; }
-      .hero { background: var(--primary) !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-      .currency-toggle { display: none; }
-      .plan-card.featured { border-color: var(--primary) !important; }
-      .cta-footer { background: var(--primary) !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-      section { padding: 32px 0; }
-    }
-
-    @media (max-width: 760px) {
-      .plan-grid { grid-template-columns: 1fr; }
-      .faq-grid { grid-template-columns: 1fr; }
-      .addon-bar { flex-direction: column; align-items: flex-start; }
-      .addon-bar .addon-price { text-align: left; }
-      .hero h1 { font-size: 1.6em; }
-      .summary-grid { grid-template-columns: 1fr !important; }
-      .comp-table { font-size: 0.72em; }
-      .wrap { padding: 0 16px; }
-      section { padding: 36px 0; }
-    }
-    @media (max-width: 480px) {
-      .hero { padding: 40px 20px 36px; }
-      .hero h1 { font-size: 1.4em; }
-      .plan-card { padding: 24px 20px; }
+      body { background: white; font-size: 11px; }
+      .currency-toggle, .skip-link, .calc-cta, .cta-buttons { display: none; }
+      .hero, .cta-footer { background: var(--primary) !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .plan-card { break-inside: avoid; }
+      section { padding: 24px 0; }
     }
   </style>
 </head>
 <body>
 
-<!-- ── Hero ── -->
-<div class="hero">
-  <div class="brand">
-    <div class="brand-badge">K</div>
-    <span class="brand-name">Kilter</span>
+  <a href="#main" class="skip-link">Skip to content</a>
+
+  <!-- SVG icon sprite -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <defs>
+      <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></symbol>
+      <symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></symbol>
+      <symbol id="i-arrow-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></symbol>
+      <symbol id="i-users" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></symbol>
+      <symbol id="i-shield-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></symbol>
+      <symbol id="i-server" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></symbol>
+      <symbol id="i-credit-card" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></symbol>
+      <symbol id="i-zap" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></symbol>
+      <symbol id="i-headphones" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></symbol>
+      <symbol id="i-calculator" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="16" y1="14" x2="16" y2="18"/><line x1="16" y1="10" x2="16.01" y2="10"/><line x1="12" y1="10" x2="12.01" y2="10"/><line x1="8" y1="10" x2="8.01" y2="10"/><line x1="12" y1="14" x2="12.01" y2="14"/><line x1="8" y1="14" x2="8.01" y2="14"/><line x1="12" y1="18" x2="12.01" y2="18"/><line x1="8" y1="18" x2="8.01" y2="18"/></symbol>
+      <symbol id="i-trending-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></symbol>
+      <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></symbol>
+      <symbol id="i-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></symbol>
+      <symbol id="i-alert-triangle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></symbol>
+      <symbol id="i-file-text" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></symbol>
+      <symbol id="i-mail" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></symbol>
+    </defs>
+  </svg>
+
+  <!-- ════════════════════════════════════════════ HERO ════════════════════════════════════════════ -->
+  <header class="hero">
+    <div class="hero-inner">
+      <div class="brand">
+        <div class="brand-badge">K</div>
+        <span class="brand-name">Kilter</span>
+      </div>
+      <h1>Simple, transparent pricing.</h1>
+      <p class="lede">Self-hosted reconciliation for banks and payments businesses. Pilot from $5K. Production from $24K/year. No per-user fees.</p>
+
+      <div class="hero-stat-row">
+        <span><svg width="14" height="14" aria-hidden="true"><use href="#i-users"/></svg> Unlimited users</span>
+        <span><svg width="14" height="14" aria-hidden="true"><use href="#i-server"/></svg> Self-hosted</span>
+        <span><svg width="14" height="14" aria-hidden="true"><use href="#i-shield-check"/></svg> MFA + audit log</span>
+      </div>
+
+      <div class="currency-toggle" role="group" aria-label="Display currency">
+        <button class="active" data-currency="usd">USD $</button>
+        <button data-currency="ghs">GHS ₵</button>
+        <button data-currency="ngn">NGN ₦</button>
+        <button data-currency="kes">KES KSh</button>
+        <button data-currency="zar">ZAR R</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="banner">
+    <svg width="16" height="16" aria-hidden="true"><use href="#i-users"/></svg>
+    <strong>Unlimited users on every plan.</strong> No per-seat fees, ever. Pay by capacity, not headcount.
   </div>
-  <h1>Simple, transparent pricing</h1>
-  <p>Self-hosted reconciliation for correspondent-banking treasuries. No per-user fees, no hidden modules.</p>
 
-  <div class="currency-toggle">
-    <button class="active" onclick="setCurrency('usd')" id="btn-usd">USD $</button>
-    <button onclick="setCurrency('ghs')" id="btn-ghs">GHS ₵</button>
-  </div>
-</div>
+  <main id="main">
 
-<!-- ── Plans ── -->
-<div class="wrap">
-
+  <!-- ════════════════════════════════════════════ PLANS ════════════════════════════════════════════ -->
   <section id="plans">
-    <h2>Choose your plan</h2>
-    <p class="section-sub">All plans are self-hosted on your own infrastructure. Kilter never phones home.</p>
+    <div class="wrap">
+      <div class="eyebrow">Four ways to start</div>
+      <h2>Choose your plan</h2>
+      <p class="section-sub">All plans self-hosted on your own infrastructure. Kilter never phones home. No telemetry, no cloud sync.</p>
 
-    <div class="plan-grid">
+      <div class="plan-grid">
 
-      <!-- Pilot -->
-      <div class="plan-card">
-        <div class="plan-label">Get started</div>
-        <div class="plan-name">Pilot</div>
-        <div class="plan-desc">Fixed-term proof of concept. Run parallel to your existing tool and measure the real numbers before you commit.</div>
-        <div class="plan-price">
-          <div class="amount usd-price">$7,500</div>
-          <div class="amount ghs-price" style="display:none">₵84,000</div>
-          <span class="period">/ 3 months, one-time</span>
-          <div class="alt-currency usd-price">≈ ₵84,000 at today's rate</div>
-          <div class="alt-currency ghs-price" style="display:none">≈ $7,500 USD</div>
+        <!-- Pilot -->
+        <div class="plan-card">
+          <div class="plan-label">Try the product</div>
+          <div class="plan-name">Pilot</div>
+          <div class="plan-desc">Full product on real data. Hard-capped capacity. Walk away or convert in 90 days.</div>
+          <div class="plan-price">
+            <span class="currency-sym" data-currency-sym="$">$</span><span class="amount" data-price="pilot">5,000</span>
+            <div class="alt-currency"><span class="period">/ 90 days, one-time</span></div>
+          </div>
+          <div class="plan-impl">
+            <strong>Includes:</strong> deployment, onboarding session, all modules unlocked for evaluation.
+          </div>
+          <a href="#contact" class="plan-cta">
+            Start a pilot
+            <svg width="14" height="14" aria-hidden="true"><use href="#i-arrow-right"/></svg>
+          </a>
+          <div class="pilot-discount">
+            <strong>Hit pilot KPIs → 50% off Year 1.</strong> Design-partner program for the first 5 production conversions.
+          </div>
+          <hr class="plan-divider">
+          <ul class="plan-features">
+            <li><span class="ck"><svg width="9" height="9"><use href="#i-check"/></svg></span><span class="txt">3 nostro + 2 wallet + 1 cards account</span></li>
+            <li><span class="ck"><svg width="9" height="9"><use href="#i-check"/></svg></span><span class="txt"><strong>All modules unlocked</strong> for evaluation</span></li>
+            <li><span class="ck"><svg width="9" height="9"><use href="#i-check"/></svg></span><span class="txt">SWIFT MT940/950, camt.053/054, mobile money, cards</span></li>
+            <li><span class="ck"><svg width="9" height="9"><use href="#i-check"/></svg></span><span class="txt">Watched-folder auto-scan + scheduler</span></li>
+            <li><span class="ck"><svg width="9" height="9"><use href="#i-check"/></svg></span><span class="txt">4 roles + TOTP MFA + audit log</span></li>
+            <li><span class="ck"><svg width="9" height="9"><use href="#i-check"/></svg></span><span class="txt">Pilot credit applies to Year 1</span></li>
+            <li><span class="ck"><svg width="9" height="9"><use href="#i-check"/></svg></span><span class="txt">48 h email support</span></li>
+            <li><span class="ck"><svg width="9" height="9"><use href="#i-check"/></svg></span><span class="txt">Walk away — we delete your data</span></li>
+          </ul>
         </div>
-        <div class="plan-impl">
-          <strong>Includes:</strong> deployment, onboarding session, and staff walk-through. No separate implementation fee.
+
+        <!-- Core (featured) -->
+        <div class="plan-card featured">
+          <div class="plan-label">Production-ready</div>
+          <div class="plan-name">Core</div>
+          <div class="plan-desc">Day-to-day reconciliation for treasury operations. SWIFT + GL + mobile money. Cards as add-on.</div>
+          <div class="plan-price">
+            <span class="currency-sym" data-currency-sym="$">$</span><span class="amount" data-price="core">24,000</span>
+            <div class="alt-currency"><span class="period">/ year</span></div>
+          </div>
+          <div class="plan-impl">
+            <strong>+ Implementation:</strong>
+            <span class="currency-sym" data-currency-sym="$">$</span><span data-price="core_impl">6,000</span> assisted ·
+            <span class="currency-sym" data-currency-sym="$">$</span><span data-price="core_impl_self">2,000</span> self-deploy
+          </div>
+          <a href="#contact" class="plan-cta">
+            Get Core
+            <svg width="14" height="14" aria-hidden="true"><use href="#i-arrow-right"/></svg>
+          </a>
+          <hr class="plan-divider">
+          <ul class="plan-features">
+            <li><span class="ck"><svg width="9" height="9"><use href="#i-check"/></svg></span><span class="txt"><strong>Up to 25 nostro accounts</strong></span></li>
+            <li><span class="ck"><svg width="9" height="9"><use href="#i-check"/></svg></span><span class="txt">SWIFT MT940/950 + camt.053/054</span></li>
+            <li><span class="ck"><svg width="9" height="9"><use href="#i-check"/></svg></span><span class="txt">Flexcube + T24 + Finacle GL</span></li>
+            <li><span class="ck"><svg width="9" height="9"><use href="#i-check"/></svg></span><span class="txt">Mobile money module included <span class="note">(MTN, M-Pesa, Airtel, Telcel)</span></span></li>
+            <li><span class="ck"><svg width="9" height="9"><use href="#i-check"/></svg></span><span class="txt">7 automation jobs + nightly backup</span></li>
+            <li><span class="ck"><svg width="9" height="9"><use href="#i-check"/></svg></span><span class="txt"><strong>AD / LDAP integration</strong></span></li>
+            <li><span class="ck"><svg width="9" height="9"><use href="#i-check"/></svg></span><span class="txt">BYO format profiles · unlimited</span></li>
+            <li><span class="ck"><svg width="9" height="9"><use href="#i-check"/></svg></span><span class="txt">Month-end certificates + maker-checker</span></li>
+            <li><span class="ck dim"><svg width="9" height="9"><use href="#i-x"/></svg></span><span class="txt" style="color:var(--subtle)">Cards module · <strong style="color:var(--accent)">add $8K/yr</strong></span></li>
+            <li><span class="ck dim"><svg width="9" height="9"><use href="#i-x"/></svg></span><span class="txt" style="color:var(--subtle)">Priority support · <strong style="color:var(--accent)">add $8K/yr</strong></span></li>
+            <li><span class="ck"><svg width="9" height="9"><use href="#i-check"/></svg></span><span class="txt">48 h email support</span></li>
+          </ul>
         </div>
-        <a href="#contact" class="plan-cta">Start a pilot</a>
-        <hr class="plan-divider">
-        <ul class="plan-features">
-          <li><span class="ck">✓</span><span class="txt">Up to 5 nostro accounts</span></li>
-          <li><span class="ck">✓</span><span class="txt">SWIFT MT940/950 + camt.053/054</span></li>
-          <li><span class="ck">✓</span><span class="txt">Flexcube GL reconciliation</span></li>
-          <li><span class="ck">✓</span><span class="txt">4 roles + TOTP MFA</span></li>
-          <li><span class="ck">✓</span><span class="txt">Immutable audit log + CSV export</span></li>
-          <li><span class="ck">✓</span><span class="txt">Manual intake (upload)</span></li>
-          <li><span class="ck dim">–</span><span class="txt" style="color:var(--subtle)">Scheduler automation</span></li>
-          <li><span class="ck dim">–</span><span class="txt" style="color:var(--subtle)">Mobile money module</span></li>
-          <li><span class="ck dim">–</span><span class="txt" style="color:var(--subtle)">Cards module</span></li>
-          <li><span class="ck">✓</span><span class="txt">Email support <span class="note">(48 h response)</span></span></li>
-          <li><span class="ck">✓</span><span class="txt">Converts to Standard at term end</span></li>
-        </ul>
+
+        <!-- Scale -->
+        <div class="plan-card">
+          <div class="plan-label">All-in</div>
+          <div class="plan-name">Scale</div>
+          <div class="plan-desc">Larger treasuries with card settlement, Oracle automation, multi-cluster orgs. Everything included.</div>
+          <div class="plan-price">
+            <span class="currency-sym" data-currency-sym="$">$</span><span class="amount" data-price="scale">48,000</span>
+            <div class="alt-currency"><span class="period">/ year</span></div>
+          </div>
+          <div class="plan-impl">
+            <strong>+ Implementation:</strong>
+            <span class="currency-sym" data-currency-sym="$">$</span><span data-price="scale_impl">10,000</span> — custom mapping, Oracle setup, extended onboarding.
+          </div>
+          <a href="#contact" class="plan-cta">
+            Talk to us
+            <svg width="14" height="14" aria-hidden="true"><use href="#i-arrow-right"/></svg>
+          </a>
+          <hr class="plan-divider">
+          <ul class="plan-features">
+            <li><span class="ck"><svg width="9" height="9"><use href="#i-check"/></svg></span><span class="txt"><strong>Unlimited</strong> nostro + wallet accounts</span></li>
+            <li><span class="ck"><svg width="9" height="9"><use href="#i-check"/></svg></span><span class="txt">Everything in Core</span></li>
+            <li><span class="ck"><svg width="9" height="9"><use href="#i-check"/></svg></span><span class="txt"><strong>Cards module included</strong> <span class="note">(Visa Base II, Mastercard IPM, GhIPSS)</span></span></li>
+            <li><span class="ck"><svg width="9" height="9"><use href="#i-check"/></svg></span><span class="txt">Oracle Flexcube extract automation</span></li>
+            <li><span class="ck"><svg width="9" height="9"><use href="#i-check"/></svg></span><span class="txt">PCI-DSS storage scope reduction</span></li>
+            <li><span class="ck"><svg width="9" height="9"><use href="#i-check"/></svg></span><span class="txt"><strong>4 h response SLA</strong> · direct contact</span></li>
+            <li><span class="ck"><svg width="9" height="9"><use href="#i-check"/></svg></span><span class="txt">Dedicated account manager</span></li>
+            <li><span class="ck"><svg width="9" height="9"><use href="#i-check"/></svg></span><span class="txt">Custom scheduler params</span></li>
+            <li><span class="ck"><svg width="9" height="9"><use href="#i-check"/></svg></span><span class="txt">Quarterly review sessions</span></li>
+          </ul>
+        </div>
+
+        <!-- Custom -->
+        <div class="plan-card custom">
+          <div class="plan-label">Enterprise</div>
+          <div class="plan-name">Custom</div>
+          <div class="plan-desc">Tier-1 banks, multi-entity, multi-country, regulator deployments. Volume pricing applies.</div>
+          <div class="plan-price">
+            <span class="amount small">Let's talk</span>
+            <div class="alt-currency"><span class="period">Volume + multi-year discounts</span></div>
+          </div>
+          <div class="plan-impl">
+            <strong>Implementation:</strong> Scoped to your environment — multi-region, HA failover, custom integrations.
+          </div>
+          <a href="mailto:timelessnypotech@outlook.com?subject=Kilter%20Custom%20Pricing" class="plan-cta">
+            Contact sales
+            <svg width="14" height="14" aria-hidden="true"><use href="#i-arrow-right"/></svg>
+          </a>
+          <hr class="plan-divider">
+          <ul class="plan-features">
+            <li><span class="ck"><svg width="9" height="9"><use href="#i-check"/></svg></span><span class="txt">Everything in Scale</span></li>
+            <li><span class="ck"><svg width="9" height="9"><use href="#i-check"/></svg></span><span class="txt">Multi-entity / multi-country</span></li>
+            <li><span class="ck"><svg width="9" height="9"><use href="#i-check"/></svg></span><span class="txt">HA / DR architecture</span></li>
+            <li><span class="ck"><svg width="9" height="9"><use href="#i-check"/></svg></span><span class="txt">Custom SLA + named engineer</span></li>
+            <li><span class="ck"><svg width="9" height="9"><use href="#i-check"/></svg></span><span class="txt">Bespoke format mapping</span></li>
+            <li><span class="ck"><svg width="9" height="9"><use href="#i-check"/></svg></span><span class="txt">On-site engagement available</span></li>
+            <li><span class="ck"><svg width="9" height="9"><use href="#i-check"/></svg></span><span class="txt">Volume + 3-year contract pricing</span></li>
+            <li><span class="ck"><svg width="9" height="9"><use href="#i-check"/></svg></span><span class="txt">Regulator / central-bank discounts</span></li>
+          </ul>
+        </div>
+
+      </div><!-- /plan-grid -->
+
+      <div class="fx-notice">
+        <svg width="16" height="16" aria-hidden="true"><use href="#i-info"/></svg>
+        <span>
+          <strong>Multi-year discounts:</strong> -10% on 2-year commit, -15% on 3-year (USD-denominated).
+          Non-USD prices are indicative at mid-market rates. Contracts can be denominated in USD or local currency with rate locked at signing.
+        </span>
       </div>
-
-      <!-- Standard (featured) -->
-      <div class="plan-card featured">
-        <div class="plan-label">Full production</div>
-        <div class="plan-name">Standard</div>
-        <div class="plan-desc">Everything a treasury operations team needs for day-to-day reconciliation, automated overnight runs, and regulatory reporting.</div>
-        <div class="plan-price">
-          <div class="amount usd-price">$28,000</div>
-          <div class="amount ghs-price" style="display:none">₵314,000</div>
-          <span class="period">/ year</span>
-          <div class="alt-currency usd-price">≈ ₵314,000 at today's rate</div>
-          <div class="alt-currency ghs-price" style="display:none">≈ $28,000 USD</div>
-        </div>
-        <div class="plan-impl">
-          <strong>+ One-time implementation fee:</strong>
-          <span class="usd-price">$8,000</span><span class="ghs-price" style="display:none">₵90,000</span>
-          — deployment, data migration, onboarding, and go-live sign-off.
-        </div>
-        <a href="#contact" class="plan-cta">Get Standard</a>
-        <hr class="plan-divider">
-        <ul class="plan-features">
-          <li><span class="ck">✓</span><span class="txt">Up to 15 nostro accounts</span></li>
-          <li><span class="ck">✓</span><span class="txt">SWIFT MT940/950 + camt.053/054</span></li>
-          <li><span class="ck">✓</span><span class="txt">Flexcube GL reconciliation</span></li>
-          <li><span class="ck">✓</span><span class="txt">4 roles + TOTP MFA (any app)</span></li>
-          <li><span class="ck">✓</span><span class="txt">Immutable audit log + CSV export</span></li>
-          <li><span class="ck">✓</span><span class="txt">Auto-scan <span class="note">(watched folder + manual upload)</span></span></li>
-          <li><span class="ck">✓</span><span class="txt"><strong>7 automation jobs</strong> <span class="note">(backup, scan, close, SLA, breaks report, cleanup)</span></span></li>
-          <li><span class="ck">✓</span><span class="txt">Mobile money module <span class="note">(M-Pesa, MTN MoMo, Airtel)</span></span></li>
-          <li><span class="ck">✓</span><span class="txt">BYO format profiles</span></li>
-          <li><span class="ck">✓</span><span class="txt">Month-end certificates</span></li>
-          <li><span class="ck dim">–</span><span class="txt" style="color:var(--subtle)">Cards module (Visa / Mastercard)</span></li>
-          <li><span class="ck dim">–</span><span class="txt" style="color:var(--subtle)">Oracle Flexcube extract automation</span></li>
-          <li><span class="ck">✓</span><span class="txt">Email support <span class="note">(48 h response)</span></span></li>
-        </ul>
-      </div>
-
-      <!-- Enterprise -->
-      <div class="plan-card">
-        <div class="plan-label">Full capability</div>
-        <div class="plan-name">Enterprise</div>
-        <div class="plan-desc">For larger treasury operations with multiple account clusters, card settlement, Oracle extract automation, and an SLA-backed support contract.</div>
-        <div class="plan-price">
-          <div class="amount usd-price">$45,000</div>
-          <div class="amount ghs-price" style="display:none">₵504,000</div>
-          <span class="period">/ year</span>
-          <div class="alt-currency usd-price">≈ ₵504,000 at today's rate</div>
-          <div class="alt-currency ghs-price" style="display:none">≈ $45,000 USD</div>
-        </div>
-        <div class="plan-impl">
-          <strong>+ One-time implementation fee:</strong>
-          <span class="usd-price">$12,000</span><span class="ghs-price" style="display:none">₵134,500</span>
-          — includes custom format mapping, Oracle extract setup, and extended onboarding.
-        </div>
-        <a href="#contact" class="plan-cta">Talk to us</a>
-        <hr class="plan-divider">
-        <ul class="plan-features">
-          <li><span class="ck">✓</span><span class="txt"><strong>Unlimited</strong> nostro accounts</span></li>
-          <li><span class="ck">✓</span><span class="txt">SWIFT MT940/950 + camt.053/054</span></li>
-          <li><span class="ck">✓</span><span class="txt">Flexcube GL reconciliation</span></li>
-          <li><span class="ck">✓</span><span class="txt">4 roles + TOTP MFA + AD/LDAP integration</span></li>
-          <li><span class="ck">✓</span><span class="txt">Immutable audit log + CSV export</span></li>
-          <li><span class="ck">✓</span><span class="txt">Auto-scan + Oracle Flexcube extract automation</span></li>
-          <li><span class="ck">✓</span><span class="txt"><strong>7 automation jobs</strong> + custom schedule params</span></li>
-          <li><span class="ck">✓</span><span class="txt">Mobile money module <span class="note">(all profiles)</span></span></li>
-          <li><span class="ck">✓</span><span class="txt"><strong>Cards module</strong> <span class="note">(Visa Base II / Mastercard IPM)</span></span></li>
-          <li><span class="ck">✓</span><span class="txt">BYO format profiles — unlimited</span></li>
-          <li><span class="ck">✓</span><span class="txt">Month-end certificates</span></li>
-          <li><span class="ck">✓</span><span class="txt">Priority support <span class="note">(4 h SLA, direct contact)</span></span></li>
-          <li><span class="ck">✓</span><span class="txt">Dedicated account manager</span></li>
-        </ul>
-      </div>
-
-    </div><!-- /plan-grid -->
-
-    <!-- Add-on -->
-    <div class="addon-bar">
-      <div style="flex-shrink:0; width:36px; height:36px; border-radius:8px; background:var(--primary-soft); display:flex; align-items:center; justify-content:center;">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.72 11a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.62 0h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
-      </div>
-      <div class="addon-info">
-        <div class="addon-name">Priority Support Add-on <span style="background:var(--primary-soft);color:var(--primary);font-size:10px;font-weight:700;padding:2px 8px;border-radius:12px;margin-left:6px;letter-spacing:0.3px;text-transform:uppercase;">Standard only</span></div>
-        <div class="addon-desc">Upgrades Standard to a 4 h response SLA with direct contact. Recommended for banks processing more than 500 transactions per cycle.</div>
-      </div>
-      <div class="addon-price">
-        <div>
-          <span class="amount usd-price">$10,000</span>
-          <span class="amount ghs-price" style="display:none">₵112,000</span>
-          <span class="period"> / year</span>
-        </div>
-        <span class="alt usd-price">≈ ₵112,000</span>
-        <span class="alt ghs-price" style="display:none">≈ $10,000 USD</span>
-      </div>
-    </div>
-
-    <div class="fx-notice">
-      GHS prices are indicative, calculated at <strong>1 USD = 11.20 GHS</strong> (mid-market, May 2026).
-      Contracts denominated in GHS will reference the Bank of Ghana mid-rate on the invoice date.
-      Annual renewals are re-quoted at the prevailing rate unless a USD-denominated contract is agreed.
-    </div>
-
-  </section>
-
-  <!-- ── Comparison table ── -->
-  <section id="compare">
-    <h2>Full feature comparison</h2>
-    <p class="section-sub">Everything included in each plan at a glance.</p>
-
-    <div style="overflow-x:auto">
-    <table class="comp-table">
-      <thead>
-        <tr>
-          <th style="width:42%">Feature</th>
-          <th class="plan-col">Pilot</th>
-          <th class="plan-col hi">Standard</th>
-          <th class="plan-col">Enterprise</th>
-        </tr>
-      </thead>
-      <tbody>
-
-        <tr class="cat-row"><td colspan="4">Reconciliation</td></tr>
-        <tr><td>Nostro accounts</td><td class="plan-col">Up to 5</td><td class="plan-col hi">Up to 15</td><td class="plan-col">Unlimited</td></tr>
-        <tr><td>SWIFT MT940 / MT950</td><td class="plan-col"><span class="comp-tick">✓</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
-        <tr><td>ISO 20022 camt.053 / camt.054</td><td class="plan-col"><span class="comp-tick">✓</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
-        <tr><td>Flexcube GL reconciliation</td><td class="plan-col"><span class="comp-tick">✓</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
-        <tr><td>Mobile money (M-Pesa, MTN MoMo, Airtel, Telcel)</td><td class="plan-col"><span class="comp-dash">—</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
-        <tr><td>Cards settlement (Visa Base II / Mastercard IPM)</td><td class="plan-col"><span class="comp-dash">—</span></td><td class="plan-col hi"><span class="comp-dash">—</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
-        <tr><td>BYO format profiles</td><td class="plan-col"><span class="comp-dash">—</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span> Unlimited</td></tr>
-        <tr><td>Four-tier matching engine</td><td class="plan-col"><span class="comp-tick">✓</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
-
-        <tr class="cat-row"><td colspan="4">Intake &amp; automation</td></tr>
-        <tr><td>Manual upload</td><td class="plan-col"><span class="comp-tick">✓</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
-        <tr><td>Watched-folder auto-scan</td><td class="plan-col"><span class="comp-dash">—</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
-        <tr><td>Oracle Flexcube extract automation</td><td class="plan-col"><span class="comp-dash">—</span></td><td class="plan-col hi"><span class="comp-dash">—</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
-        <tr><td>Scheduler jobs (pre-seeded)</td><td class="plan-col"><span class="comp-dash">—</span></td><td class="plan-col hi"><span class="comp-val">7 jobs</span></td><td class="plan-col"><span class="comp-val">7 jobs</span></td></tr>
-        <tr><td>Nightly DB backup (built-in)</td><td class="plan-col"><span class="comp-dash">—</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
-        <tr><td>SLA alerts (Teams / email)</td><td class="plan-col"><span class="comp-dash">—</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
-        <tr><td>Daily breaks report (email)</td><td class="plan-col"><span class="comp-dash">—</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
-
-        <tr class="cat-row"><td colspan="4">Access control &amp; compliance</td></tr>
-        <tr><td>Roles (admin, ops, audit, internal control)</td><td class="plan-col"><span class="comp-tick">✓</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
-        <tr><td>TOTP MFA (any authenticator app)</td><td class="plan-col"><span class="comp-tick">✓</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
-        <tr><td>AD / LDAP integration</td><td class="plan-col"><span class="comp-dash">—</span></td><td class="plan-col hi"><span class="comp-dash">—</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
-        <tr><td>Access-area scoping (branch / cluster / all)</td><td class="plan-col"><span class="comp-tick">✓</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
-        <tr><td>Immutable audit log</td><td class="plan-col"><span class="comp-tick">✓</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
-        <tr><td>Audit log CSV export</td><td class="plan-col"><span class="comp-tick">✓</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
-        <tr><td>Month-end certificates</td><td class="plan-col"><span class="comp-dash">—</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
-        <tr><td>Two-person approval gate (maker-checker)</td><td class="plan-col"><span class="comp-dash">—</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
-
-        <tr class="cat-row"><td colspan="4">Infrastructure &amp; security</td></tr>
-        <tr><td>Self-hosted on your own servers</td><td class="plan-col"><span class="comp-tick">✓</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
-        <tr><td>Docker single-container deploy</td><td class="plan-col"><span class="comp-tick">✓</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
-        <tr><td>HSTS, CSP, X-Frame-Options headers</td><td class="plan-col"><span class="comp-tick">✓</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
-        <tr><td>Encrypted secrets at rest (Fernet)</td><td class="plan-col"><span class="comp-tick">✓</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
-        <tr><td>Pre-launch security review completed</td><td class="plan-col"><span class="comp-tick">✓</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
-
-        <tr class="cat-row"><td colspan="4">Support</td></tr>
-        <tr><td>Email support</td><td class="plan-col"><span class="comp-val">48 h</span></td><td class="plan-col hi"><span class="comp-val">48 h</span></td><td class="plan-col"><span class="comp-val">4 h SLA</span></td></tr>
-        <tr><td>Priority support (4 h SLA)</td><td class="plan-col"><span class="comp-dash">—</span></td><td class="plan-col hi">Add-on</td><td class="plan-col"><span class="comp-tick">✓</span> Included</td></tr>
-        <tr><td>Dedicated account manager</td><td class="plan-col"><span class="comp-dash">—</span></td><td class="plan-col hi"><span class="comp-dash">—</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
-
-      </tbody>
-    </table>
     </div>
   </section>
 
-  <!-- ── FAQ ── -->
-  <section id="faq">
-    <h2>Common questions</h2>
-    <p class="section-sub">If your question isn't here, get in touch.</p>
+  <!-- ════════════════════════════════════════════ CALCULATOR ════════════════════════════════════════════ -->
+  <section id="calculator" style="background:linear-gradient(180deg,var(--bg) 0%,var(--bg-2) 100%);">
+    <div class="wrap-sm">
+      <div class="eyebrow">Live cost</div>
+      <h2>Calculate your price</h2>
+      <p class="section-sub">Three inputs. Live Year 1 total + payback estimate. Built for procurement-ready quotes.</p>
 
-    <div class="faq-grid">
+      <div class="calc">
+        <div class="calc-inputs">
+          <h3><svg width="18" height="18" aria-hidden="true"><use href="#i-calculator"/></svg> Your setup</h3>
 
-      <div class="faq-item">
-        <h3>Is there a free trial?</h3>
-        <p>No free trial — but the Pilot plan is designed to serve the same purpose with real skin in the game on both sides.
-        A paid pilot means both parties are committed to a real outcome, not a slideware evaluation.
-        At <strong>$7,500 / ₵84,000</strong> it is well within a departmental discretionary budget.</p>
+          <div class="calc-row">
+            <label for="c-nostro">Nostro / GL accounts <span class="val" id="v-nostro">12</span></label>
+            <input id="c-nostro" type="range" min="1" max="60" value="12" aria-describedby="v-nostro">
+            <div class="hint">Each correspondent banking relationship counts as one</div>
+          </div>
+
+          <div class="calc-row">
+            <label for="c-wallet">Mobile money / wallet accounts <span class="val" id="v-wallet">0</span></label>
+            <input id="c-wallet" type="range" min="0" max="15" value="0" aria-describedby="v-wallet">
+            <div class="hint">MTN MoMo, M-Pesa, Airtel, Telcel etc.</div>
+          </div>
+
+          <div class="calc-row">
+            <label>Need cards module?</label>
+            <div class="calc-toggle" role="group" aria-label="Cards module">
+              <button class="active" data-cards="0">No</button>
+              <button data-cards="1">Yes — Visa, Mastercard, GhIPSS</button>
+            </div>
+          </div>
+
+          <div class="calc-row">
+            <label>Support tier</label>
+            <div class="calc-toggle" role="group" aria-label="Support tier">
+              <button class="active" data-priority="0">48 h email</button>
+              <button data-priority="1">4 h SLA priority</button>
+            </div>
+          </div>
+
+          <div class="calc-row">
+            <label>Deployment</label>
+            <div class="calc-toggle" role="group" aria-label="Deployment">
+              <button class="active" data-deploy="assisted">Assisted</button>
+              <button data-deploy="self">Self-deploy</button>
+            </div>
+          </div>
+
+          <div class="calc-row">
+            <label>Contract length</label>
+            <div class="calc-toggle" role="group" aria-label="Contract length">
+              <button class="active" data-years="1">1 year</button>
+              <button data-years="2">2 years <span style="opacity:0.7">−10%</span></button>
+              <button data-years="3">3 years <span style="opacity:0.7">−15%</span></button>
+            </div>
+          </div>
+        </div>
+
+        <div class="calc-output">
+          <div class="calc-tier" id="o-tier">Core</div>
+          <h3><svg width="18" height="18" aria-hidden="true"><use href="#i-trending-down"/></svg> Year 1 estimate</h3>
+          <div class="calc-total">
+            <span class="sym" id="o-sym">$</span><span id="o-total">30,000</span>
+          </div>
+          <div class="calc-period" id="o-period">USD · all modules + implementation</div>
+
+          <div class="calc-breakdown">
+            <div class="calc-row-out"><span>License (Year 1)</span><span class="v" id="o-license">$24,000</span></div>
+            <div class="calc-row-out"><span>Cards module</span><span class="v" id="o-cards">—</span></div>
+            <div class="calc-row-out"><span>Priority support</span><span class="v" id="o-priority">—</span></div>
+            <div class="calc-row-out"><span>Implementation</span><span class="v" id="o-impl">$6,000</span></div>
+            <div class="calc-row-out"><span>Multi-year discount</span><span class="v" id="o-discount">—</span></div>
+            <div class="calc-row-out recurring"><span>Year 2+ recurring</span><span class="v" id="o-recurring">$24,000</span></div>
+          </div>
+
+          <div class="calc-payback">
+            <svg width="20" height="20" aria-hidden="true"><use href="#i-clock"/></svg>
+            <span>Payback in <strong id="o-payback">4.2 months</strong> vs. 2 FTEs reconciling manually</span>
+          </div>
+
+          <a href="#contact" class="calc-cta">
+            Get a procurement-ready quote
+            <svg width="14" height="14" aria-hidden="true"><use href="#i-arrow-right"/></svg>
+          </a>
+        </div>
       </div>
-
-      <div class="faq-item">
-        <h3>What does the implementation fee cover?</h3>
-        <p>Server deployment, schema setup, initial account registration, user onboarding session,
-        and a go-live sign-off call. For Enterprise it also includes custom format mapping for any
-        non-standard GL extract and Oracle Flexcube extract configuration.
-        <strong>There are no surprise fees after this — support and updates are included in the annual license.</strong></p>
-      </div>
-
-      <div class="faq-item">
-        <h3>How does the Pilot convert to Standard?</h3>
-        <p>At the end of the 3-month pilot term, we invoice the annual Standard license (minus the Pilot fee already paid — so you pay
-        <strong>$28,000 − $7,500 = $20,500</strong> to complete year one). No data migration needed — the same database carries forward.</p>
-      </div>
-
-      <div class="faq-item">
-        <h3>Can the GHS price be locked?</h3>
-        <p>Yes. Contracts can be denominated in GHS with a fixed exchange rate agreed at signing, locked for 12 months.
-        At renewal the rate is re-negotiated based on the prevailing Bank of Ghana mid-rate.
-        <strong>USD-denominated contracts are also available</strong> and are recommended for multi-year commitments.</p>
-      </div>
-
-      <div class="faq-item">
-        <h3>Does our data leave our servers?</h3>
-        <p>No. Kilter is entirely self-hosted — it runs on your own VM or Docker host and
-        <strong>never phones home</strong>. No telemetry, no cloud sync, no vendor access to your data.
-        Your SWIFT statements and GL data stay inside your network perimeter at all times.</p>
-      </div>
-
-      <div class="faq-item">
-        <h3>What happens at renewal?</h3>
-        <p>Renewal invoices are sent 45 days before the license anniversary.
-        You can upgrade tiers at renewal at the then-current pricing.
-        Downgrading from Enterprise to Standard requires a 90-day notice.
-        <strong>There is no auto-renew without a signed order form.</strong></p>
-      </div>
-
-      <div class="faq-item">
-        <h3>How many users are included?</h3>
-        <p>All plans are <strong>unlimited users</strong> within your organisation. There are no per-seat fees.
-        Pricing is based on accounts (for Pilot / Standard) or flat (Enterprise).
-        Add as many ops staff, auditors, and internal control users as you need.</p>
-      </div>
-
-      <div class="faq-item">
-        <h3>What's included in software updates?</h3>
-        <p>The annual license includes all point releases and minor version upgrades
-        (e.g. 1.1, 1.2). Major version upgrades (2.0+) are offered at a discounted upgrade price for existing customers.
-        <strong>Security patches are always included</strong> and will be flagged as urgent when applicable.</p>
-      </div>
-
     </div>
   </section>
 
-  <!-- ── Year 1 cost summary ── -->
+  <!-- ════════════════════════════════════════════ ADD-ONS ════════════════════════════════════════════ -->
+  <section id="addons">
+    <div class="wrap">
+      <div class="eyebrow">Modular pricing</div>
+      <h2>Add-on modules</h2>
+      <p class="section-sub">Only pay for what you need. Add-ons stack onto Core; most are included in Scale.</p>
+
+      <div class="addons">
+        <div class="addon">
+          <div class="addon-icon"><svg width="20" height="20" aria-hidden="true"><use href="#i-credit-card"/></svg></div>
+          <div class="addon-body">
+            <div class="addon-name">Cards module</div>
+            <div class="addon-meta">Core add-on · included in Scale</div>
+            <div class="addon-desc">Visa Base II + Mastercard IPM + GhIPSS settlement reconciliation. N-way matching on scheme reference. PCI-DSS storage scope reduction built in.</div>
+          </div>
+          <div class="addon-price">
+            <div class="amount"><span class="currency-sym" data-currency-sym="$">$</span><span data-price="cards_addon">8,000</span></div>
+            <span class="period">/ year</span>
+          </div>
+        </div>
+
+        <div class="addon">
+          <div class="addon-icon"><svg width="20" height="20" aria-hidden="true"><use href="#i-headphones"/></svg></div>
+          <div class="addon-body">
+            <div class="addon-name">Priority Support</div>
+            <div class="addon-meta">Core add-on · included in Scale</div>
+            <div class="addon-desc">Upgrades email support to a 4-hour response SLA with direct engineering contact. Recommended for banks processing 500+ transactions per cycle.</div>
+          </div>
+          <div class="addon-price">
+            <div class="amount"><span class="currency-sym" data-currency-sym="$">$</span><span data-price="priority_addon">8,000</span></div>
+            <span class="period">/ year</span>
+          </div>
+        </div>
+
+        <div class="addon">
+          <div class="addon-icon"><svg width="20" height="20" aria-hidden="true"><use href="#i-file-text"/></svg></div>
+          <div class="addon-body">
+            <div class="addon-name">Custom format mapping</div>
+            <div class="addon-meta">One-time · all tiers</div>
+            <div class="addon-desc">For non-standard CSV / XLSX / DB extracts. We build the parser, ship the test pack, and integrate into your BYO format library.</div>
+          </div>
+          <div class="addon-price">
+            <div class="amount"><span class="currency-sym" data-currency-sym="$">$</span><span data-price="format_addon">3,000</span></div>
+            <span class="period">/ format</span>
+          </div>
+        </div>
+
+        <div class="addon">
+          <div class="addon-icon"><svg width="20" height="20" aria-hidden="true"><use href="#i-server"/></svg></div>
+          <div class="addon-body">
+            <div class="addon-name">+10 account capacity block</div>
+            <div class="addon-meta">Core only · stacks</div>
+            <div class="addon-desc">Push past the 25-account Core cap without upgrading to Scale. Buy in blocks of 10. No infrastructure or feature change — just capacity.</div>
+          </div>
+          <div class="addon-price">
+            <div class="amount"><span class="currency-sym" data-currency-sym="$">$</span><span data-price="capacity_addon">5,000</span></div>
+            <span class="period">/ year / block</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════ ROI ════════════════════════════════════════════ -->
+  <section id="roi">
+    <div class="wrap">
+      <div class="eyebrow">Cost benchmark</div>
+      <h2>How Kilter compares to the status quo</h2>
+      <p class="section-sub">Banks reconciling today are either paying for an end-of-life legacy tool or burning FTE hours on Excel. Both cost more.</p>
+
+      <div class="roi-compare">
+        <div class="roi-card legacy">
+          <div class="roi-label">Legacy reconciliation tool</div>
+          <div class="roi-name">SmartStream · Intellect · Oracle</div>
+          <div class="roi-cost">~$80K<span style="font-size:0.55em;font-weight:600;color:var(--muted);"> /year</span></div>
+          <div class="roi-detail">Per-seat licensing, multi-year lock-in, on-prem hardware. End-of-life UI. Limited mobile money / cards coverage. Expensive support contracts.</div>
+        </div>
+
+        <div class="roi-card manual">
+          <div class="roi-label">Manual reconciliation</div>
+          <div class="roi-name">2 FTEs in Excel + email</div>
+          <div class="roi-cost">~$60K<span style="font-size:0.55em;font-weight:600;color:var(--muted);"> /year</span></div>
+          <div class="roi-detail">2 ops staff at fully-loaded $30K each. No audit trail. Errors caught at month-end. Sign-off delayed. Auditor flags eventually.</div>
+        </div>
+
+        <div class="roi-card kilter">
+          <div class="roi-label">Kilter · Core tier</div>
+          <div class="roi-name">Self-hosted, audit-grade</div>
+          <div class="roi-cost kilter">$30K<span style="font-size:0.55em;font-weight:600;color:var(--muted);"> Year 1</span></div>
+          <div class="roi-detail"><strong>$24K Year 2+.</strong> Unlimited users. Audit log on every action. 75–85% auto-match at Tier 1. 1–2 min/file ingest.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════ YEAR 1 SUMMARY ════════════════════════════════════════════ -->
   <section id="summary">
-    <h2>What you pay in year one</h2>
-    <p class="section-sub">Implementation fee + first year license, all-in.</p>
+    <div class="wrap">
+      <div class="eyebrow">Year-one totals</div>
+      <h2>What you pay in Year 1</h2>
+      <p class="section-sub">License + implementation + first-year extras, all in one number. Year 2+ shown for budgeting.</p>
 
-    <div class="summary-grid" style="display:grid; grid-template-columns: repeat(3,1fr); gap:16px;">
+      <div class="summary-grid">
+        <div class="summary-tile">
+          <div class="tier-name">Pilot</div>
+          <div class="price"><span class="currency-sym" data-currency-sym="$">$</span><span data-price="pilot">5,000</span></div>
+          <div class="breakdown">Flat, 90 days · all modules</div>
+          <div class="year2">Convert: credited to Year 1</div>
+        </div>
 
-      <div style="background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:24px; text-align:center;">
-        <div style="font-size:0.8em; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); margin-bottom:8px;">Pilot</div>
-        <div style="font-size:2em; font-weight:800; color:var(--primary); letter-spacing:-1px;" class="usd-price">$7,500</div>
-        <div style="font-size:2em; font-weight:800; color:var(--primary); letter-spacing:-1px; display:none" class="ghs-price">₵84,000</div>
-        <div style="font-size:0.78em; color:var(--muted); margin-top:4px;">flat, 3 months</div>
-        <div style="font-size:0.78em; color:var(--muted); margin-top:2px; font-style:italic;" class="usd-price">≈ ₵84,000</div>
-        <div style="font-size:0.78em; color:var(--muted); margin-top:2px; font-style:italic; display:none" class="ghs-price">≈ $7,500</div>
-      </div>
+        <div class="summary-tile featured">
+          <div class="tier-name">Core (typical)</div>
+          <div class="price"><span class="currency-sym" data-currency-sym="$">$</span><span data-price="core_y1">30,000</span></div>
+          <div class="breakdown">$24K license + $6K impl</div>
+          <div class="year2">Year 2+: <span class="currency-sym" data-currency-sym="$">$</span><span data-price="core">24,000</span></div>
+        </div>
 
-      <div style="background:var(--primary-soft); border:2px solid var(--primary); border-radius:var(--radius); padding:24px; text-align:center;">
-        <div style="font-size:0.8em; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:var(--primary); margin-bottom:8px;">Standard — Year 1</div>
-        <div style="font-size:2em; font-weight:800; color:var(--primary); letter-spacing:-1px;" class="usd-price">$36,000</div>
-        <div style="font-size:2em; font-weight:800; color:var(--primary); letter-spacing:-1px; display:none" class="ghs-price">₵403,000</div>
-        <div style="font-size:0.78em; color:var(--muted); margin-top:4px;">$28K license + $8K implementation</div>
-        <div style="font-size:0.78em; color:var(--muted); margin-top:2px; font-style:italic;" class="usd-price">≈ ₵403,000</div>
-        <div style="font-size:0.78em; color:var(--muted); margin-top:2px; font-style:italic; display:none" class="ghs-price">≈ $36,000</div>
-        <div style="font-size:0.76em; color:var(--primary); font-weight:600; margin-top:6px;">Year 2+: $28,000 / ₵314,000</div>
-      </div>
+        <div class="summary-tile">
+          <div class="tier-name">Core + Cards</div>
+          <div class="price"><span class="currency-sym" data-currency-sym="$">$</span><span data-price="core_cards_y1">38,000</span></div>
+          <div class="breakdown">$24K + $8K cards + $6K impl</div>
+          <div class="year2">Year 2+: <span class="currency-sym" data-currency-sym="$">$</span><span data-price="core_cards">32,000</span></div>
+        </div>
 
-      <div style="background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:24px; text-align:center;">
-        <div style="font-size:0.8em; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); margin-bottom:8px;">Enterprise — Year 1</div>
-        <div style="font-size:2em; font-weight:800; color:var(--primary); letter-spacing:-1px;" class="usd-price">$57,000</div>
-        <div style="font-size:2em; font-weight:800; color:var(--primary); letter-spacing:-1px; display:none" class="ghs-price">₵638,500</div>
-        <div style="font-size:0.78em; color:var(--muted); margin-top:4px;">$45K license + $12K implementation</div>
-        <div style="font-size:0.78em; color:var(--muted); margin-top:2px; font-style:italic;" class="usd-price">≈ ₵638,500</div>
-        <div style="font-size:0.78em; color:var(--muted); margin-top:2px; font-style:italic; display:none" class="ghs-price">≈ $57,000</div>
-        <div style="font-size:0.76em; color:var(--muted); font-weight:600; margin-top:6px;">Year 2+: $45,000 / ₵504,000</div>
-      </div>
-
-    </div>
-  </section>
-
-  <!-- ── CTA ── -->
-  <section id="contact" style="border-top:none; padding-top:0;">
-    <div class="cta-footer">
-      <h2>Ready to talk?</h2>
-      <p>We'll walk you through the right plan for your account volume and team size, and structure a pilot proposal you can take to your procurement committee.</p>
-      <a href="mailto:timelessnypotech@outlook.com" class="cta-btn">Get in touch</a>
-      <div class="contact-line">
-        Email &nbsp;<strong>timelessnypotech@outlook.com</strong>&nbsp; · Response within 1 business day
+        <div class="summary-tile">
+          <div class="tier-name">Scale</div>
+          <div class="price"><span class="currency-sym" data-currency-sym="$">$</span><span data-price="scale_y1">58,000</span></div>
+          <div class="breakdown">$48K license + $10K impl · everything</div>
+          <div class="year2">Year 2+: <span class="currency-sym" data-currency-sym="$">$</span><span data-price="scale">48,000</span></div>
+        </div>
       </div>
     </div>
   </section>
 
-</div><!-- /wrap -->
+  <!-- ════════════════════════════════════════════ COMPARISON TABLE ════════════════════════════════════════════ -->
+  <section id="compare">
+    <div class="wrap">
+      <div class="eyebrow">Side by side</div>
+      <h2>Full feature comparison</h2>
+      <p class="section-sub">Every capability across every tier. Procurement teams: this is what to share with your committee.</p>
 
-<script>
-  function setCurrency(c) {
-    const isGhs = c === 'ghs';
-    document.querySelectorAll('.usd-price').forEach(el => el.style.display = isGhs ? 'none' : '');
-    document.querySelectorAll('.ghs-price').forEach(el => el.style.display = isGhs ? '' : 'none');
-    document.getElementById('btn-usd').classList.toggle('active', !isGhs);
-    document.getElementById('btn-ghs').classList.toggle('active', isGhs);
-  }
-</script>
+      <div class="comp-wrap">
+      <table class="comp-table">
+        <thead>
+          <tr>
+            <th style="width:36%">Feature</th>
+            <th class="plan-col">Pilot</th>
+            <th class="plan-col hi">Core</th>
+            <th class="plan-col">Scale</th>
+            <th class="plan-col">Custom</th>
+          </tr>
+        </thead>
+        <tbody>
 
+          <tr class="cat-row"><td colspan="5">Capacity</td></tr>
+          <tr><td>Nostro accounts</td><td class="plan-col">3</td><td class="plan-col hi">Up to 25</td><td class="plan-col">Unlimited</td><td class="plan-col">Unlimited</td></tr>
+          <tr><td>Mobile money / wallet accounts</td><td class="plan-col">2</td><td class="plan-col hi">Included</td><td class="plan-col">Unlimited</td><td class="plan-col">Unlimited</td></tr>
+          <tr><td>Cards module</td><td class="plan-col">1 account</td><td class="plan-col hi">+$8K/yr add-on</td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span> Included</td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td></tr>
+          <tr><td>Users (operators, auditors)</td><td class="plan-col">Unlimited</td><td class="plan-col hi">Unlimited</td><td class="plan-col">Unlimited</td><td class="plan-col">Unlimited</td></tr>
+
+          <tr class="cat-row"><td colspan="5">Reconciliation</td></tr>
+          <tr><td>SWIFT MT940 / MT950</td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col hi"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td></tr>
+          <tr><td>ISO 20022 camt.053 / camt.054</td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col hi"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td></tr>
+          <tr><td>Flexcube + T24 + Finacle GL</td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col hi"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td></tr>
+          <tr><td>Mobile money operator profiles</td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col hi"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td></tr>
+          <tr><td>Visa Base II / Mastercard IPM / GhIPSS</td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col hi">Add-on</td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td></tr>
+          <tr><td>BYO format profiles</td><td class="plan-col">Unlimited</td><td class="plan-col hi">Unlimited</td><td class="plan-col">Unlimited</td><td class="plan-col">+ bespoke parsers</td></tr>
+          <tr><td>4-tier matching engine</td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col hi"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td></tr>
+
+          <tr class="cat-row"><td colspan="5">Automation</td></tr>
+          <tr><td>Manual upload</td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col hi"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td></tr>
+          <tr><td>Watched-folder auto-scan</td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col hi"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td></tr>
+          <tr><td>7 scheduler jobs (pre-seeded)</td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col hi"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td></tr>
+          <tr><td>Custom scheduler params</td><td class="plan-col"><span class="comp-dash">—</span></td><td class="plan-col hi"><span class="comp-dash">—</span></td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td></tr>
+          <tr><td>Oracle Flexcube extract automation</td><td class="plan-col"><span class="comp-dash">—</span></td><td class="plan-col hi"><span class="comp-dash">—</span></td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td></tr>
+          <tr><td>Nightly DB backup</td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col hi"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td></tr>
+          <tr><td>SLA alerts (Teams / email)</td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col hi"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td></tr>
+
+          <tr class="cat-row"><td colspan="5">Access &amp; compliance</td></tr>
+          <tr><td>4 roles (admin, ops, audit, internal control)</td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col hi"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td></tr>
+          <tr><td>TOTP MFA (any authenticator)</td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col hi"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td></tr>
+          <tr><td>AD / LDAP integration</td><td class="plan-col"><span class="comp-dash">—</span></td><td class="plan-col hi"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td></tr>
+          <tr><td>Immutable audit log + CSV export</td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col hi"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td></tr>
+          <tr><td>Month-end certificates</td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col hi"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td></tr>
+          <tr><td>Maker-checker / two-person approval</td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col hi"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td></tr>
+          <tr><td>PCI-DSS storage scope reduction</td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col hi">With Cards add-on</td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td></tr>
+
+          <tr class="cat-row"><td colspan="5">Support</td></tr>
+          <tr><td>Email response time</td><td class="plan-col">48 h</td><td class="plan-col hi">48 h</td><td class="plan-col">4 h SLA</td><td class="plan-col">Custom SLA</td></tr>
+          <tr><td>Priority support (4h SLA)</td><td class="plan-col"><span class="comp-dash">—</span></td><td class="plan-col hi">+$8K add-on</td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span> Included</td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span> + named eng</td></tr>
+          <tr><td>Dedicated account manager</td><td class="plan-col"><span class="comp-dash">—</span></td><td class="plan-col hi"><span class="comp-dash">—</span></td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td></tr>
+          <tr><td>Quarterly review session</td><td class="plan-col"><span class="comp-dash">—</span></td><td class="plan-col hi"><span class="comp-dash">—</span></td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td><td class="plan-col"><span class="comp-tick"><svg width="14" height="14"><use href="#i-check"/></svg></span></td></tr>
+
+          <tr class="cat-row"><td colspan="5">Discounts</td></tr>
+          <tr><td>Pilot KPI achievement → Year 1</td><td class="plan-col">−50%</td><td class="plan-col hi">−50%</td><td class="plan-col">−50%</td><td class="plan-col">Negotiated</td></tr>
+          <tr><td>2-year contract</td><td class="plan-col"><span class="comp-dash">—</span></td><td class="plan-col hi">−10%</td><td class="plan-col">−10%</td><td class="plan-col">Negotiated</td></tr>
+          <tr><td>3-year contract</td><td class="plan-col"><span class="comp-dash">—</span></td><td class="plan-col hi">−15%</td><td class="plan-col">−15%</td><td class="plan-col">Negotiated</td></tr>
+
+        </tbody>
+      </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════ FAQ ════════════════════════════════════════════ -->
+  <section id="faq">
+    <div class="wrap-sm">
+      <div class="eyebrow">Procurement essentials</div>
+      <h2>Common questions</h2>
+      <p class="section-sub">If your question isn't here, email us — we respond within 1 business day.</p>
+
+      <div class="faq-grid">
+
+        <div class="faq-item">
+          <h3>Is there a free trial?</h3>
+          <p>No free trial — but the <strong>Pilot tier ($5,000 / 90 days)</strong> has every module unlocked on real data. Skin in the game on both sides means we commit to outcomes, not slideware. If you hit your pilot success criteria, the $5K credits to Year 1.</p>
+        </div>
+
+        <div class="faq-item">
+          <h3>What does the implementation fee cover?</h3>
+          <p>Server deployment, schema setup, account registration, user onboarding session, and a go-live sign-off call. Scale also includes custom format mapping and Oracle extract setup. <strong>Self-deploy ($2K) is available</strong> for banks with strong DevOps teams — you get setup docs + a 90-minute call.</p>
+        </div>
+
+        <div class="faq-item">
+          <h3>How does the Pilot credit work?</h3>
+          <p>If you sign a Core or Scale contract within 30 days of pilot end and you've hit the agreed KPIs, the full $5K applies to Year 1. So Core Year 1 = $24K license + $6K impl − $5K pilot credit = <strong>$25,000</strong>. No data migration — the same database carries forward.</p>
+        </div>
+
+        <div class="faq-item">
+          <h3>Can prices be locked in local currency?</h3>
+          <p>Yes. Contracts can be denominated in GHS, NGN, KES, or ZAR with a fixed exchange rate agreed at signing, locked for the contract length. <strong>USD-denominated contracts are recommended</strong> for multi-year commitments — less FX risk for both sides at renewal.</p>
+        </div>
+
+        <div class="faq-item">
+          <h3>Does our data leave our servers?</h3>
+          <p>No. Kilter is entirely self-hosted — runs on your own VM or Docker host and <strong>never phones home</strong>. No telemetry. No cloud sync. No vendor access. Your SWIFT statements, GL data, and card settlement files stay inside your network perimeter at all times.</p>
+        </div>
+
+        <div class="faq-item">
+          <h3>What happens at renewal?</h3>
+          <p>Renewal invoices go out 45 days before the licence anniversary. Upgrades happen at renewal at then-current pricing. Downgrading Scale→Core requires 90 days' notice. <strong>There is no auto-renew without a signed order form</strong> — your procurement team always controls renewal.</p>
+        </div>
+
+        <div class="faq-item">
+          <h3>How many users are included?</h3>
+          <p>All plans include <strong>unlimited users</strong> within your organisation. No per-seat fees, ever. Pricing is by capacity (account count) and modules, not headcount. Add as many ops staff, auditors, and internal control reviewers as you need.</p>
+        </div>
+
+        <div class="faq-item">
+          <h3>What's covered by software updates?</h3>
+          <p>All point releases and minor versions (e.g. 1.1, 1.2) are included in the annual licence. <strong>Security patches are always included</strong> regardless of contract status. Major version upgrades (2.0+) are offered to existing customers at a discounted upgrade price.</p>
+        </div>
+
+        <div class="faq-item">
+          <h3>What if we need a non-standard file format?</h3>
+          <p>Most exotic formats are handled by the <strong>BYO column-mapping wizard</strong> in the UI — no engineering needed. For genuinely custom formats (proprietary binary, legacy mainframe), we build a parser for $3K and ship it as part of your install.</p>
+        </div>
+
+        <div class="faq-item">
+          <h3>Are there volume discounts?</h3>
+          <p>Yes — kick in at 50+ accounts on Scale, or any Custom tier. Multi-year contracts: <strong>−10% on 2-year, −15% on 3-year</strong> commit (USD-denominated). Regulators and central banks may qualify for additional discount under our public-interest programme — ask.</p>
+        </div>
+
+        <div class="faq-item">
+          <h3>What about regulator / central-bank deployments?</h3>
+          <p>Kilter is offered <strong>at significant discount or no cost</strong> to central banks and financial regulators who use it to audit reconciliation submissions. Public-interest mission helps everyone in the ecosystem. Contact us with your supervisory mandate.</p>
+        </div>
+
+        <div class="faq-item">
+          <h3>Can I see ROI numbers for my specific setup?</h3>
+          <p>Use the live calculator above — change the inputs to match your reality. For a detailed business case (incumbent tool cost, FTE displacement, audit risk reduction), book a 30-minute call and we'll work through it on your data assumptions.</p>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════ CTA ════════════════════════════════════════════ -->
+  <section id="contact">
+    <div class="wrap-sm">
+      <div class="cta-footer">
+        <h2>Ready to talk?</h2>
+        <p>We'll structure a pilot proposal sized to your account volume and team — procurement-ready, in writing, within 3 business days.</p>
+        <div class="cta-buttons">
+          <a href="mailto:timelessnypotech@outlook.com?subject=Kilter%20Pricing%20Enquiry" class="cta-btn">
+            <svg width="16" height="16" aria-hidden="true"><use href="#i-mail"/></svg>
+            Get in touch
+          </a>
+          <a href="https://www.kilter-app.com" class="cta-btn outline">
+            Visit the website
+            <svg width="14" height="14" aria-hidden="true"><use href="#i-arrow-right"/></svg>
+          </a>
+        </div>
+        <div class="contact-line">
+          Email <strong>timelessnypotech@outlook.com</strong> · response within 1 business day · <a href="https://www.kilter-app.com">www.kilter-app.com</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  </main>
+
+  <footer class="page-footer">
+    Kilter is built by <strong style="color:white">Timeless Nypo Tech</strong> · self-hosted reconciliation for banks · <a href="https://www.kilter-app.com">www.kilter-app.com</a>
+  </footer>
+
+  <script>
+    // ─────────────────────────────────────────────────────────
+    // Currency conversion
+    // ─────────────────────────────────────────────────────────
+    const CURRENCY_RATES = {
+      usd: { rate: 1,     sym: '$',  code: 'USD' },
+      ghs: { rate: 11.20, sym: '₵',  code: 'GHS' },
+      ngn: { rate: 1600,  sym: '₦',  code: 'NGN' },
+      kes: { rate: 130,   sym: 'KSh ', code: 'KES' },
+      zar: { rate: 19,    sym: 'R',  code: 'ZAR' },
+    };
+
+    // Base prices in USD
+    const PRICES_USD = {
+      pilot:          5000,
+      core:           24000,
+      core_impl:      6000,
+      core_impl_self: 2000,
+      core_y1:        30000,        // 24K + 6K
+      core_cards:     32000,        // 24K + 8K cards
+      core_cards_y1:  38000,        // 24K + 8K + 6K
+      scale:          48000,
+      scale_impl:     10000,
+      scale_y1:       58000,
+      cards_addon:    8000,
+      priority_addon: 8000,
+      format_addon:   3000,
+      capacity_addon: 5000,
+    };
+
+    let activeCurrency = 'usd';
+
+    function fmt(n) {
+      // Locale-aware thousand separators
+      if (n >= 1000) return Math.round(n).toLocaleString('en-US');
+      return Math.round(n).toLocaleString('en-US');
+    }
+
+    function refreshPrices() {
+      const c = CURRENCY_RATES[activeCurrency];
+      // Update all data-price elements
+      document.querySelectorAll('[data-price]').forEach(el => {
+        const key = el.dataset.price;
+        const usd = PRICES_USD[key];
+        if (usd == null) return;
+        const local = usd * c.rate;
+        el.textContent = fmt(local);
+      });
+      // Update all currency symbols
+      document.querySelectorAll('[data-currency-sym]').forEach(el => {
+        el.textContent = c.sym;
+      });
+      // Re-run calculator with new currency
+      runCalculator();
+    }
+
+    // currency toggle buttons
+    document.querySelectorAll('.currency-toggle button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.currency-toggle button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        activeCurrency = btn.dataset.currency;
+        refreshPrices();
+      });
+    });
+
+    // ─────────────────────────────────────────────────────────
+    // Live calculator
+    // ─────────────────────────────────────────────────────────
+    const calcState = {
+      nostro: 12,
+      wallet: 0,
+      cards: 0,
+      priority: 0,
+      deploy: 'assisted',
+      years: 1,
+    };
+
+    // sliders
+    document.getElementById('c-nostro').addEventListener('input', e => {
+      calcState.nostro = +e.target.value;
+      document.getElementById('v-nostro').textContent = calcState.nostro;
+      runCalculator();
+    });
+    document.getElementById('c-wallet').addEventListener('input', e => {
+      calcState.wallet = +e.target.value;
+      document.getElementById('v-wallet').textContent = calcState.wallet;
+      runCalculator();
+    });
+
+    // toggle buttons
+    function wireToggle(selector, key, parse = v => v) {
+      const group = document.querySelectorAll(selector);
+      group.forEach(btn => {
+        btn.addEventListener('click', () => {
+          group.forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          const val = btn.dataset[key];
+          calcState[key] = parse(val);
+          runCalculator();
+        });
+      });
+    }
+    wireToggle('[data-cards]', 'cards', v => +v);
+    wireToggle('[data-priority]', 'priority', v => +v);
+    wireToggle('[data-deploy]', 'deploy');
+    wireToggle('[data-years]', 'years', v => +v);
+
+    function runCalculator() {
+      const c = CURRENCY_RATES[activeCurrency];
+      const total = calcState.nostro + calcState.wallet;
+
+      // tier selection
+      let tier, licenseUSD, implUSD;
+      if (total <= 5 && calcState.nostro <= 3) {
+        tier = 'Pilot';
+        licenseUSD = PRICES_USD.pilot;
+        implUSD = 0;
+      } else if (total <= 27) {
+        tier = 'Core';
+        licenseUSD = PRICES_USD.core;
+        implUSD = calcState.deploy === 'self' ? PRICES_USD.core_impl_self : PRICES_USD.core_impl;
+        // capacity overage
+        if (calcState.nostro > 25) {
+          const blocks = Math.ceil((calcState.nostro - 25) / 10);
+          licenseUSD += blocks * PRICES_USD.capacity_addon;
+        }
+      } else {
+        tier = 'Scale';
+        licenseUSD = PRICES_USD.scale;
+        implUSD = PRICES_USD.scale_impl;
+      }
+
+      // cards add-on (Core only — Scale includes it)
+      let cardsUSD = 0;
+      if (calcState.cards && tier === 'Core') cardsUSD = PRICES_USD.cards_addon;
+
+      // priority support add-on (Core only — Scale includes it)
+      let priorityUSD = 0;
+      if (calcState.priority && tier === 'Core') priorityUSD = PRICES_USD.priority_addon;
+
+      // recurring = license + cards + priority
+      const recurringBeforeDiscount = licenseUSD + cardsUSD + priorityUSD;
+
+      // multi-year discount
+      let discountPct = 0;
+      if (calcState.years === 2) discountPct = 0.10;
+      if (calcState.years === 3) discountPct = 0.15;
+      const discountUSD = recurringBeforeDiscount * discountPct;
+
+      // Year 1 total
+      const recurringAfterDiscount = recurringBeforeDiscount - discountUSD;
+      const y1 = recurringAfterDiscount + implUSD;
+
+      // Payback vs 2 FTEs at $60K/year — using saving = $60K - recurring
+      const annualSaving = Math.max(60000 - recurringAfterDiscount, 1);
+      const paybackMonths = (y1 / annualSaving) * 12;
+
+      // render
+      const r = c.rate;
+      document.getElementById('o-tier').textContent = tier;
+      document.getElementById('o-sym').textContent = c.sym;
+      document.getElementById('o-total').textContent = fmt(y1 * r);
+      document.getElementById('o-period').textContent = `${c.code} · ${calcState.years} year contract`;
+      document.getElementById('o-license').textContent = c.sym + fmt(licenseUSD * r);
+      document.getElementById('o-cards').textContent = cardsUSD ? c.sym + fmt(cardsUSD * r) : '—';
+      document.getElementById('o-priority').textContent = priorityUSD ? c.sym + fmt(priorityUSD * r) : '—';
+      document.getElementById('o-impl').textContent = implUSD ? c.sym + fmt(implUSD * r) : 'Included';
+      document.getElementById('o-discount').textContent = discountUSD ? '−' + c.sym + fmt(discountUSD * r) : '—';
+      document.getElementById('o-recurring').textContent = c.sym + fmt(recurringAfterDiscount * r);
+
+      const paybackTxt = paybackMonths < 1
+        ? '< 1 month'
+        : paybackMonths.toFixed(1) + ' months';
+      document.getElementById('o-payback').textContent = paybackTxt;
+    }
+
+    // initialise
+    refreshPrices();
+    runCalculator();
+  </script>
 </body>
 </html>
