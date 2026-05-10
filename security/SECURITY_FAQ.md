@@ -315,7 +315,7 @@ etc.) in the MSA per-deal. ✅ as a posture.
   Not pre-filled. Once a bank confirms they require the full SIG, we
   fill in 4–6 days; price the engagement.
 - **"What's your bug-bounty / vulnerability-disclosure program?"**
-  Email `timelessnypotech@outlook.com`, coordinated disclosure. No bounty $$
+  Email `timelessnypotech@outlook.com` or visit https://www.kilter-app.com — coordinated disclosure. No bounty $$
   during pilot; will introduce one after the first paid customer.
 - **"Can you fill out our internal vendor-risk questionnaire?"**
   Yes — we use this FAQ as the source of truth. Allow 5 business

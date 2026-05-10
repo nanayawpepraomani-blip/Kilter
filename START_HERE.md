@@ -120,4 +120,5 @@ You're in. The dashboard will walk you through the rest.
 
 ## Questions?
 
-Contact **Timeless Nypo Tech**: timelessnypotech@outlook.com
+Contact **Timeless Nypo Tech**: timelessnypotech@outlook.com  
+Website: https://www.kilter-app.com

@@ -81,7 +81,7 @@ the expiry date, and the deployment hostname. Example:
 
 > **Important:** the signature binds the license to the exact hostname
 > string and expiry date. Editing any field invalidates it. If you need a
-> new hostname or renewal, contact **timelessnypotech@outlook.com**.
+> new hostname or renewal, contact **timelessnypotech@outlook.com** or visit **https://www.kilter-app.com**.
 
 **Grace period.** If no license file is present, Kilter enters a 14-day
 grace period and logs a warning on startup. After 14 days the application

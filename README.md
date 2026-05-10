@@ -136,7 +136,7 @@ Proprietary commercial — see [LICENSE](LICENSE). Pilot evaluation use is
 permitted under specific terms; production use requires a signed
 commercial license.
 
-**Contact:** Timeless Nypo Tech — timelessnypotech@outlook.com
+**Contact:** Timeless Nypo Tech — timelessnypotech@outlook.com | https://www.kilter-app.com
 
 ## Status
 

@@ -101,12 +101,12 @@ def verify_license() -> None:
             _abort(
                 "No license file found and the 14-day grace period has expired.\n"
                 "  Install kilter.lic in the application directory.\n"
-                "  Contact: timelessnypotech@outlook.com"
+                "  Contact: timelessnypotech@outlook.com | https://www.kilter-app.com"
             )
         print(
             f"[license] WARNING: no kilter.lic found.  "
             f"Grace period: {remaining} day(s) remaining.\n"
-            f"           Contact timelessnypotech@outlook.com to obtain a license."
+            f"           Contact timelessnypotech@outlook.com | https://www.kilter-app.com to obtain a license."
         )
         return
 
@@ -122,7 +122,7 @@ def verify_license() -> None:
     if not _verify_sig(data, sig):
         _abort(
             "kilter.lic signature is invalid.  The file may have been altered.\n"
-            "  Contact: timelessnypotech@outlook.com"
+            "  Contact: timelessnypotech@outlook.com | https://www.kilter-app.com"
         )
 
     # ── Expiry ──────────────────────────────────────────────────────────────
@@ -136,14 +136,14 @@ def verify_license() -> None:
         _abort(
             f"License expired on {data['expires']}.\n"
             f"  Licensee : {data['licensee']}\n"
-            f"  Contact  : timelessnypotech@outlook.com to renew."
+            f"  Contact  : timelessnypotech@outlook.com | https://www.kilter-app.com to renew."
         )
 
     days_left = (expires - today).days
     if days_left <= 30:
         print(
             f"[license] WARNING: license expires in {days_left} day(s) "
-            f"({data['expires']}).  Contact timelessnypotech@outlook.com to renew."
+            f"({data['expires']}).  Contact timelessnypotech@outlook.com | https://www.kilter-app.com to renew."
         )
 
     # ── Hostname ────────────────────────────────────────────────────────────
@@ -153,7 +153,7 @@ def verify_license() -> None:
             f"License hostname mismatch.\n"
             f"  Licensed for : {data['hostname']}\n"
             f"  This machine : {current_host}\n"
-            f"  Contact      : timelessnypotech@outlook.com"
+            f"  Contact      : timelessnypotech@outlook.com | https://www.kilter-app.com"
         )
 
     print(

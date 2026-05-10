@@ -165,5 +165,6 @@ thirty (30) days before taking effect.
 |---|---|
 | Controller | Timeless Nypo Tech |
 | Address | [REGISTERED OFFICE], Ghana |
+| Website | https://www.kilter-app.com |
 | Email | timelessnypotech@outlook.com |
 | Data Protection Commission (Ghana) | https://www.dataprotection.org.gh |

@@ -12,7 +12,7 @@ conflict.
 **Effective:** [DATE]
 
 These Terms of Service (these "**Terms**") govern your access to and use
-of the Kilter website at [kilter.com] and any free demo or trial of the
+of the Kilter website at https://www.kilter-app.com and any free demo or trial of the
 Kilter Software made available to you under these Terms (collectively,
 the "**Services**").
 
@@ -187,7 +187,7 @@ consent. We may assign in connection with a merger, acquisition, or sale
 of substantially all of our assets.
 
 16.5 **Notices.** Notices to you may be sent by email or posted on the
-website. Notices to us shall be sent to **timelessnypotech@outlook.com** with a copy
+website at https://www.kilter-app.com. Notices to us shall be sent to **timelessnypotech@outlook.com** with a copy
 to our registered office.
 
 ## Contact
