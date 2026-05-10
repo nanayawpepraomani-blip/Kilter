@@ -1,0 +1,1662 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Kilter — Reconciliation, automated.</title>
+  <meta name="description" content="Self-hosted reconciliation across nostro, mobile money, and card-scheme settlements. Built for banks and payments businesses.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300..900;1,14..32,300..900&display=swap" rel="stylesheet">
+  <style>
+    /* ═══════════════════════════════════════════════════════════
+       DESIGN TOKENS
+    ═══════════════════════════════════════════════════════════ */
+    :root {
+      /* brand */
+      --brand-900: #0c1e5e;
+      --brand-800: #1230a0;
+      --brand-700: #1f3ec4;
+      --brand-600: #2f53e0;
+      --brand-500: #4366f5;
+      --brand-400: #6485f9;
+      --brand-200: #c7d3fd;
+      --brand-100: #e8ecfe;
+
+      --accent-cyan: #06b6d4;
+      --accent-emerald: #10b981;
+      --accent-violet: #7c3aed;
+      --accent-amber: #f59e0b;
+
+      /* light-mode surfaces */
+      --bg: #f6f7fb;
+      --surface: #ffffff;
+      --surface-2: #f0f2f9;
+      --surface-glass: rgba(255,255,255,0.72);
+      --border: rgba(0,0,0,0.08);
+      --border-strong: rgba(0,0,0,0.14);
+
+      /* text */
+      --ink: #0f172a;
+      --muted: #475569;
+      --subtle: #94a3b8;
+
+      /* shadow */
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+      --shadow-md: 0 4px 16px rgba(0,0,0,0.10), 0 1px 4px rgba(0,0,0,0.05);
+      --shadow-lg: 0 16px 48px rgba(0,0,0,0.14), 0 4px 12px rgba(0,0,0,0.06);
+      --shadow-xl: 0 32px 64px rgba(0,0,0,0.18);
+
+      --radius-sm: 8px;
+      --radius: 14px;
+      --radius-lg: 20px;
+      --radius-xl: 28px;
+
+      --nav-h: 68px;
+    }
+
+    [data-theme="dark"] {
+      --bg: #080d1a;
+      --surface: #111827;
+      --surface-2: #1a2236;
+      --surface-glass: rgba(17,24,39,0.80);
+      --border: rgba(255,255,255,0.08);
+      --border-strong: rgba(255,255,255,0.14);
+      --ink: #f1f5f9;
+      --muted: #94a3b8;
+      --subtle: #475569;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.4);
+      --shadow-md: 0 4px 16px rgba(0,0,0,0.5);
+      --shadow-lg: 0 16px 48px rgba(0,0,0,0.6);
+      --shadow-xl: 0 32px 64px rgba(0,0,0,0.7);
+    }
+
+    /* ═══════════════════════════════════════════════════════════
+       RESET & BASE
+    ═══════════════════════════════════════════════════════════ */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; font-size: 16px; }
+    body {
+      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.6;
+      overflow-x: hidden;
+      transition: background 0.3s ease, color 0.3s ease;
+    }
+    img, svg { display: block; max-width: 100%; }
+    a { color: inherit; text-decoration: none; }
+    button { cursor: pointer; border: none; background: none; font-family: inherit; }
+    ul { list-style: none; }
+
+    /* ═══════════════════════════════════════════════════════════
+       UTILITIES
+    ═══════════════════════════════════════════════════════════ */
+    .container { max-width: 1180px; margin: 0 auto; padding: 0 28px; }
+    .container-sm { max-width: 800px; margin: 0 auto; padding: 0 28px; }
+    .text-center { text-align: center; }
+    .text-gradient {
+      background: linear-gradient(135deg, var(--brand-600) 0%, var(--accent-cyan) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 5px 14px; border-radius: 999px;
+      font-size: 0.75rem; font-weight: 600; letter-spacing: 0.02em;
+      border: 1px solid var(--brand-200);
+      background: var(--brand-100); color: var(--brand-700);
+    }
+    [data-theme="dark"] .badge {
+      background: rgba(67,102,245,0.15); border-color: rgba(67,102,245,0.3); color: var(--brand-400);
+    }
+    .badge .dot {
+      width: 6px; height: 6px; border-radius: 50%; background: var(--accent-emerald);
+      animation: pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.6; transform: scale(1.3); }
+    }
+
+    /* ═══════════════════════════════════════════════════════════
+       NAVIGATION
+    ═══════════════════════════════════════════════════════════ */
+    nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      height: var(--nav-h);
+      display: flex; align-items: center;
+      backdrop-filter: blur(20px) saturate(1.8);
+      -webkit-backdrop-filter: blur(20px) saturate(1.8);
+      background: var(--surface-glass);
+      border-bottom: 1px solid var(--border);
+      transition: background 0.3s ease, box-shadow 0.3s ease;
+    }
+    nav.scrolled { box-shadow: var(--shadow-md); }
+    .nav-inner {
+      width: 100%; display: flex; align-items: center; justify-content: space-between;
+    }
+    .nav-logo {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 1.2rem; font-weight: 800; letter-spacing: -0.03em; color: var(--ink);
+    }
+    .nav-logo-mark {
+      width: 36px; height: 36px; border-radius: 9px;
+      background: linear-gradient(135deg, var(--brand-700) 0%, var(--accent-cyan) 100%);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1rem; font-weight: 900; color: white; letter-spacing: -1px;
+    }
+    .nav-links {
+      display: flex; align-items: center; gap: 4px;
+    }
+    .nav-links a {
+      padding: 8px 14px; border-radius: var(--radius-sm);
+      font-size: 0.875rem; font-weight: 500; color: var(--muted);
+      transition: color 0.15s, background 0.15s;
+    }
+    .nav-links a:hover { color: var(--ink); background: var(--surface-2); }
+    .nav-actions { display: flex; align-items: center; gap: 10px; }
+    .btn-theme {
+      width: 38px; height: 38px; border-radius: var(--radius-sm);
+      display: flex; align-items: center; justify-content: center;
+      color: var(--muted); background: var(--surface-2);
+      border: 1px solid var(--border);
+      transition: color 0.15s, background 0.15s;
+      font-size: 1rem;
+    }
+    .btn-theme:hover { color: var(--ink); background: var(--border); }
+    .btn-outline {
+      padding: 8px 20px; border-radius: var(--radius-sm);
+      border: 1px solid var(--border-strong);
+      font-size: 0.875rem; font-weight: 600; color: var(--ink);
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .btn-outline:hover { background: var(--surface-2); }
+    .btn-primary {
+      padding: 9px 22px; border-radius: var(--radius-sm);
+      background: linear-gradient(135deg, var(--brand-700), var(--brand-600));
+      font-size: 0.875rem; font-weight: 600; color: white;
+      box-shadow: 0 1px 4px rgba(47,83,224,0.4);
+      transition: transform 0.15s, box-shadow 0.15s, filter 0.15s;
+    }
+    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(47,83,224,0.5); filter: brightness(1.05); }
+    .btn-primary:active { transform: translateY(0); }
+
+    /* mobile menu toggle */
+    .nav-menu-btn { display: none; padding: 8px; color: var(--muted); }
+    @media (max-width: 860px) {
+      .nav-links { display: none; }
+      .nav-menu-btn { display: flex; }
+    }
+    @media (max-width: 600px) {
+      .nav-actions .btn-outline { display: none; }
+    }
+
+    /* ═══════════════════════════════════════════════════════════
+       HERO
+    ═══════════════════════════════════════════════════════════ */
+    .hero {
+      padding-top: calc(var(--nav-h) + 80px);
+      padding-bottom: 80px;
+      position: relative; overflow: hidden;
+    }
+    .hero-bg {
+      position: absolute; inset: 0; pointer-events: none; z-index: 0;
+    }
+    /* gradient orbs */
+    .orb {
+      position: absolute; border-radius: 50%;
+      filter: blur(80px); opacity: 0.35;
+    }
+    [data-theme="dark"] .orb { opacity: 0.25; }
+    .orb-1 {
+      width: 640px; height: 640px; top: -120px; left: -180px;
+      background: radial-gradient(circle, var(--brand-600), transparent 70%);
+    }
+    .orb-2 {
+      width: 480px; height: 480px; top: 60px; right: -100px;
+      background: radial-gradient(circle, var(--accent-cyan), transparent 70%);
+    }
+    .orb-3 {
+      width: 300px; height: 300px; bottom: -60px; left: 40%;
+      background: radial-gradient(circle, var(--accent-violet), transparent 70%);
+    }
+    /* grid overlay */
+    .hero-grid {
+      position: absolute; inset: 0;
+      background-image:
+        linear-gradient(var(--border) 1px, transparent 1px),
+        linear-gradient(90deg, var(--border) 1px, transparent 1px);
+      background-size: 48px 48px;
+      -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 30%, transparent 100%);
+      mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 30%, transparent 100%);
+    }
+
+    .hero-inner { position: relative; z-index: 1; }
+    .hero-eyebrow { margin-bottom: 24px; }
+    .hero h1 {
+      font-size: clamp(2.6rem, 6vw, 4.4rem);
+      font-weight: 900; letter-spacing: -0.04em; line-height: 1.06;
+      margin-bottom: 24px;
+    }
+    .hero-sub {
+      font-size: clamp(1rem, 2vw, 1.2rem);
+      color: var(--muted); max-width: 640px; margin: 0 auto 40px;
+      line-height: 1.65;
+    }
+    .hero-ctas { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+    .btn-hero-primary {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 15px 32px; border-radius: var(--radius);
+      background: linear-gradient(135deg, var(--brand-700) 0%, var(--brand-600) 50%, var(--accent-cyan) 100%);
+      font-size: 1rem; font-weight: 700; color: white;
+      box-shadow: 0 4px 24px rgba(47,83,224,0.45);
+      transition: transform 0.2s, box-shadow 0.2s, filter 0.2s;
+      position: relative; overflow: hidden;
+    }
+    .btn-hero-primary::before {
+      content: ''; position: absolute; inset: 0;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent);
+      transform: translateX(-100%); transition: transform 0.6s;
+    }
+    .btn-hero-primary:hover::before { transform: translateX(100%); }
+    .btn-hero-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(47,83,224,0.55); }
+    .btn-hero-secondary {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 15px 32px; border-radius: var(--radius);
+      border: 1px solid var(--border-strong); background: var(--surface-glass);
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      font-size: 1rem; font-weight: 600; color: var(--ink);
+      transition: background 0.2s, border-color 0.2s;
+    }
+    .btn-hero-secondary:hover { background: var(--surface-2); border-color: var(--brand-400); }
+
+    .hero-trust {
+      margin-top: 56px;
+      display: flex; align-items: center; justify-content: center; gap: 28px; flex-wrap: wrap;
+    }
+    .trust-item {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 0.8rem; font-weight: 500; color: var(--subtle);
+    }
+    .trust-item svg { flex-shrink: 0; }
+
+    /* ─── Hero dashboard mockup ─── */
+    .hero-visual {
+      margin-top: 72px;
+      position: relative; z-index: 1;
+    }
+    .mockup-frame {
+      background: var(--surface);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-xl);
+      overflow: hidden;
+      box-shadow: var(--shadow-xl), 0 0 0 1px rgba(255,255,255,0.05) inset;
+      transform: perspective(1200px) rotateX(3deg);
+      transform-origin: top center;
+      transition: transform 0.4s ease;
+      max-width: 960px; margin: 0 auto;
+    }
+    .mockup-frame:hover { transform: perspective(1200px) rotateX(0deg); }
+    .mockup-bar {
+      display: flex; align-items: center; gap: 8px;
+      padding: 14px 20px;
+      background: var(--surface-2); border-bottom: 1px solid var(--border);
+    }
+    .mockup-dot { width: 12px; height: 12px; border-radius: 50%; }
+    .mockup-dot:nth-child(1) { background: #ff5f57; }
+    .mockup-dot:nth-child(2) { background: #febc2e; }
+    .mockup-dot:nth-child(3) { background: #28c840; }
+    .mockup-url {
+      flex: 1; margin: 0 auto; max-width: 300px;
+      background: var(--bg); border-radius: 6px;
+      padding: 5px 14px; font-size: 0.75rem; color: var(--subtle);
+      text-align: center; border: 1px solid var(--border);
+    }
+    .mockup-body { padding: 20px; }
+
+    /* mini recon table inside mockup */
+    .mini-stats {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
+      margin-bottom: 20px;
+    }
+    .mini-stat {
+      background: var(--surface-2); border-radius: var(--radius-sm);
+      padding: 14px 16px; border: 1px solid var(--border);
+    }
+    .mini-stat-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--subtle); font-weight: 600; margin-bottom: 4px; }
+    .mini-stat-val { font-size: 1.4rem; font-weight: 800; letter-spacing: -0.03em; color: var(--ink); }
+    .mini-stat-val.green { color: var(--accent-emerald); }
+    .mini-stat-val.amber { color: var(--accent-amber); }
+    .mini-stat-val.red { color: #ef4444; }
+    .mini-stat-sub { font-size: 0.68rem; color: var(--subtle); margin-top: 2px; }
+
+    .mini-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+    .mini-table th {
+      text-align: left; font-size: 0.65rem; text-transform: uppercase;
+      letter-spacing: 0.06em; color: var(--subtle); font-weight: 600;
+      padding: 8px 12px; border-bottom: 1px solid var(--border);
+    }
+    .mini-table td { padding: 9px 12px; border-bottom: 1px solid var(--border); color: var(--muted); }
+    .mini-table tr:last-child td { border-bottom: none; }
+    .mini-table tr:hover td { background: var(--surface-2); }
+    .status-pill {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 2px 10px; border-radius: 999px; font-size: 0.65rem; font-weight: 700;
+    }
+    .pill-matched { background: rgba(16,185,129,0.12); color: var(--accent-emerald); }
+    .pill-pending { background: rgba(245,158,11,0.12); color: var(--accent-amber); }
+    .pill-mismatch { background: rgba(239,68,68,0.12); color: #ef4444; }
+
+    /* ═══════════════════════════════════════════════════════════
+       LOGO STRIP
+    ═══════════════════════════════════════════════════════════ */
+    .logo-strip {
+      padding: 40px 0;
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      overflow: hidden; position: relative;
+    }
+    .logo-strip-label {
+      text-align: center; margin-bottom: 28px;
+      font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.1em;
+      color: var(--subtle); font-weight: 600;
+    }
+    .logo-scroll { display: flex; gap: 40px; animation: marquee 28s linear infinite; }
+    .logo-scroll:hover { animation-play-state: paused; }
+    @keyframes marquee {
+      0% { transform: translateX(0); }
+      100% { transform: translateX(-50%); }
+    }
+    .logo-pill {
+      flex-shrink: 0;
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 22px; border-radius: var(--radius);
+      border: 1px solid var(--border); background: var(--surface);
+      font-size: 0.82rem; font-weight: 700; color: var(--muted);
+      white-space: nowrap;
+    }
+    .logo-pill .icon { font-size: 1.1rem; }
+
+    /* ═══════════════════════════════════════════════════════════
+       SECTIONS SHARED
+    ═══════════════════════════════════════════════════════════ */
+    section { padding: 96px 0; }
+    .section-eyebrow {
+      display: inline-flex; align-items: center; gap: 8px; margin-bottom: 16px;
+      font-size: 0.78rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.1em; color: var(--brand-600);
+    }
+    .section-eyebrow .line {
+      width: 20px; height: 2px; border-radius: 2px; background: var(--brand-500);
+    }
+    h2.section-title {
+      font-size: clamp(1.8rem, 4vw, 3rem);
+      font-weight: 900; letter-spacing: -0.04em; line-height: 1.1; margin-bottom: 16px;
+    }
+    .section-sub {
+      font-size: 1.05rem; color: var(--muted); max-width: 560px; line-height: 1.65;
+    }
+
+    /* ═══════════════════════════════════════════════════════════
+       FEATURES — 3 STREAMS
+    ═══════════════════════════════════════════════════════════ */
+    .streams { background: var(--surface); }
+    .streams-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px;
+      border: 1px solid var(--border); border-radius: var(--radius-xl);
+      overflow: hidden; margin-top: 56px;
+      background: var(--border);
+    }
+    .stream-card {
+      background: var(--surface); padding: 40px 36px;
+      transition: background 0.2s;
+      position: relative; overflow: hidden;
+    }
+    .stream-card:hover { background: var(--surface-2); }
+    .stream-card::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+    }
+    .stream-card:nth-child(1)::before { background: linear-gradient(90deg, var(--brand-600), var(--brand-400)); }
+    .stream-card:nth-child(2)::before { background: linear-gradient(90deg, var(--accent-cyan), var(--accent-emerald)); }
+    .stream-card:nth-child(3)::before { background: linear-gradient(90deg, var(--accent-violet), var(--accent-cyan)); }
+
+    .stream-icon {
+      width: 52px; height: 52px; border-radius: var(--radius);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.5rem; margin-bottom: 20px;
+    }
+    .stream-icon.blue { background: var(--brand-100); }
+    .stream-icon.cyan { background: rgba(6,182,212,0.10); }
+    .stream-icon.violet { background: rgba(124,58,237,0.10); }
+    [data-theme="dark"] .stream-icon.blue { background: rgba(67,102,245,0.15); }
+    [data-theme="dark"] .stream-icon.cyan { background: rgba(6,182,212,0.15); }
+    [data-theme="dark"] .stream-icon.violet { background: rgba(124,58,237,0.15); }
+
+    .stream-name {
+      font-size: 1.15rem; font-weight: 800; letter-spacing: -0.02em;
+      margin-bottom: 10px; color: var(--ink);
+    }
+    .stream-desc { font-size: 0.9rem; color: var(--muted); line-height: 1.6; margin-bottom: 20px; }
+    .stream-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+    .tag {
+      padding: 3px 10px; border-radius: 999px; font-size: 0.68rem; font-weight: 600;
+      background: var(--surface-2); color: var(--muted); border: 1px solid var(--border);
+    }
+
+    @media (max-width: 860px) { .streams-grid { grid-template-columns: 1fr; } }
+
+    /* ═══════════════════════════════════════════════════════════
+       MATCHING ENGINE
+    ═══════════════════════════════════════════════════════════ */
+    .engine { background: var(--bg); }
+    .engine-layout {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 72px; align-items: center;
+      margin-top: 56px;
+    }
+    @media (max-width: 860px) { .engine-layout { grid-template-columns: 1fr; gap: 40px; } }
+
+    .tier-stack { display: flex; flex-direction: column; gap: 12px; }
+    .tier-row {
+      display: flex; align-items: center; gap: 16px;
+      padding: 18px 22px; border-radius: var(--radius);
+      border: 1px solid var(--border); background: var(--surface);
+      transition: all 0.2s; cursor: default;
+      position: relative; overflow: hidden;
+    }
+    .tier-row::before {
+      content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+    }
+    .tier-row:nth-child(1)::before { background: var(--accent-emerald); }
+    .tier-row:nth-child(2)::before { background: var(--accent-cyan); }
+    .tier-row:nth-child(3)::before { background: var(--accent-amber); }
+    .tier-row:nth-child(4)::before { background: var(--accent-violet); }
+    .tier-row:hover { transform: translateX(4px); box-shadow: var(--shadow-sm); }
+
+    .tier-badge {
+      min-width: 32px; height: 32px; border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.7rem; font-weight: 800;
+    }
+    .tier-row:nth-child(1) .tier-badge { background: rgba(16,185,129,0.15); color: var(--accent-emerald); }
+    .tier-row:nth-child(2) .tier-badge { background: rgba(6,182,212,0.15); color: var(--accent-cyan); }
+    .tier-row:nth-child(3) .tier-badge { background: rgba(245,158,11,0.15); color: var(--accent-amber); }
+    .tier-row:nth-child(4) .tier-badge { background: rgba(124,58,237,0.15); color: var(--accent-violet); }
+
+    .tier-info { flex: 1; }
+    .tier-title { font-size: 0.9rem; font-weight: 700; color: var(--ink); margin-bottom: 2px; }
+    .tier-sub { font-size: 0.78rem; color: var(--muted); }
+    .tier-rate {
+      font-size: 0.78rem; font-weight: 700; color: var(--muted);
+      white-space: nowrap; text-align: right;
+    }
+
+    .engine-stats { display: flex; flex-direction: column; gap: 24px; }
+    .stat-big {
+      padding: 28px 32px; border-radius: var(--radius-lg);
+      background: var(--surface); border: 1px solid var(--border);
+      position: relative; overflow: hidden;
+    }
+    .stat-big::after {
+      content: ''; position: absolute; top: -30px; right: -30px;
+      width: 100px; height: 100px; border-radius: 50%;
+      background: radial-gradient(circle, var(--brand-200), transparent);
+      opacity: 0.5;
+    }
+    [data-theme="dark"] .stat-big::after { background: radial-gradient(circle, rgba(67,102,245,0.2), transparent); }
+    .stat-big-num {
+      font-size: 3rem; font-weight: 900; letter-spacing: -0.05em;
+      line-height: 1; margin-bottom: 6px;
+    }
+    .stat-big-label { font-size: 0.88rem; color: var(--muted); font-weight: 500; }
+    .stat-big-sub { font-size: 0.75rem; color: var(--subtle); margin-top: 4px; }
+
+    .stat-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .stat-sm {
+      padding: 20px 24px; border-radius: var(--radius);
+      background: var(--surface); border: 1px solid var(--border);
+    }
+    .stat-sm-num { font-size: 1.8rem; font-weight: 800; letter-spacing: -0.04em; }
+    .stat-sm-label { font-size: 0.78rem; color: var(--muted); margin-top: 2px; }
+
+    .tier-note {
+      margin-top: 12px; padding: 14px 18px; border-radius: var(--radius-sm);
+      background: var(--brand-100); border: 1px solid var(--brand-200);
+      font-size: 0.8rem; color: var(--brand-700);
+    }
+    [data-theme="dark"] .tier-note {
+      background: rgba(67,102,245,0.1); border-color: rgba(67,102,245,0.25); color: var(--brand-400);
+    }
+
+    /* ═══════════════════════════════════════════════════════════
+       HOW IT WORKS
+    ═══════════════════════════════════════════════════════════ */
+    .how { background: var(--surface); }
+    .steps {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 0;
+      margin-top: 56px; position: relative;
+    }
+    .steps::after {
+      content: ''; position: absolute; top: 40px; left: 10%; right: 10%; height: 2px;
+      background: linear-gradient(90deg, var(--brand-400), var(--accent-cyan), var(--accent-emerald));
+      z-index: 0; border-radius: 2px;
+    }
+    .step { padding: 0 24px; text-align: center; position: relative; z-index: 1; }
+    .step-num {
+      width: 80px; height: 80px; border-radius: 50%; margin: 0 auto 24px;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--surface); border: 2px solid var(--border);
+      font-size: 1rem; font-weight: 900; color: var(--brand-600);
+      box-shadow: var(--shadow-md);
+      transition: all 0.3s;
+    }
+    .step:hover .step-num {
+      background: var(--brand-700); color: white; border-color: var(--brand-700);
+      transform: scale(1.08);
+    }
+    .step-title { font-size: 1rem; font-weight: 700; margin-bottom: 8px; color: var(--ink); }
+    .step-desc { font-size: 0.85rem; color: var(--muted); line-height: 1.6; }
+    .step-icon { font-size: 1.8rem; margin-bottom: 6px; }
+
+    @media (max-width: 860px) {
+      .steps { grid-template-columns: repeat(2, 1fr); gap: 32px; }
+      .steps::after { display: none; }
+    }
+    @media (max-width: 500px) { .steps { grid-template-columns: 1fr; } }
+
+    /* ═══════════════════════════════════════════════════════════
+       SECURITY SECTION
+    ═══════════════════════════════════════════════════════════ */
+    .security { background: var(--bg); }
+    .security-glass {
+      background: var(--surface-glass);
+      backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--border-strong); border-radius: var(--radius-xl);
+      padding: 56px; position: relative; overflow: hidden; margin-top: 56px;
+    }
+    .security-glass::before {
+      content: ''; position: absolute; top: 0; right: 0; width: 400px; height: 400px;
+      background: radial-gradient(circle at 100% 0%, rgba(6,182,212,0.15) 0%, transparent 60%);
+      pointer-events: none;
+    }
+    .sec-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px;
+      position: relative; z-index: 1;
+    }
+    @media (max-width: 860px) { .sec-grid { grid-template-columns: 1fr; } }
+    .sec-item {
+      display: flex; gap: 16px; align-items: flex-start;
+    }
+    .sec-icon {
+      width: 44px; height: 44px; flex-shrink: 0; border-radius: var(--radius-sm);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.2rem;
+    }
+    .sec-icon.emerald { background: rgba(16,185,129,0.12); }
+    .sec-icon.brand { background: var(--brand-100); }
+    .sec-icon.amber { background: rgba(245,158,11,0.12); }
+    [data-theme="dark"] .sec-icon.brand { background: rgba(67,102,245,0.15); }
+    .sec-title { font-size: 0.9rem; font-weight: 700; color: var(--ink); margin-bottom: 4px; }
+    .sec-desc { font-size: 0.82rem; color: var(--muted); line-height: 1.6; }
+
+    .sec-banner {
+      margin-top: 36px; padding: 20px 28px;
+      background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.2);
+      border-radius: var(--radius);
+      display: flex; align-items: center; gap: 16px;
+      position: relative; z-index: 1;
+    }
+    .sec-banner-icon { font-size: 1.5rem; }
+    .sec-banner-text { font-size: 0.88rem; color: var(--muted); }
+    .sec-banner-text strong { color: var(--ink); }
+
+    /* ═══════════════════════════════════════════════════════════
+       PRICING
+    ═══════════════════════════════════════════════════════════ */
+    .pricing { background: var(--surface); }
+    .pricing-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 24px;
+      margin-top: 56px;
+    }
+    @media (max-width: 680px) { .pricing-grid { grid-template-columns: 1fr; } }
+
+    .pricing-card {
+      border-radius: var(--radius-xl); padding: 44px 40px;
+      border: 1px solid var(--border); background: var(--surface-2);
+      position: relative; overflow: hidden;
+      transition: transform 0.25s, box-shadow 0.25s;
+    }
+    .pricing-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-lg); }
+    .pricing-card.featured {
+      background: linear-gradient(145deg, var(--brand-900) 0%, var(--brand-800) 60%, #163ba0 100%);
+      border-color: transparent; color: white;
+    }
+    .pricing-card.featured::before {
+      content: ''; position: absolute; top: 0; right: 0;
+      width: 260px; height: 260px; border-radius: 50%;
+      background: radial-gradient(circle, rgba(255,255,255,0.06), transparent);
+      transform: translate(30%, -30%);
+    }
+
+    .pricing-label {
+      font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.12em; color: var(--subtle); margin-bottom: 12px;
+    }
+    .pricing-card.featured .pricing-label { color: rgba(255,255,255,0.6); }
+    .pricing-badge {
+      display: inline-block; padding: 4px 12px; border-radius: 999px;
+      font-size: 0.7rem; font-weight: 700;
+      background: rgba(16,185,129,0.15); color: var(--accent-emerald);
+      border: 1px solid rgba(16,185,129,0.3); margin-bottom: 20px;
+    }
+    .pricing-title {
+      font-size: 1.6rem; font-weight: 900; letter-spacing: -0.03em; margin-bottom: 6px;
+    }
+    .pricing-card.featured .pricing-title { color: white; }
+    .pricing-price {
+      font-size: 2.6rem; font-weight: 900; letter-spacing: -0.05em; line-height: 1;
+      margin-bottom: 4px;
+    }
+    .pricing-card.featured .pricing-price { color: white; }
+    .pricing-price .currency { font-size: 1.4rem; vertical-align: top; margin-top: 8px; display: inline-block; }
+    .pricing-price .period { font-size: 1rem; font-weight: 500; opacity: 0.7; }
+    .pricing-note { font-size: 0.8rem; color: var(--muted); margin-bottom: 32px; }
+    .pricing-card.featured .pricing-note { color: rgba(255,255,255,0.65); }
+
+    .pricing-features { list-style: none; display: flex; flex-direction: column; gap: 10px; margin-bottom: 36px; }
+    .pricing-features li {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 0.9rem; color: var(--muted);
+    }
+    .pricing-card.featured .pricing-features li { color: rgba(255,255,255,0.82); }
+    .pricing-features li .check {
+      width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.65rem; font-weight: 800;
+    }
+    .pricing-features li .check.green { background: rgba(16,185,129,0.15); color: var(--accent-emerald); }
+    .pricing-card.featured .pricing-features li .check.green { background: rgba(16,185,129,0.25); }
+
+    .btn-pricing-primary {
+      display: block; width: 100%; text-align: center;
+      padding: 14px; border-radius: var(--radius);
+      background: white; color: var(--brand-800);
+      font-weight: 700; font-size: 0.95rem;
+      transition: all 0.2s; border: none;
+    }
+    .btn-pricing-primary:hover { transform: translateY(-1px); box-shadow: var(--shadow-md); }
+    .btn-pricing-outline {
+      display: block; width: 100%; text-align: center;
+      padding: 14px; border-radius: var(--radius);
+      background: transparent; color: var(--ink);
+      font-weight: 700; font-size: 0.95rem;
+      border: 1.5px solid var(--border-strong);
+      transition: all 0.2s;
+    }
+    .btn-pricing-outline:hover { background: var(--surface); border-color: var(--brand-400); }
+
+    /* ═══════════════════════════════════════════════════════════
+       DEMO CTA
+    ═══════════════════════════════════════════════════════════ */
+    .demo-cta {
+      background: var(--bg); padding: 96px 0;
+    }
+    .demo-card {
+      border-radius: var(--radius-xl); overflow: hidden; position: relative;
+      background: linear-gradient(135deg, var(--brand-900) 0%, var(--brand-800) 40%, #0e2d8a 70%, rgba(6,182,212,0.4) 100%);
+      padding: 80px 60px;
+    }
+    .demo-card::before {
+      content: ''; position: absolute; inset: 0;
+      background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.03'%3E%3Ccircle cx='30' cy='30' r='2'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+    }
+    .demo-card-inner { position: relative; z-index: 1; max-width: 640px; }
+    .demo-card h2 {
+      font-size: clamp(2rem, 4vw, 3rem); font-weight: 900; letter-spacing: -0.04em;
+      color: white; line-height: 1.1; margin-bottom: 16px;
+    }
+    .demo-card p { font-size: 1.05rem; color: rgba(255,255,255,0.75); margin-bottom: 36px; line-height: 1.65; }
+    .demo-ctas { display: flex; gap: 14px; flex-wrap: wrap; }
+    .btn-demo-white {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 14px 28px; border-radius: var(--radius);
+      background: white; color: var(--brand-800);
+      font-weight: 700; font-size: 0.95rem;
+      transition: all 0.2s;
+    }
+    .btn-demo-white:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
+    .btn-demo-outline {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 14px 28px; border-radius: var(--radius);
+      border: 1.5px solid rgba(255,255,255,0.3); color: white;
+      font-weight: 600; font-size: 0.95rem;
+      transition: all 0.2s; background: transparent;
+    }
+    .btn-demo-outline:hover { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.5); }
+    .demo-credentials {
+      margin-top: 24px; padding: 14px 20px;
+      background: rgba(255,255,255,0.08); border-radius: var(--radius-sm);
+      border: 1px solid rgba(255,255,255,0.15);
+      display: inline-flex; align-items: center; gap: 20px; flex-wrap: wrap;
+    }
+    .demo-cred { font-size: 0.78rem; color: rgba(255,255,255,0.7); }
+    .demo-cred strong { color: white; font-family: 'Courier New', monospace; }
+
+    .demo-card-right {
+      position: absolute; right: 0; top: 0; bottom: 0; width: 400px;
+      display: flex; align-items: center; justify-content: center;
+      padding: 40px;
+    }
+    .demo-mini-ui {
+      background: rgba(255,255,255,0.07); backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.15); border-radius: var(--radius-lg);
+      padding: 24px; width: 100%;
+    }
+    .demo-mini-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.08);
+      font-size: 0.78rem; color: rgba(255,255,255,0.7);
+    }
+    .demo-mini-row:last-child { border-bottom: none; }
+    .demo-mini-ref { font-family: monospace; font-size: 0.7rem; color: rgba(255,255,255,0.5); }
+    @media (max-width: 960px) { .demo-card-right { display: none; } }
+    @media (max-width: 600px) { .demo-card { padding: 48px 32px; } }
+
+    /* ═══════════════════════════════════════════════════════════
+       FAQ
+    ═══════════════════════════════════════════════════════════ */
+    .faq { background: var(--surface); }
+    .faq-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 2px;
+      margin-top: 56px; border: 1px solid var(--border); border-radius: var(--radius-xl);
+      background: var(--border); overflow: hidden;
+    }
+    @media (max-width: 680px) { .faq-grid { grid-template-columns: 1fr; } }
+    .faq-item {
+      padding: 32px 36px; background: var(--surface); cursor: pointer;
+      transition: background 0.15s;
+    }
+    .faq-item:hover { background: var(--surface-2); }
+    .faq-q {
+      font-size: 0.95rem; font-weight: 700; color: var(--ink);
+      margin-bottom: 10px; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
+    }
+    .faq-a { font-size: 0.88rem; color: var(--muted); line-height: 1.65; }
+
+    /* ═══════════════════════════════════════════════════════════
+       FOOTER
+    ═══════════════════════════════════════════════════════════ */
+    footer {
+      background: var(--ink); color: rgba(255,255,255,0.6);
+      padding: 64px 0 40px;
+    }
+    [data-theme="dark"] footer { background: #030712; }
+    .footer-inner {
+      display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 48px;
+    }
+    @media (max-width: 860px) { .footer-inner { grid-template-columns: 1fr 1fr; gap: 36px; } }
+    @media (max-width: 500px) { .footer-inner { grid-template-columns: 1fr; } }
+    .footer-brand { display: flex; flex-direction: column; gap: 12px; }
+    .footer-logo {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 1.1rem; font-weight: 800; color: white; letter-spacing: -0.02em;
+    }
+    .footer-logo-mark {
+      width: 32px; height: 32px; border-radius: 8px;
+      background: linear-gradient(135deg, var(--brand-600), var(--accent-cyan));
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.85rem; font-weight: 900; color: white; letter-spacing: -1px;
+    }
+    .footer-tagline { font-size: 0.85rem; line-height: 1.6; }
+    .footer-col-title { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: rgba(255,255,255,0.4); margin-bottom: 14px; }
+    .footer-links { display: flex; flex-direction: column; gap: 8px; }
+    .footer-links a { font-size: 0.85rem; color: rgba(255,255,255,0.55); transition: color 0.15s; }
+    .footer-links a:hover { color: white; }
+    .footer-bottom {
+      margin-top: 56px; padding-top: 24px; border-top: 1px solid rgba(255,255,255,0.08);
+      display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+    }
+    .footer-bottom-text { font-size: 0.78rem; }
+    .footer-badges { display: flex; gap: 10px; }
+    .footer-badge {
+      padding: 4px 10px; border-radius: 6px;
+      border: 1px solid rgba(255,255,255,0.12);
+      font-size: 0.68rem; font-weight: 600; color: rgba(255,255,255,0.4);
+    }
+
+    /* ═══════════════════════════════════════════════════════════
+       ANIMATIONS
+    ═══════════════════════════════════════════════════════════ */
+    .fade-up {
+      opacity: 0; transform: translateY(24px);
+      transition: opacity 0.5s ease, transform 0.5s ease;
+    }
+    .fade-up.visible { opacity: 1; transform: translateY(0); }
+    .fade-up:nth-child(2) { transition-delay: 0.08s; }
+    .fade-up:nth-child(3) { transition-delay: 0.16s; }
+    .fade-up:nth-child(4) { transition-delay: 0.24s; }
+
+    /* number count-up placeholder */
+    .count-up { display: inline-block; }
+
+    /* ═══════════════════════════════════════════════════════════
+       SCROLLBAR
+    ═══════════════════════════════════════════════════════════ */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--subtle); }
+  </style>
+</head>
+<body>
+
+  <!-- ════════════════════════════════════════════
+       NAVIGATION
+  ════════════════════════════════════════════ -->
+  <nav id="navbar">
+    <div class="container nav-inner">
+      <a href="#" class="nav-logo">
+        <div class="nav-logo-mark">K</div>
+        Kilter
+      </a>
+
+      <div class="nav-links">
+        <a href="#streams">Features</a>
+        <a href="#engine">Matching Engine</a>
+        <a href="#security">Security</a>
+        <a href="#pricing">Pricing</a>
+        <a href="#faq">FAQ</a>
+      </div>
+
+      <div class="nav-actions">
+        <button class="btn-theme" id="themeToggle" aria-label="Toggle theme" title="Toggle dark mode">
+          <span id="themeIcon">🌙</span>
+        </button>
+        <a href="pricing.html" class="btn-outline">Pricing</a>
+        <a href="#demo" class="btn-primary">Try the demo →</a>
+      </div>
+
+      <button class="nav-menu-btn" aria-label="Menu">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+        </svg>
+      </button>
+    </div>
+  </nav>
+
+  <!-- ════════════════════════════════════════════
+       HERO
+  ════════════════════════════════════════════ -->
+  <section class="hero text-center">
+    <div class="hero-bg">
+      <div class="hero-grid"></div>
+      <div class="orb orb-1"></div>
+      <div class="orb orb-2"></div>
+      <div class="orb orb-3"></div>
+    </div>
+
+    <div class="container hero-inner">
+      <div class="hero-eyebrow">
+        <div class="badge">
+          <span class="dot"></span>
+          Now in pilot with partner banks
+        </div>
+      </div>
+
+      <h1>
+        Reconciliation,<br>
+        <span class="text-gradient">automated.</span>
+      </h1>
+
+      <p class="hero-sub">
+        Self-hosted reconciliation across nostro&nbsp;/&nbsp;GL, mobile money, and card-scheme settlements —
+        all in one platform, on your infrastructure.
+      </p>
+
+      <div class="hero-ctas">
+        <a href="#demo" class="btn-hero-primary">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="5 3 19 12 5 21 5 3"/>
+          </svg>
+          See it live — free demo
+        </a>
+        <a href="pricing.html" class="btn-hero-secondary">
+          View pricing
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+            <path d="M5 12h14M12 5l7 7-7 7"/>
+          </svg>
+        </a>
+      </div>
+
+      <div class="hero-trust">
+        <div class="trust-item">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          Self-hosted — your data stays yours
+        </div>
+        <div class="trust-item">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          MFA on every login
+        </div>
+        <div class="trust-item">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M9 12l2 2 4-4M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9z"/></svg>
+          Append-only audit log
+        </div>
+        <div class="trust-item">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+          PCI-DSS storage scope reduction
+        </div>
+      </div>
+
+      <!-- Mockup -->
+      <div class="hero-visual">
+        <div class="mockup-frame">
+          <div class="mockup-bar">
+            <div class="mockup-dot"></div>
+            <div class="mockup-dot"></div>
+            <div class="mockup-dot"></div>
+            <div class="mockup-url">kilter.yourbank.local/dashboard</div>
+          </div>
+          <div class="mockup-body">
+            <div class="mini-stats">
+              <div class="mini-stat">
+                <div class="mini-stat-label">Auto-matched today</div>
+                <div class="mini-stat-val green">84%</div>
+                <div class="mini-stat-sub">↑ 9% vs last month</div>
+              </div>
+              <div class="mini-stat">
+                <div class="mini-stat-label">Pending review</div>
+                <div class="mini-stat-val amber">23</div>
+                <div class="mini-stat-sub">↓ 41 items cleared</div>
+              </div>
+              <div class="mini-stat">
+                <div class="mini-stat-label">Total matched</div>
+                <div class="mini-stat-val">GHS 4.2M</div>
+                <div class="mini-stat-sub">Today's settlements</div>
+              </div>
+              <div class="mini-stat">
+                <div class="mini-stat-label">Open items</div>
+                <div class="mini-stat-val red">7</div>
+                <div class="mini-stat-sub">2 approaching SLA</div>
+              </div>
+            </div>
+            <table class="mini-table">
+              <thead>
+                <tr>
+                  <th>Scheme Ref</th>
+                  <th>File source</th>
+                  <th>Settlement date</th>
+                  <th>Amount (GHS)</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>RRN-0049281</code></td>
+                  <td>Visa Base II</td>
+                  <td>2026-05-09</td>
+                  <td>2,450.00</td>
+                  <td><span class="status-pill pill-matched">✓ Matched</span></td>
+                </tr>
+                <tr>
+                  <td><code>RRN-0049282</code></td>
+                  <td>MTN MoMo B2W</td>
+                  <td>2026-05-09</td>
+                  <td>870.00</td>
+                  <td><span class="status-pill pill-matched">✓ Matched</span></td>
+                </tr>
+                <tr>
+                  <td><code>MT940-28831</code></td>
+                  <td>SWIFT MT940</td>
+                  <td>2026-05-09</td>
+                  <td>18,200.00</td>
+                  <td><span class="status-pill pill-pending">⏳ Review</span></td>
+                </tr>
+                <tr>
+                  <td><code>RRN-0049291</code></td>
+                  <td>Mastercard IPM</td>
+                  <td>2026-05-09</td>
+                  <td>1,120.50</td>
+                  <td><span class="status-pill pill-mismatch">⚠ Mismatch</span></td>
+                </tr>
+                <tr>
+                  <td><code>FLEX-2026-441</code></td>
+                  <td>Flexcube GL</td>
+                  <td>2026-05-09</td>
+                  <td>52,000.00</td>
+                  <td><span class="status-pill pill-matched">✓ Matched</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════
+       LOGO STRIP
+  ════════════════════════════════════════════ -->
+  <div class="logo-strip">
+    <div class="logo-strip-label">Works with the files banks actually send</div>
+    <div style="overflow: hidden;">
+      <div class="logo-scroll">
+        <!-- duplicated for infinite loop -->
+        <div class="logo-pill"><span class="icon">📄</span> SWIFT MT940</div>
+        <div class="logo-pill"><span class="icon">📄</span> SWIFT MT950</div>
+        <div class="logo-pill"><span class="icon">📄</span> camt.053</div>
+        <div class="logo-pill"><span class="icon">📄</span> camt.054</div>
+        <div class="logo-pill"><span class="icon">💳</span> Visa Base II</div>
+        <div class="logo-pill"><span class="icon">💳</span> Mastercard IPM</div>
+        <div class="logo-pill"><span class="icon">💳</span> Verve GhIPSS</div>
+        <div class="logo-pill"><span class="icon">📱</span> MTN MoMo</div>
+        <div class="logo-pill"><span class="icon">📱</span> M-Pesa Safaricom</div>
+        <div class="logo-pill"><span class="icon">📱</span> Airtel Money</div>
+        <div class="logo-pill"><span class="icon">📱</span> Telcel Cash</div>
+        <div class="logo-pill"><span class="icon">🏦</span> Flexcube XLSX</div>
+        <div class="logo-pill"><span class="icon">🏦</span> T24 / Finacle</div>
+        <div class="logo-pill"><span class="icon">📊</span> BYO CSV/XLSX</div>
+        <!-- duplicate set -->
+        <div class="logo-pill"><span class="icon">📄</span> SWIFT MT940</div>
+        <div class="logo-pill"><span class="icon">📄</span> SWIFT MT950</div>
+        <div class="logo-pill"><span class="icon">📄</span> camt.053</div>
+        <div class="logo-pill"><span class="icon">📄</span> camt.054</div>
+        <div class="logo-pill"><span class="icon">💳</span> Visa Base II</div>
+        <div class="logo-pill"><span class="icon">💳</span> Mastercard IPM</div>
+        <div class="logo-pill"><span class="icon">💳</span> Verve GhIPSS</div>
+        <div class="logo-pill"><span class="icon">📱</span> MTN MoMo</div>
+        <div class="logo-pill"><span class="icon">📱</span> M-Pesa Safaricom</div>
+        <div class="logo-pill"><span class="icon">📱</span> Airtel Money</div>
+        <div class="logo-pill"><span class="icon">📱</span> Telcel Cash</div>
+        <div class="logo-pill"><span class="icon">🏦</span> Flexcube XLSX</div>
+        <div class="logo-pill"><span class="icon">🏦</span> T24 / Finacle</div>
+        <div class="logo-pill"><span class="icon">📊</span> BYO CSV/XLSX</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════════
+       THREE STREAMS
+  ════════════════════════════════════════════ -->
+  <section class="streams" id="streams">
+    <div class="container">
+      <div class="section-eyebrow"><span class="line"></span> Three streams, one platform</div>
+      <h2 class="section-title">Replaces 2–3 separate<br>reconciliation tools</h2>
+      <p class="section-sub">
+        Same operator UI, same audit log, same role model, same deployment.
+        A team trained on nostro recon can immediately work the mobile-money or cards queue.
+      </p>
+
+      <div class="streams-grid">
+        <div class="stream-card fade-up">
+          <div class="stream-icon blue">🏦</div>
+          <div class="stream-name">Nostro / GL</div>
+          <div class="stream-desc">
+            Pairs SWIFT statements (MT940/950, camt.053/054) and ISO 20022 messages against your core-banking GL extract.
+            4-tier matching engine — 75–85% auto-match on typical pilot data.
+          </div>
+          <div class="stream-tags">
+            <span class="tag">MT940 / MT950</span>
+            <span class="tag">camt.053 / camt.054</span>
+            <span class="tag">Flexcube XLSX</span>
+            <span class="tag">T24 / Finacle</span>
+            <span class="tag">Oracle DB pull</span>
+          </div>
+        </div>
+
+        <div class="stream-card fade-up">
+          <div class="stream-icon cyan">📱</div>
+          <div class="stream-name">Mobile Money</div>
+          <div class="stream-desc">
+            Ingests operator B2W / W2B CSV feeds directly. Pre-seeded profiles for the major West African networks.
+            Bind a wallet account in the BYO formats UI and start ingesting the same day.
+          </div>
+          <div class="stream-tags">
+            <span class="tag">MTN MoMo</span>
+            <span class="tag">M-Pesa Safaricom</span>
+            <span class="tag">Airtel Money</span>
+            <span class="tag">Telcel Cash</span>
+            <span class="tag">GhIPSS</span>
+          </div>
+        </div>
+
+        <div class="stream-card fade-up">
+          <div class="stream-icon violet">💳</div>
+          <div class="stream-name">Card Scheme</div>
+          <div class="stream-desc">
+            N-way matching on scheme-ref: auth → clearing → settlement.
+            PCI-DSS storage scope reduction built-in — full PAN never persists, masked at the parser seam.
+          </div>
+          <div class="stream-tags">
+            <span class="tag">Visa Base II</span>
+            <span class="tag">Mastercard IPM</span>
+            <span class="tag">Verve / GhIPSS</span>
+            <span class="tag">Switch TSV</span>
+            <span class="tag">Masked PAN</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════
+       MATCHING ENGINE
+  ════════════════════════════════════════════ -->
+  <section class="engine" id="engine">
+    <div class="container">
+      <div class="section-eyebrow"><span class="line"></span> The matching engine</div>
+      <h2 class="section-title">Match aggressively,<br>surface only what's ambiguous</h2>
+      <p class="section-sub">
+        Four tiers applied strongest-first. Operators review exceptions;
+        the engine handles the rest — including tolerance windows, FX rounding, and date drift.
+      </p>
+
+      <div class="engine-layout">
+        <div class="tier-stack">
+          <div class="tier-row fade-up">
+            <div class="tier-badge">T1</div>
+            <div class="tier-info">
+              <div class="tier-title">Exact reference match</div>
+              <div class="tier-sub">SWIFT TRN / scheme ref + settlement amount within tolerance</div>
+            </div>
+            <div class="tier-rate">75–85%<br><span style="font-size:0.65rem;font-weight:500;">typical auto</span></div>
+          </div>
+          <div class="tier-row fade-up">
+            <div class="tier-badge">T2</div>
+            <div class="tier-info">
+              <div class="tier-title">Amount + date window</div>
+              <div class="tier-sub">Matching settlement amount within ±N days; configurable per account</div>
+            </div>
+            <div class="tier-rate">+8–12%</div>
+          </div>
+          <div class="tier-row fade-up">
+            <div class="tier-badge">T3</div>
+            <div class="tier-info">
+              <div class="tier-title">Partial reference / narrative</div>
+              <div class="tier-sub">Substring or normalised reference match with amount confirmation</div>
+            </div>
+            <div class="tier-rate">+3–6%</div>
+          </div>
+          <div class="tier-row fade-up">
+            <div class="tier-badge">T4</div>
+            <div class="tier-info">
+              <div class="tier-title">Human review queue</div>
+              <div class="tier-sub">Remaining items ranked by confidence — operator confirms or disputes</div>
+            </div>
+            <div class="tier-rate">100%<br><span style="font-size:0.65rem;font-weight:500;">coverage</span></div>
+          </div>
+
+          <div class="tier-note">
+            <strong>Bring-your-own tolerance</strong> per account: date window (days), amount delta (absolute or bps), FX spread. Set once in the account profile, applied across all three streams.
+          </div>
+        </div>
+
+        <div class="engine-stats">
+          <div class="stat-big fade-up">
+            <div class="stat-big-num text-gradient">75–85%</div>
+            <div class="stat-big-label">Auto-matched at Tier 1 in typical pilot data</div>
+            <div class="stat-big-sub">Leaving operators to focus on genuine exceptions, not routine lookups</div>
+          </div>
+          <div class="stat-row">
+            <div class="stat-sm fade-up">
+              <div class="stat-sm-num text-gradient">1–2<span style="font-size:1rem;font-weight:600;"> min</span></div>
+              <div class="stat-sm-label">per file ingested, any format</div>
+            </div>
+            <div class="stat-sm fade-up">
+              <div class="stat-sm-num text-gradient">50%</div>
+              <div class="stat-sm-label">close-cycle time reduction target</div>
+            </div>
+          </div>
+          <div class="stat-sm fade-up" style="padding: 20px 24px;">
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+              <span style="font-size: 1.4rem;">🔄</span>
+              <div class="stat-sm-label" style="margin: 0; font-weight: 700; font-size: 0.88rem; color: var(--ink);">Idempotent re-runs</div>
+            </div>
+            <div style="font-size: 0.8rem; color: var(--muted);">Re-running the engine on already-matched records is safe — it won't flip 'disputed' or 'written_off' items. Operator decisions always win.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════
+       HOW IT WORKS
+  ════════════════════════════════════════════ -->
+  <section class="how" id="how">
+    <div class="container">
+      <div class="text-center" style="margin-bottom: 0;">
+        <div class="section-eyebrow" style="justify-content: center;"><span class="line"></span> Getting started</div>
+        <h2 class="section-title">From file drop to signed certificate<br>in four steps</h2>
+      </div>
+
+      <div class="steps">
+        <div class="step fade-up">
+          <div class="step-icon">📥</div>
+          <div class="step-num">01</div>
+          <div class="step-title">Drop the file</div>
+          <div class="step-desc">Upload via the UI, POST to the API, or let the watched-folder scanner auto-ingest from <code>messages/</code>. Any format Kilter knows, or map your own.</div>
+        </div>
+        <div class="step fade-up">
+          <div class="step-icon">⚡</div>
+          <div class="step-num">02</div>
+          <div class="step-title">Engine matches</div>
+          <div class="step-desc">Four-tier engine runs automatically. 75–85% of transactions matched in seconds. Exceptions ranked by confidence and surfaced to the review queue.</div>
+        </div>
+        <div class="step fade-up">
+          <div class="step-icon">👤</div>
+          <div class="step-num">03</div>
+          <div class="step-title">Operator decides</div>
+          <div class="step-desc">Confirm, reject, or dispute in one click. Maker / checker workflow enforced. Every decision logged with timestamp, user, and reason.</div>
+        </div>
+        <div class="step fade-up">
+          <div class="step-icon">📋</div>
+          <div class="step-num">04</div>
+          <div class="step-title">Sign the certificate</div>
+          <div class="step-desc">Month-end reconciliation certificate signed by authorised approvers. Frozen snapshot — the figures never silently shift after sign-off.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════
+       SECURITY
+  ════════════════════════════════════════════ -->
+  <section class="security" id="security">
+    <div class="container">
+      <div class="section-eyebrow"><span class="line"></span> Security & compliance</div>
+      <h2 class="section-title">Pen-tested, hardened,<br>audit-ready</h2>
+      <p class="section-sub">
+        Your CISO gets a full security pack at <code>security/</code>.
+        Built for regulated financial institutions from the ground up.
+      </p>
+
+      <div class="security-glass">
+        <div class="sec-grid">
+          <div class="sec-item fade-up">
+            <div class="sec-icon emerald">🔒</div>
+            <div>
+              <div class="sec-title">TOTP MFA on every login</div>
+              <div class="sec-desc">Microsoft Authenticator out of the box. Active Directory / LDAPS as optional second layer per user. TOTP replay cache prevents 30-second code reuse.</div>
+            </div>
+          </div>
+          <div class="sec-item fade-up">
+            <div class="sec-icon brand">🛡️</div>
+            <div>
+              <div class="sec-title">Non-root, read-only rootfs</div>
+              <div class="sec-desc">Container runs as UID 10001. All Linux capabilities dropped. <code>no-new-privileges</code> enforced. Only mounted volumes and <code>/tmp</code> are writable.</div>
+            </div>
+          </div>
+          <div class="sec-item fade-up">
+            <div class="sec-icon amber">🔑</div>
+            <div>
+              <div class="sec-title">Encrypted at rest</div>
+              <div class="sec-desc">TOTP secrets and SMTP credentials protected with Fernet (AES-128-CBC + HMAC-SHA256). Key lives in your secret manager, never baked into source.</div>
+            </div>
+          </div>
+          <div class="sec-item fade-up">
+            <div class="sec-icon emerald">📋</div>
+            <div>
+              <div class="sec-title">Append-only audit log</div>
+              <div class="sec-desc">Every login, upload, match decision, dispute, and export is logged with UTC timestamp, acting user, and IP. Immutability enforced at the database trigger level.</div>
+            </div>
+          </div>
+          <div class="sec-item fade-up">
+            <div class="sec-icon brand">💳</div>
+            <div>
+              <div class="sec-title">PCI-DSS storage scope reduction</div>
+              <div class="sec-desc">Full PAN never persists — masked to <code>first6+last4</code> at the parser seam. No SAD (CVV, track, PIN) accepted. Free-text scanned and redacted on ingest.</div>
+            </div>
+          </div>
+          <div class="sec-item fade-up">
+            <div class="sec-icon amber">🏠</div>
+            <div>
+              <div class="sec-title">Self-hosted. No phone-home.</div>
+              <div class="sec-desc">Runs on your VM or private cloud. No telemetry. No data leaves your infrastructure. You own the encryption key, you own the data.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sec-banner">
+          <div class="sec-banner-icon">✅</div>
+          <div class="sec-banner-text">
+            <strong>Security headers on every response:</strong> HSTS (preload-eligible after 24 hours), CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy.
+            Rate limit on <code>/login</code> (10 attempts / minute per IP).
+            300 MB streaming upload cap with chunked-write (covers 250 MB card-switch files).
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════
+       PRICING
+  ════════════════════════════════════════════ -->
+  <section class="pricing" id="pricing">
+    <div class="container container-sm">
+      <div class="text-center">
+        <div class="section-eyebrow" style="justify-content: center;"><span class="line"></span> Pricing</div>
+        <h2 class="section-title">Simple, transparent,<br>per-account pricing</h2>
+        <p class="section-sub" style="margin: 0 auto;">
+          One account slot covers any stream — nostro, wallet, or card-acquirer.
+          Start with a free pilot; convert on your terms.
+        </p>
+      </div>
+
+      <div class="pricing-grid">
+        <!-- Pilot -->
+        <div class="pricing-card fade-up">
+          <div class="pricing-label">Pilot</div>
+          <div class="pricing-badge">Free · 60–90 days</div>
+          <div class="pricing-title">Real evaluation</div>
+          <div class="pricing-price">
+            <span class="currency">$</span>0
+          </div>
+          <div class="pricing-note">Your data, your VM, your terms. Walk away if we miss the targets.</div>
+
+          <ul class="pricing-features">
+            <li><span class="check green">✓</span> Up to 10 nostro + 10 GL accounts</li>
+            <li><span class="check green">✓</span> Real (or anonymised) production data</li>
+            <li><span class="check green">✓</span> All three reconciliation streams</li>
+            <li><span class="check green">✓</span> Success criteria pinned upfront</li>
+            <li><span class="check green">✓</span> 50% discount on Year 1 if targets hit</li>
+            <li><span class="check green">✓</span> 25% discount on Year 2 (design partner)</li>
+            <li><span class="check green">✓</span> Data deleted on request if you walk</li>
+          </ul>
+
+          <a href="mailto:timelessnypotech@outlook.com?subject=Kilter Pilot Request" class="btn-pricing-outline">
+            Start a pilot conversation →
+          </a>
+        </div>
+
+        <!-- Paid -->
+        <div class="pricing-card featured fade-up">
+          <div class="pricing-label">Paid licence</div>
+          <div class="pricing-title">Production</div>
+          <div class="pricing-price">
+            <span class="currency">$</span>4–8k
+            <span class="period">/ account / year</span>
+          </div>
+          <div class="pricing-note">Each nostro, wallet, and card-acquirer account = one slot. Volume discounts beyond 10 accounts.</div>
+
+          <ul class="pricing-features">
+            <li><span class="check green">✓</span> All three reconciliation streams</li>
+            <li><span class="check green">✓</span> Full audit-grade certificates</li>
+            <li><span class="check green">✓</span> LDAP / AD integration</li>
+            <li><span class="check green">✓</span> Maker / checker / approver workflow</li>
+            <li><span class="check green">✓</span> Custom CSV/XLSX column mapping</li>
+            <li><span class="check green">✓</span> MySQL / SQLite — your choice</li>
+            <li><span class="check green">✓</span> Annual prepay, net 30</li>
+            <li><span class="check green">✓</span> Implementation: USD $3–10k one-time</li>
+          </ul>
+
+          <a href="mailto:timelessnypotech@outlook.com?subject=Kilter Pricing Enquiry" class="btn-pricing-primary">
+            Get a quote →
+          </a>
+        </div>
+      </div>
+
+      <div style="text-align: center; margin-top: 24px;">
+        <a href="pricing.html" style="font-size: 0.88rem; color: var(--muted); text-decoration: underline; text-underline-offset: 3px;">
+          See full pricing breakdown with GHS / USD toggle →
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════
+       DEMO CTA
+  ════════════════════════════════════════════ -->
+  <section class="demo-cta" id="demo">
+    <div class="container">
+      <div class="demo-card">
+        <div class="demo-card-inner">
+          <h2>Try it on your own data — today.</h2>
+          <p>
+            Request a demo URL and drop in your own SWIFT, Flexcube, mobile-money, or card-switch file.
+            We'll load it, run the engine, and show you what the first week looks like.
+            Bring two questions and a sceptic.
+          </p>
+          <div class="demo-ctas">
+            <a href="mailto:timelessnypotech@outlook.com?subject=Kilter Demo Request&body=Hi%2C%0A%0AI'd like to see a live Kilter demo.%0A%0AOrganisation%3A%20%5BFILL%5D%0AFile%20format%20we%20use%3A%20%5BFILL%5D%0AAvailability%3A%20%5BFILL%5D%0A" class="btn-demo-white">
+              📅 Book a 30-minute demo
+            </a>
+            <a href="pitch_pilot_bank.html" class="btn-demo-outline">
+              View the pilot deck →
+            </a>
+          </div>
+
+          <div class="demo-credentials">
+            <span class="demo-cred">Contact: <strong>timelessnypotech@outlook.com</strong></span>
+            <span class="demo-cred">Response within <strong>1 business day</strong></span>
+          </div>
+        </div>
+
+        <div class="demo-card-right">
+          <div class="demo-mini-ui">
+            <div style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: rgba(255,255,255,0.4); margin-bottom: 16px;">Live demo — match queue</div>
+            <div class="demo-mini-row">
+              <div>
+                <div style="font-size: 0.8rem; color: rgba(255,255,255,0.8); font-weight: 600;">GHS 4,200.00</div>
+                <div class="demo-mini-ref">MT940-0019281</div>
+              </div>
+              <span class="status-pill pill-matched" style="font-size: 0.6rem;">✓ Auto</span>
+            </div>
+            <div class="demo-mini-row">
+              <div>
+                <div style="font-size: 0.8rem; color: rgba(255,255,255,0.8); font-weight: 600;">GHS 870.50</div>
+                <div class="demo-mini-ref">MTN-B2W-2049</div>
+              </div>
+              <span class="status-pill pill-matched" style="font-size: 0.6rem;">✓ Auto</span>
+            </div>
+            <div class="demo-mini-row">
+              <div>
+                <div style="font-size: 0.8rem; color: rgba(255,255,255,0.8); font-weight: 600;">GHS 18,200.00</div>
+                <div class="demo-mini-ref">RRN-0049291</div>
+              </div>
+              <span class="status-pill pill-pending" style="font-size: 0.6rem;">⏳ Review</span>
+            </div>
+            <div class="demo-mini-row">
+              <div>
+                <div style="font-size: 0.8rem; color: rgba(255,255,255,0.8); font-weight: 600;">GHS 1,100.00</div>
+                <div class="demo-mini-ref">FLEX-2026-441</div>
+              </div>
+              <span class="status-pill pill-matched" style="font-size: 0.6rem;">✓ Auto</span>
+            </div>
+            <div style="margin-top: 16px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,0.08); text-align: center; font-size: 0.72rem; color: rgba(255,255,255,0.4);">
+              84% matched · 23 items pending · 7 open
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════
+       FAQ
+  ════════════════════════════════════════════ -->
+  <section class="faq" id="faq">
+    <div class="container container-sm">
+      <div class="text-center">
+        <div class="section-eyebrow" style="justify-content: center;"><span class="line"></span> FAQ</div>
+        <h2 class="section-title">Common questions</h2>
+      </div>
+
+      <div class="faq-grid">
+        <div class="faq-item">
+          <div class="faq-q">Does Kilter work without internet access?<span>→</span></div>
+          <div class="faq-a">Yes. Kilter is entirely self-hosted and has no phone-home telemetry. It works fully air-gapped on your VM or private cloud. Font resources are optional and can be proxied or bundled internally.</div>
+        </div>
+        <div class="faq-item">
+          <div class="faq-q">What database does it use?<span>→</span></div>
+          <div class="faq-a">SQLite by default (zero-config, WAL mode, hot backup API). MySQL is fully supported via <code>DATABASE_URL</code> env var — suitable for multi-tenant or high-concurrency deployments. See MYSQL.md in the package.</div>
+        </div>
+        <div class="faq-item">
+          <div class="faq-q">How do I handle a file format we invented ourselves?<span>→</span></div>
+          <div class="faq-a">Use the BYO CSV/XLSX column-mapping wizard in the UI. Map your columns once, save the profile, bind it to an account. Kilter will parse every future file from that account using that profile.</div>
+        </div>
+        <div class="faq-item">
+          <div class="faq-q">What if the engine misses a match?<span>→</span></div>
+          <div class="faq-a">Operators can manually confirm any unmatched item directly from the review queue. The decision is logged with timestamp, user, and reason. Matched-at and matched-by are stamped on the record.</div>
+        </div>
+        <div class="faq-item">
+          <div class="faq-q">Can I run multiple workers for performance?<span>→</span></div>
+          <div class="faq-a">Single-worker is strongly recommended (default). The in-process TOTP replay cache isn't shared across workers — multi-worker risks OTP reuse attacks. A Redis-backed store is on the roadmap for high-throughput deployments.</div>
+        </div>
+        <div class="faq-item">
+          <div class="faq-q">How does Active Directory / LDAP integration work?<span>→</span></div>
+          <div class="faq-a">Set <code>KILTER_LDAP_URL</code>, <code>KILTER_LDAP_BASE_DN</code>, and optional CA bundle. Then flip individual users from <code>local</code> to <code>ldap</code> in the Users admin page. AD password becomes the first factor; TOTP remains the second. See LDAP.md for the full guide.</div>
+        </div>
+        <div class="faq-item">
+          <div class="faq-q">Is there an API?<span>→</span></div>
+          <div class="faq-a">Yes. Cards files are ingested via <code>POST /cards/files</code>. The full FastAPI spec is self-documented at <code>/docs</code> (Swagger UI) and <code>/redoc</code> on your deployed instance.</div>
+        </div>
+        <div class="faq-item">
+          <div class="faq-q">What's the upgrade path?<span>→</span></div>
+          <div class="faq-a"><code>git pull && docker compose build --pull && docker compose up -d</code>. Schema is idempotent — <code>init_db()</code> runs on startup and applies any new migrations in-place. No manual migration step.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════
+       FOOTER
+  ════════════════════════════════════════════ -->
+  <footer>
+    <div class="container">
+      <div class="footer-inner">
+        <div class="footer-brand">
+          <div class="footer-logo">
+            <div class="footer-logo-mark">K</div>
+            Kilter
+          </div>
+          <div class="footer-tagline">
+            Self-hosted reconciliation across nostro / GL, mobile money, and card-scheme settlements.
+            Built by Timeless Nypo Tech.
+          </div>
+          <div style="margin-top: 8px;">
+            <a href="mailto:timelessnypotech@outlook.com" style="font-size: 0.82rem; color: rgba(255,255,255,0.45);">
+              timelessnypotech@outlook.com
+            </a>
+          </div>
+        </div>
+
+        <div>
+          <div class="footer-col-title">Product</div>
+          <div class="footer-links">
+            <a href="#streams">Features</a>
+            <a href="#engine">Matching engine</a>
+            <a href="#security">Security</a>
+            <a href="pricing.html">Pricing</a>
+            <a href="#demo">Request demo</a>
+          </div>
+        </div>
+
+        <div>
+          <div class="footer-col-title">Resources</div>
+          <div class="footer-links">
+            <a href="pitch_pilot_bank.html">Pilot deck</a>
+            <a href="pitch.html">Pitch deck</a>
+            <a href="ONE_PAGER.md" download>One pager (MD)</a>
+            <a href="#faq">FAQ</a>
+          </div>
+        </div>
+
+        <div>
+          <div class="footer-col-title">Docs</div>
+          <div class="footer-links">
+            <a href="../docs/DEPLOY.md">Deployment guide</a>
+            <a href="../docs/LDAP.md">LDAP / AD guide</a>
+            <a href="../docs/MYSQL.md">MySQL guide</a>
+            <a href="../docs/OPERATOR_NOTES.md">Operator notes</a>
+            <a href="../docs/RUNBOOK.md">Runbook</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer-bottom">
+        <div class="footer-bottom-text">
+          © 2026 Timeless Nypo Tech. All rights reserved.
+        </div>
+        <div class="footer-badges">
+          <div class="footer-badge">Self-hosted</div>
+          <div class="footer-badge">PCI-DSS scope ↓</div>
+          <div class="footer-badge">MFA by default</div>
+          <div class="footer-badge">Audit-ready</div>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- ════════════════════════════════════════════
+       JAVASCRIPT
+  ════════════════════════════════════════════ -->
+  <script>
+    // ── theme toggle ──────────────────────────────────────
+    const root = document.documentElement;
+    const themeBtn = document.getElementById('themeToggle');
+    const themeIcon = document.getElementById('themeIcon');
+
+    const saved = localStorage.getItem('kilter-theme') ||
+      (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    setTheme(saved);
+
+    themeBtn.addEventListener('click', () => {
+      setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark');
+    });
+
+    function setTheme(t) {
+      root.dataset.theme = t;
+      themeIcon.textContent = t === 'dark' ? '☀️' : '🌙';
+      localStorage.setItem('kilter-theme', t);
+    }
+
+    // ── sticky nav shadow ─────────────────────────────────
+    const navbar = document.getElementById('navbar');
+    window.addEventListener('scroll', () => {
+      navbar.classList.toggle('scrolled', window.scrollY > 20);
+    }, { passive: true });
+
+    // ── scroll-triggered fade-in ──────────────────────────
+    const fadeEls = document.querySelectorAll('.fade-up');
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (e.isIntersecting) {
+          e.target.classList.add('visible');
+          observer.unobserve(e.target);
+        }
+      });
+    }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+    fadeEls.forEach(el => observer.observe(el));
+
+    // ── simple count-up for stats ─────────────────────────
+    function animateCount(el, target, suffix, duration) {
+      const start = performance.now();
+      const startVal = 0;
+      function frame(now) {
+        const progress = Math.min((now - start) / duration, 1);
+        const eased = 1 - Math.pow(1 - progress, 3);
+        el.textContent = Math.round(startVal + eased * target) + suffix;
+        if (progress < 1) requestAnimationFrame(frame);
+      }
+      requestAnimationFrame(frame);
+    }
+
+    // ── smooth anchor scroll ──────────────────────────────
+    document.querySelectorAll('a[href^="#"]').forEach(a => {
+      a.addEventListener('click', e => {
+        const target = document.querySelector(a.getAttribute('href'));
+        if (target) {
+          e.preventDefault();
+          const offset = 80; // nav height + buffer
+          window.scrollTo({ top: target.offsetTop - offset, behavior: 'smooth' });
+        }
+      });
+    });
+
+    // ── fix glassmorphism tier note (remove CSS text) ──────
+    document.querySelectorAll('.tier-stack > div:last-of-type').forEach(el => {
+      // The tier note div's text was set in HTML — no fix needed
+    });
+  </script>
+</body>
+</html>

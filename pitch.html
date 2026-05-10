@@ -1,0 +1,1039 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Kilter — Pitch</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reset.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/theme/black.css">
+  <style>
+    /* ── Design tokens ── */
+    :root {
+      --bg:       #060c16;
+      --bg-card:  rgba(255,255,255,0.04);
+      --bg-card2: rgba(255,255,255,0.07);
+      --border:   rgba(255,255,255,0.08);
+      --border-hi:rgba(255,255,255,0.18);
+      --ink:   #f1f5f9;
+      --muted: rgba(255,255,255,0.52);
+      --dim:   rgba(255,255,255,0.26);
+      --blue:  #3b82f6; --blue-soft: rgba(59,130,246,0.14);
+      --cyan:  #22d3ee; --cyan-soft:  rgba(34,211,238,0.12);
+      --green: #10b981; --green-soft: rgba(16,185,129,0.12);
+      --amber: #f59e0b; --amber-soft: rgba(245,158,11,0.12);
+      --red:   #f43f5e; --red-soft:   rgba(244,63,94,0.12);
+      --purple:#a78bfa; --purple-soft: rgba(167,139,250,0.12);
+      --grad: linear-gradient(135deg, #3b82f6 0%, #22d3ee 100%);
+      --grad-warm: linear-gradient(135deg, #f59e0b 0%, #ef4444 100%);
+      --grad-green: linear-gradient(135deg, #10b981 0%, #06b6d4 100%);
+    }
+
+    /* ── Global overrides ── */
+    .reveal { font-family: "Inter", system-ui, sans-serif; background: var(--bg); color: var(--ink); }
+    .reveal .slides { background: var(--bg); }
+    .reveal .slide-background { background: var(--bg) !important; }
+    .reveal .slide-background-content { background: var(--bg) !important; }
+
+    /* dot-grid texture on every slide */
+    .reveal section::before {
+      content: '';
+      position: absolute; inset: 0; pointer-events: none; z-index: 0;
+      background-image: radial-gradient(rgba(255,255,255,0.028) 1px, transparent 1px);
+      background-size: 28px 28px;
+    }
+    .reveal section > * { position: relative; z-index: 1; }
+
+    .reveal h1, .reveal h2, .reveal h3, .reveal h4 {
+      font-family: "Inter", system-ui, sans-serif;
+      color: var(--ink); text-transform: none; letter-spacing: -0.4px;
+    }
+    .reveal h1 { font-size: 3em; font-weight: 900; }
+    .reveal h2 { font-size: 1.6em; font-weight: 800; margin-bottom: 0.3em; }
+    .reveal h3 { font-size: 1.1em; font-weight: 700; }
+    .reveal p, .reveal li { color: var(--ink); line-height: 1.5; }
+    .reveal ul { margin-left: 1.1em; }
+    .reveal ul li { margin-bottom: 0.4em; font-size: 0.88em; }
+    .reveal aside.notes { display: none; }
+
+    /* ── Utility ── */
+    .grad-text {
+      background: var(--grad);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .grad-text-warm {
+      background: var(--grad-warm);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .muted  { color: var(--muted) !important; }
+    .dim    { color: var(--dim) !important; }
+    .small  { font-size: 0.78em; }
+
+    .pill {
+      display: inline-block; padding: 3px 11px; border-radius: 20px;
+      font-size: 0.68em; font-weight: 700; letter-spacing: 0.3px;
+    }
+    .pill-blue   { background: var(--blue-soft);   color: var(--blue);   border: 1px solid rgba(59,130,246,0.25); }
+    .pill-green  { background: var(--green-soft);  color: var(--green);  border: 1px solid rgba(16,185,129,0.3); }
+    .pill-amber  { background: var(--amber-soft);  color: var(--amber);  border: 1px solid rgba(245,158,11,0.3); }
+    .pill-cyan   { background: var(--cyan-soft);   color: var(--cyan);   border: 1px solid rgba(34,211,238,0.25); }
+    .pill-purple { background: var(--purple-soft); color: var(--purple); border: 1px solid rgba(167,139,250,0.3); }
+
+    .glass {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 14px; backdrop-filter: blur(8px);
+    }
+    .glass-hi {
+      background: var(--bg-card2); border: 1px solid var(--border-hi);
+      border-radius: 14px;
+    }
+    .fill { display: inline-block; background: var(--amber-soft); color: var(--amber); padding: 1px 7px; border-radius: 4px; font-size: 0.85em; font-weight: 600; }
+
+    @keyframes float {
+      0%, 100% { transform: translateY(0px); }
+      50%       { transform: translateY(-8px); }
+    }
+    @keyframes glow-pulse {
+      0%, 100% { opacity: 0.5; }
+      50%       { opacity: 1; }
+    }
+
+    /* ─────────────────────────────────────
+       SLIDE 1 — TITLE
+    ───────────────────────────────────── */
+    .slide-title { text-align: center; }
+    .slide-title .orb {
+      position: absolute; border-radius: 50%; filter: blur(90px); pointer-events: none; z-index: 0;
+    }
+    .slide-title .orb-1 { width: 420px; height: 420px; top: -80px; left: -100px; background: rgba(59,130,246,0.18); }
+    .slide-title .orb-2 { width: 300px; height: 300px; bottom: -60px; right: -60px; background: rgba(34,211,238,0.14); }
+    .slide-title .logo-badge {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 72px; height: 72px; border-radius: 18px;
+      background: var(--grad); font-size: 2.2em; font-weight: 900; color: white;
+      margin-bottom: 22px; box-shadow: 0 0 50px rgba(59,130,246,0.45);
+      animation: float 4s ease-in-out infinite;
+    }
+    .slide-title h1 {
+      font-size: 3.2em !important; font-weight: 900 !important; margin-bottom: 12px !important;
+      line-height: 1 !important;
+    }
+    .slide-title .tagline {
+      font-size: 0.88em; color: var(--muted); max-width: 580px; margin: 0 auto 20px;
+    }
+    .slide-title .meta-row {
+      display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap;
+      font-size: 0.72em; color: var(--dim);
+    }
+    .slide-title .meta-row .sep { color: var(--dim); }
+
+    /* ─────────────────────────────────────
+       SLIDE 2 — WHY NOW
+    ───────────────────────────────────── */
+    .problem-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; margin-top: 0.8em; }
+    .problem-card {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 14px; padding: 16px 18px;
+    }
+    .problem-card .p-icon {
+      width: 44px; height: 44px; border-radius: 11px; display: flex; align-items: center; justify-content: center;
+      font-size: 1.4em; margin-bottom: 14px;
+    }
+    .problem-card .p-head { font-size: 1em; font-weight: 800; color: var(--ink); margin-bottom: 6px; }
+    .problem-card .p-body { font-size: 0.78em; color: var(--muted); line-height: 1.55; }
+    .problem-card.p-amber { border-color: rgba(245,158,11,0.28); }
+    .problem-card.p-amber .p-icon { background: var(--amber-soft); }
+    .problem-card.p-red { border-color: rgba(244,63,94,0.28); }
+    .problem-card.p-red .p-icon { background: var(--red-soft); }
+    .problem-card.p-purple { border-color: rgba(167,139,250,0.28); }
+    .problem-card.p-purple .p-icon { background: var(--purple-soft); }
+
+    /* ─────────────────────────────────────
+       SLIDE 3 — WHAT KILTER DOES
+    ───────────────────────────────────── */
+    .pipeline {
+      display: flex; align-items: center; gap: 0; margin: 0.4em 0;
+      flex-wrap: nowrap; overflow: hidden;
+    }
+    .pipeline-step {
+      flex: 1; text-align: center; padding: 16px 8px;
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 12px;
+    }
+    .pipeline-step .ps-icon { font-size: 1.5em; margin-bottom: 6px; }
+    .pipeline-step .ps-name { font-size: 0.72em; font-weight: 700; color: var(--ink); }
+    .pipeline-step .ps-sub  { font-size: 0.62em; color: var(--muted); margin-top: 2px; }
+    .pipeline-arrow { flex-shrink: 0; color: var(--dim); font-size: 1.3em; padding: 0 6px; }
+
+    .ps-badge {
+      width: 38px; height: 38px; border-radius: 10px; border: 1px solid transparent;
+      display: flex; align-items: center; justify-content: center; margin: 0 auto;
+      font-family: "Inter", system-ui, sans-serif; font-size: 11px; font-weight: 900;
+      letter-spacing: -0.4px;
+    }
+    .sc-badge {
+      width: 48px; height: 48px; border-radius: 13px; border: 1px solid transparent;
+      display: flex; align-items: center; justify-content: center; margin: 0 auto 10px;
+      font-family: "Inter", system-ui, sans-serif; font-size: 13px; font-weight: 900;
+      letter-spacing: -0.5px;
+    }
+
+    .feature-cols { display: grid; grid-template-columns: repeat(2,1fr); gap: 10px; margin-top: 0.3em; }
+    .feat-item {
+      display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px;
+      background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px;
+    }
+    .feat-item .fi-dot {
+      flex-shrink: 0; width: 8px; height: 8px; border-radius: 50%;
+      background: var(--grad); margin-top: 5px;
+    }
+    .feat-item .fi-text { font-size: 0.68em; color: var(--ink); line-height: 1.45; }
+    .feat-item .fi-text strong { display: block; font-weight: 700; margin-bottom: 1px; }
+
+    /* ─────────────────────────────────────
+       SLIDE 4 — MATCHING ENGINE
+    ───────────────────────────────────── */
+    .tier-cards { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; margin-top: 0.7em; }
+    .tier-card {
+      border-radius: 14px; padding: 14px 14px;
+      border: 1px solid var(--border); background: var(--bg-card);
+      position: relative; overflow: hidden;
+    }
+    .tier-card::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+      border-radius: 14px 14px 0 0;
+    }
+    .tier-card.t1::before { background: var(--grad); }
+    .tier-card.t2::before { background: linear-gradient(90deg, var(--cyan), var(--blue)); }
+    .tier-card.t3::before { background: linear-gradient(90deg, var(--amber), #f97316); }
+    .tier-card.t4::before { background: linear-gradient(90deg, var(--purple), #ec4899); }
+    .tier-card .t-num {
+      font-size: 2em; font-weight: 900; line-height: 1; margin-bottom: 8px; letter-spacing: -2px;
+    }
+    .tier-card.t1 .t-num { background: var(--grad); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    .tier-card.t2 .t-num { color: var(--cyan); }
+    .tier-card.t3 .t-num { color: var(--amber); }
+    .tier-card.t4 .t-num { color: var(--purple); }
+    .tier-card .t-name { font-size: 0.8em; font-weight: 700; color: var(--ink); margin-bottom: 6px; }
+    .tier-card .t-crit { font-size: 0.72em; color: var(--muted); line-height: 1.5; margin-bottom: 8px; }
+    .tier-card .t-ex   { font-size: 0.68em; color: var(--dim); font-style: italic; }
+    .tier-card.t1 { border-color: rgba(59,130,246,0.3); box-shadow: 0 0 30px rgba(59,130,246,0.1); }
+
+    /* ─────────────────────────────────────
+       SLIDE 5 — REVIEW EXPERIENCE
+    ───────────────────────────────────── */
+    .browser-shell {
+      background: #0d1117; border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 12px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    }
+    .browser-bar {
+      background: #161b22; padding: 10px 16px;
+      display: flex; align-items: center; gap: 12px; border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+    .browser-dots { display: flex; gap: 6px; }
+    .browser-dots span {
+      width: 10px; height: 10px; border-radius: 50%;
+    }
+    .browser-dots span:nth-child(1) { background: #ff5f57; }
+    .browser-dots span:nth-child(2) { background: #febc2e; }
+    .browser-dots span:nth-child(3) { background: #28c840; }
+    .browser-url {
+      flex: 1; background: rgba(255,255,255,0.06); border-radius: 6px;
+      padding: 4px 12px; font-size: 0.72em; color: var(--dim); font-family: monospace;
+    }
+    .browser-body { padding: 10px 14px; }
+    /* mini stats strip */
+    .mock-stats { display: flex; gap: 8px; margin-bottom: 14px; }
+    .mock-stat {
+      flex: 1; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 8px; padding: 8px 10px; text-align: center;
+    }
+    .mock-stat .ms-v { font-size: 1.2em; font-weight: 800; color: var(--blue); }
+    .mock-stat .ms-l { font-size: 0.6em; color: var(--dim); margin-top: 1px; }
+    /* review card */
+    .mock-card {
+      background: rgba(255,255,255,0.04); border: 1px solid rgba(59,130,246,0.3);
+      border-radius: 10px; padding: 14px 16px;
+    }
+    .mock-card .mc-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .mock-card .mc-tier { font-size: 0.65em; font-weight: 700; color: var(--blue); background: var(--blue-soft); border: 1px solid rgba(59,130,246,0.25); padding: 3px 10px; border-radius: 20px; }
+    .mock-card .mc-acct { font-size: 0.65em; color: var(--dim); }
+    .mock-txn-grid { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: center; margin-bottom: 12px; }
+    .mock-txn { background: rgba(255,255,255,0.04); border-radius: 8px; padding: 9px 11px; }
+    .mock-txn .mt-label { font-size: 0.58em; font-weight: 600; color: var(--dim); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+    .mock-txn .mt-ref   { font-size: 0.7em; font-weight: 700; color: var(--ink); font-family: monospace; }
+    .mock-txn .mt-amt   { font-size: 0.95em; font-weight: 800; color: var(--green); margin-top: 2px; }
+    .mock-txn .mt-date  { font-size: 0.62em; color: var(--dim); margin-top: 2px; }
+    .mock-arrow { text-align: center; color: var(--dim); font-size: 1.2em; }
+    .mock-actions { display: flex; gap: 8px; }
+    .mock-btn {
+      flex: 1; text-align: center; padding: 7px 0; border-radius: 7px;
+      font-size: 0.7em; font-weight: 700; border: 1px solid transparent;
+    }
+    .mock-btn.confirm { background: rgba(16,185,129,0.15); color: var(--green); border-color: rgba(16,185,129,0.35); }
+    .mock-btn.reject  { background: rgba(244,63,94,0.1);   color: var(--red);   border-color: rgba(244,63,94,0.3); }
+    .mock-btn.skip    { background: rgba(255,255,255,0.04); color: var(--dim);   border-color: var(--border); }
+    .mock-btn.swap    { background: rgba(245,158,11,0.1);   color: var(--amber); border-color: rgba(245,158,11,0.3); }
+
+    /* ─────────────────────────────────────
+       SLIDE 6 — SCOPING
+    ───────────────────────────────────── */
+    .scope-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-top: 0.7em; }
+    .scope-card {
+      border-radius: 14px; padding: 14px 16px; text-align: center;
+      background: var(--bg-card); border: 1px solid var(--border);
+    }
+    .scope-card .sc-icon { font-size: 1em; margin-bottom: 0; }
+    .scope-card .sc-who  { font-size: 0.68em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin-bottom: 4px; }
+    .scope-card .sc-name { font-size: 0.95em; font-weight: 800; color: var(--ink); margin-bottom: 6px; }
+    .scope-card .sc-desc { font-size: 0.72em; color: var(--muted); line-height: 1.45; }
+    .scope-card.sc-hi { border-color: rgba(59,130,246,0.3); background: rgba(59,130,246,0.06); }
+
+    /* ─────────────────────────────────────
+       SLIDE 7 — ROLES & AUDIT
+    ───────────────────────────────────── */
+    .roles-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 8px; margin-bottom: 10px; }
+    .role-card {
+      display: flex; align-items: flex-start; gap: 10px;
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 10px; padding: 10px 12px;
+    }
+    .role-card .rc-badge {
+      flex-shrink: 0; width: 30px; height: 30px; border-radius: 7px;
+      display: flex; align-items: center; justify-content: center;
+      font-family: "Inter", system-ui, sans-serif; font-size: 0.68em;
+      font-weight: 800; letter-spacing: -0.3px; color: inherit;
+    }
+    .role-card .rc-name { font-size: 0.78em; font-weight: 700; color: var(--ink); margin-bottom: 2px; }
+    .role-card .rc-desc { font-size: 0.68em; color: var(--muted); line-height: 1.4; }
+    .audit-log-mock {
+      background: #0a0e18; border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 10px; padding: 10px 14px; font-family: ui-monospace, Menlo, monospace; font-size: 0.6em;
+      overflow: hidden;
+    }
+    .log-line { display: flex; gap: 10px; padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
+    .log-line:last-child { border-bottom: none; }
+    .log-ts   { color: var(--dim); flex-shrink: 0; }
+    .log-user { color: var(--cyan); flex-shrink: 0; font-weight: 600; }
+    .log-act  { color: var(--green); flex-shrink: 0; }
+    .log-det  { color: var(--muted); }
+
+    /* ─────────────────────────────────────
+       SLIDE 8 — SCHEDULER
+    ───────────────────────────────────── */
+    .sched-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; align-items: start; margin-top: 0.3em; }
+    .sched-wrap { position: relative; padding-left: 32px; }
+    .sched-wrap::before {
+      content: ''; position: absolute; left: 10px; top: 8px; bottom: 8px;
+      width: 2px; background: linear-gradient(to bottom, var(--blue), var(--cyan));
+      border-radius: 2px;
+    }
+    .sched-node { position: relative; margin-bottom: 2px; display: flex; align-items: flex-start; gap: 10px; }
+    .sched-node::before {
+      content: ''; position: absolute; left: -25px; top: 5px;
+      width: 12px; height: 12px; border-radius: 50%;
+      background: var(--bg); border: 2px solid var(--blue);
+      box-shadow: 0 0 10px var(--blue), 0 0 20px rgba(59,130,246,0.3);
+    }
+    .sched-node.nc::before { border-color: var(--cyan); box-shadow: 0 0 10px var(--cyan), 0 0 20px rgba(34,211,238,0.3); }
+    .sched-node.ng::before { border-color: var(--green); box-shadow: 0 0 10px var(--green), 0 0 20px rgba(16,185,129,0.3); }
+    .sched-time { font-size: 0.62em; color: var(--dim); min-width: 3.8em; font-variant-numeric: tabular-nums; font-weight: 600; padding-top: 1px; font-family: monospace; }
+    .sched-body {}
+    .sched-name { font-size: 0.65em; font-weight: 700; color: var(--ink); }
+    .sched-desc { font-size: 0.56em; color: var(--muted); line-height: 1.3; margin-top: 0; }
+    .sched-weekly { font-size: 0.55em; color: var(--dim); font-style: italic; margin: 2px 0; }
+    .sched-callout {
+      background: rgba(59,130,246,0.06); border: 1px solid rgba(59,130,246,0.2);
+      border-radius: 12px; padding: 12px 16px;
+    }
+    .sched-callout .sc-big { font-size: 1em; font-weight: 800; color: var(--ink); margin-bottom: 4px; }
+    .sched-callout .sc-body { font-size: 0.72em; color: var(--muted); line-height: 1.5; }
+
+    /* ─────────────────────────────────────
+       SLIDE 9 — SECURITY
+    ───────────────────────────────────── */
+    .sec-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; margin-top: 0.7em; }
+    .sec-item {
+      display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
+      background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 11px 12px;
+      transition: border-color 0.15s;
+    }
+    .sec-item:hover { border-color: rgba(16,185,129,0.35); }
+    .sec-check {
+      width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0;
+      background: var(--green-soft); border: 1px solid rgba(16,185,129,0.4);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 10px; color: var(--green); font-weight: 900;
+      box-shadow: 0 0 8px rgba(16,185,129,0.25);
+    }
+    .sec-text { font-size: 0.72em; color: var(--ink); line-height: 1.4; }
+    .sec-text strong { display: block; font-weight: 700; margin-bottom: 3px; font-size: 1.04em; }
+    .sec-text span { color: var(--muted); font-size: 0.93em; }
+
+    /* ─────────────────────────────────────
+       SLIDE 10 — NUMBERS
+    ───────────────────────────────────── */
+    .num-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 12px; margin-top: 0.7em; }
+    .num-card {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 14px; padding: 16px 18px;
+    }
+    .num-card .nc-label { font-size: 0.7em; color: var(--muted); margin-bottom: 4px; font-weight: 600; }
+    .num-card .nc-before { font-size: 0.78em; color: var(--dim); text-decoration: line-through; margin-bottom: 4px; }
+    .num-card .nc-after  { font-size: 1.8em; font-weight: 900; letter-spacing: -1px; line-height: 1; }
+    .num-card .nc-note   { font-size: 0.68em; color: var(--muted); margin-top: 5px; }
+    .num-card.n-blue { border-color: rgba(59,130,246,0.25); }
+    .num-card.n-blue .nc-after { background: var(--grad); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    .num-card.n-green { border-color: rgba(16,185,129,0.25); }
+    .num-card.n-green .nc-after { color: var(--green); }
+    .num-card.n-amber { border-color: rgba(245,158,11,0.25); }
+    .num-card.n-amber .nc-after { color: var(--amber); }
+    .num-card.n-cyan { border-color: rgba(34,211,238,0.25); }
+    .num-card.n-cyan .nc-after { color: var(--cyan); }
+
+    /* ─────────────────────────────────────
+       SLIDE 11 — PRODUCTION READY
+    ───────────────────────────────────── */
+    .ready-wrap { display: grid; grid-template-columns: 1fr 200px; gap: 20px; align-items: center; margin-top: 0.3em; }
+    .chip-flow { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chip {
+      display: inline-flex; align-items: center; gap: 5px;
+      background: var(--bg-card); border: 1px solid var(--border); border-radius: 20px;
+      padding: 4px 10px; font-size: 0.62em; font-weight: 600; color: var(--muted);
+    }
+    .chip .chip-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); flex-shrink: 0; box-shadow: 0 0 6px var(--green); }
+    .chip.hi { background: var(--green-soft); border-color: rgba(16,185,129,0.3); color: var(--green); }
+    .v1-badge {
+      background: var(--grad); border-radius: 20px; padding: 28px 20px; text-align: center;
+      box-shadow: 0 0 50px rgba(59,130,246,0.3);
+    }
+    .v1-badge .v1-v   { font-size: 0.82em; font-weight: 700; color: rgba(255,255,255,0.7); text-transform: uppercase; letter-spacing: 1px; }
+    .v1-badge .v1-num { font-size: 3.5em; font-weight: 900; color: white; letter-spacing: -2px; line-height: 1; }
+    .v1-badge .v1-sub { font-size: 0.75em; color: rgba(255,255,255,0.8); margin-top: 6px; font-weight: 600; }
+
+    /* ─────────────────────────────────────
+       SLIDE 12 — ASK
+    ───────────────────────────────────── */
+    .ask-list { list-style: none; padding: 0; margin-top: 0.6em; }
+    .ask-list li {
+      display: flex; align-items: flex-start; gap: 14px;
+      padding: 10px 16px; margin-bottom: 6px;
+      background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+    }
+    .ask-num {
+      flex-shrink: 0; width: 30px; height: 30px; border-radius: 50%;
+      background: var(--grad); display: flex; align-items: center; justify-content: center;
+      font-size: 0.8em; font-weight: 800; color: white;
+      box-shadow: 0 0 14px rgba(59,130,246,0.4);
+    }
+    .ask-text { font-size: 0.78em; color: var(--ink); line-height: 1.4; }
+    .ask-text strong { font-weight: 700; display: block; margin-bottom: 1px; }
+    .ask-cta {
+      text-align: center; margin-top: 0.6em; padding: 10px 18px;
+      background: var(--blue-soft); border: 1px solid rgba(59,130,246,0.3); border-radius: 10px;
+    }
+    .ask-cta p { font-size: 0.78em; color: var(--muted); margin: 0; }
+    .ask-cta strong { color: var(--ink); }
+  </style>
+</head>
+<body>
+<div class="reveal">
+<div class="slides">
+
+<!-- ═══════════════════════════════════
+     SLIDE 1 — TITLE
+════════════════════════════════════ -->
+<section class="slide-title" style="text-align:center">
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+  <div class="logo-badge">K</div>
+  <h1><span class="grad-text">Kilter</span></h1>
+  <p class="tagline">
+    Modern nostro + GL reconciliation for correspondent-banking treasuries.<br>
+    <span style="color:var(--dim)">Self-hosted &middot; Audit-first &middot; Automated</span>
+  </p>
+  <div class="meta-row">
+    <span class="pill pill-green">v1.0 Production-ready</span>
+    <span class="sep">&middot;</span>
+    <span>Pre-launch security review <span style="color:var(--green)">&#10003; complete</span></span>
+    <span class="sep">&middot;</span>
+    <span><span class="fill">Presenter</span> &middot; <span class="fill">Date</span></span>
+  </div>
+  <aside class="notes">
+    Kilter is the purpose-built replacement for end-of-life reconciliation tooling.
+    v1.0, production-ready, security reviewed, deployable today.
+  </aside>
+</section>
+
+<!-- ═══════════════════════════════════
+     SLIDE 2 — WHY NOW
+════════════════════════════════════ -->
+<section>
+  <h2>Three problems.<br><span class="grad-text-warm">One tool to fix all of them.</span></h2>
+  <div class="problem-grid">
+    <div class="problem-card p-amber">
+      <div class="p-icon" style="font-size:1em"><span style="font-family:'Inter',sans-serif;font-weight:900;color:var(--amber);font-size:0.85em;line-height:1">!</span></div>
+      <div class="p-head">The tool is end-of-life</div>
+      <div class="p-body">
+        No active vendor support. No Windows 11 hardening patches.
+        UI unchanged since launch. Every day it runs is an unpatched risk.
+      </div>
+    </div>
+    <div class="problem-card p-red">
+      <div class="p-icon" style="font-size:1em"><span style="font-family:'Inter',sans-serif;font-weight:900;color:var(--red);font-size:0.52em;letter-spacing:-0.5px;line-height:1">XLS</span></div>
+      <div class="p-head">Reconciliation is still Excel</div>
+      <div class="p-body">
+        Ops exports from the core, pulls SWIFT statements, eyeballs matches row by row.
+        <span class="fill">[FILL: hours per cycle]</span> every month-end. Manually.
+      </div>
+    </div>
+    <div class="problem-card p-purple">
+      <div class="p-icon" style="font-size:1em"><span style="font-family:'Inter',sans-serif;font-weight:900;color:var(--purple);font-size:0.85em;line-height:1">?</span></div>
+      <div class="p-head">Audit has no breadcrumbs</div>
+      <div class="p-body">
+        "Who cleared this on the 14th?" &rarr; a spreadsheet filename, maybe.
+        No timestamp. No user. Nothing a regulator can rely on.
+      </div>
+    </div>
+  </div>
+  <aside class="notes">
+    These three risks compound. The tool you can't patch is running the process you can't trace.
+  </aside>
+</section>
+
+<!-- ═══════════════════════════════════
+     SLIDE 3 — WHAT KILTER DOES
+════════════════════════════════════ -->
+<section>
+  <h2>What <span class="grad-text">Kilter</span> does</h2>
+  <p class="muted small" style="margin-bottom:0.2em">One pipeline. Start to finish.</p>
+
+  <div class="pipeline">
+    <div class="pipeline-step" style="border-color:rgba(59,130,246,0.3)">
+      <div class="ps-icon"><div class="ps-badge" style="background:rgba(59,130,246,0.2);border-color:rgba(59,130,246,0.3);color:#3b82f6">IN</div></div>
+      <div class="ps-name" style="color:#3b82f6">Intake</div>
+      <div class="ps-sub">SWIFT + Flexcube<br>auto-scanned</div>
+    </div>
+    <div class="pipeline-arrow">&#10132;</div>
+    <div class="pipeline-step" style="border-color:rgba(34,211,238,0.3)">
+      <div class="ps-icon"><div class="ps-badge" style="background:rgba(34,211,238,0.15);border-color:rgba(34,211,238,0.3);color:#22d3ee">MT</div></div>
+      <div class="ps-name" style="color:#22d3ee">Match</div>
+      <div class="ps-sub">4-tier engine<br>proposes pairs</div>
+    </div>
+    <div class="pipeline-arrow">&#10132;</div>
+    <div class="pipeline-step" style="border-color:rgba(167,139,250,0.3)">
+      <div class="ps-icon"><div class="ps-badge" style="background:rgba(167,139,250,0.15);border-color:rgba(167,139,250,0.3);color:#a78bfa">RV</div></div>
+      <div class="ps-name" style="color:#a78bfa">Review</div>
+      <div class="ps-sub">Ops confirms<br>or rejects</div>
+    </div>
+    <div class="pipeline-arrow">&#10132;</div>
+    <div class="pipeline-step" style="border-color:rgba(16,185,129,0.3)">
+      <div class="ps-icon"><div class="ps-badge" style="background:rgba(16,185,129,0.15);border-color:rgba(16,185,129,0.3);color:#10b981">EX</div></div>
+      <div class="ps-name" style="color:#10b981">Export</div>
+      <div class="ps-sub">xlsx for finance<br>csv for audit</div>
+    </div>
+    <div class="pipeline-arrow">&#10132;</div>
+    <div class="pipeline-step" style="border-color:rgba(245,158,11,0.3)">
+      <div class="ps-icon"><div class="ps-badge" style="background:rgba(245,158,11,0.15);border-color:rgba(245,158,11,0.3);color:#f59e0b">AU</div></div>
+      <div class="ps-name" style="color:#f59e0b">Audit trail</div>
+      <div class="ps-sub">Every click<br>immutably logged</div>
+    </div>
+  </div>
+
+  <div class="feature-cols">
+    <div class="feat-item"><div class="fi-dot"></div><div class="fi-text"><strong>Format-agnostic intake</strong> MT940/950, camt.053/054, and Flexcube xlsx.</div></div>
+    <div class="feat-item"><div class="fi-dot"></div><div class="fi-text"><strong>Open-items ledger</strong> Unmatched breaks carry forward until resolved.</div></div>
+    <div class="feat-item"><div class="fi-dot"></div><div class="fi-text"><strong>Access-area scoping</strong> Per-user branch and account scope.</div></div>
+    <div class="feat-item"><div class="fi-dot"></div><div class="fi-text"><strong>7 automation jobs</strong> Scan, backup, SLA alerts, daily close — pre-seeded.</div></div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════
+     SLIDE 4 — MATCHING ENGINE
+════════════════════════════════════ -->
+<section>
+  <h2>The matching engine</h2>
+  <p class="muted small">Four tiers, strongest first. The engine proposes. Ops decides.</p>
+
+  <div class="tier-cards">
+    <div class="tier-card t1">
+      <div class="t-num">T1</div>
+      <div class="t-name">Strict match</div>
+      <div class="t-crit">Reference + amount + date all match exactly.</div>
+      <div class="t-ex">No judgement needed. 1:1, clean.</div>
+      <div style="margin-top:10px"><span class="pill pill-green" style="font-size:0.62em">Can auto-confirm</span></div>
+    </div>
+    <div class="tier-card t2">
+      <div class="t-num">T2</div>
+      <div class="t-name">Ref hit, amounts differ</div>
+      <div class="t-crit">Same reference, amount off by fees or FX.</div>
+      <div class="t-ex">Usually a wire-fee deduction.</div>
+      <div style="margin-top:10px"><span class="pill pill-cyan" style="font-size:0.62em">Human decides</span></div>
+    </div>
+    <div class="tier-card t3">
+      <div class="t-num">T3</div>
+      <div class="t-name">Amount + date, no ref</div>
+      <div class="t-crit">Same amount, same day — no reference in narrative.</div>
+      <div class="t-ex">Statement without a description.</div>
+      <div style="margin-top:10px"><span class="pill pill-amber" style="font-size:0.62em">Human decides</span></div>
+    </div>
+    <div class="tier-card t4">
+      <div class="t-num">T4</div>
+      <div class="t-name">Amount &plusmn;1 day</div>
+      <div class="t-crit">Same amount, next-day booking.</div>
+      <div class="t-ex">Weekend / cut-off timing shift.</div>
+      <div style="margin-top:10px"><span class="pill pill-purple" style="font-size:0.62em">Human decides</span></div>
+    </div>
+  </div>
+
+  <p style="margin-top:0.5em; font-size:0.78em; color:var(--muted); text-align:center">
+    The engine does the <em>searching</em>. Ops does the <em>deciding</em>.
+    &nbsp;&nbsp;<span class="pill pill-blue">Nothing auto-matches without a human confirm (except Tier 1 when enabled)</span>
+  </p>
+  <aside class="notes">
+    The right mental model: the engine removed the manual search. The judgement stays with ops.
+  </aside>
+</section>
+
+<!-- ═══════════════════════════════════
+     SLIDE 5 — REVIEW EXPERIENCE
+════════════════════════════════════ -->
+<section>
+  <div style="display:grid; grid-template-columns:1fr 1.2fr; gap:28px; align-items:center">
+    <div>
+      <h2 style="margin-bottom:0.4em; font-size:1.3em; white-space:nowrap">The review screen</h2>
+      <p class="muted small" style="margin-bottom:0.7em">This is where ops lives. Built for speed.</p>
+      <ul style="font-size:0.75em; margin-left:1em; margin-bottom:0">
+        <li style="margin-bottom:0.35em"><strong>One pair at a time</strong> &mdash; no scrolling through a spreadsheet.</li>
+        <li style="margin-bottom:0.35em"><strong>C / R / J · K</strong> &mdash; keyboard shortcuts. No mouse needed.</li>
+        <li style="margin-bottom:0.35em"><strong>Swap</strong> &mdash; surface the next ranked candidate without re-running the engine.</li>
+        <li style="margin-bottom:0.35em"><strong>Live stats strip</strong> &mdash; pending, confirmed, unmatched — updates as you work.</li>
+        <li><strong>"Queue cleared"</strong> &mdash; green card + download button when done.</li>
+      </ul>
+    </div>
+    <div class="browser-shell">
+      <div class="browser-bar">
+        <div class="browser-dots"><span></span><span></span><span></span></div>
+        <div class="browser-url">kilter.bank.local/review/42</div>
+      </div>
+      <div class="browser-body">
+        <div class="mock-stats">
+          <div class="mock-stat"><div class="ms-v" style="color:#a78bfa">12</div><div class="ms-l">Pending</div></div>
+          <div class="mock-stat"><div class="ms-v" style="color:#10b981">48</div><div class="ms-l">Confirmed</div></div>
+          <div class="mock-stat"><div class="ms-v" style="color:#f59e0b">3</div><div class="ms-l">Unmatched</div></div>
+        </div>
+        <div class="mock-card">
+          <div class="mc-top">
+            <span class="mc-tier">T1 · Strict match</span>
+            <span class="mc-acct">GHS &middot; Nostro 001</span>
+          </div>
+          <div class="mock-txn-grid">
+            <div class="mock-txn">
+              <div class="mt-label">SWIFT</div>
+              <div class="mt-ref">REF/2026050901</div>
+              <div class="mt-amt">+ 425,000.00</div>
+              <div class="mt-date">09 May 2026</div>
+            </div>
+            <div class="mock-arrow">&#8652;</div>
+            <div class="mock-txn">
+              <div class="mt-label">Flexcube GL</div>
+              <div class="mt-ref">REF/2026050901</div>
+              <div class="mt-amt">+ 425,000.00</div>
+              <div class="mt-date">09 May 2026</div>
+            </div>
+          </div>
+          <div class="mock-actions">
+            <div class="mock-btn confirm">Confirm (C)</div>
+            <div class="mock-btn reject">Reject (R)</div>
+            <div class="mock-btn skip">Skip</div>
+            <div class="mock-btn swap">Swap</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <aside class="notes">
+    The mockup shows a real Tier 1 match. The ops person sees the SWIFT side on the left, Flexcube on the right, and clicks C. That's it. The next pair appears immediately.
+  </aside>
+</section>
+
+<!-- ═══════════════════════════════════
+     SLIDE 6 — SCOPING
+════════════════════════════════════ -->
+<section>
+  <h2>Scoped to the way <span class="grad-text">each person works</span></h2>
+  <p class="muted small">One app. Every level of the org sees the right slice.</p>
+
+  <div class="scope-grid">
+    <div class="scope-card">
+      <div class="sc-icon"><div class="sc-badge" style="background:rgba(255,255,255,0.06);border-color:rgba(255,255,255,0.12);color:var(--ink)">BR</div></div>
+      <div class="sc-who">Branch ops</div>
+      <div class="sc-name">Single area</div>
+      <div class="sc-desc">Picks their branch on login. Only sees that branch's sessions, accounts, and queue. Zero noise from the rest of the bank.</div>
+    </div>
+    <div class="scope-card sc-hi">
+      <div class="sc-icon"><div class="sc-badge" style="background:rgba(59,130,246,0.15);border-color:rgba(59,130,246,0.3);color:var(--blue)">RG</div></div>
+      <div class="sc-who">Regional supervisors</div>
+      <div class="sc-name">Multi-area</div>
+      <div class="sc-desc">Ticks several branches at once. Badge reads "3 areas". Sessions list, dashboard stats, and exports all filter accordingly.</div>
+    </div>
+    <div class="scope-card">
+      <div class="sc-icon"><div class="sc-badge" style="background:rgba(16,185,129,0.15);border-color:rgba(16,185,129,0.3);color:var(--green)">HQ</div></div>
+      <div class="sc-who">Treasury leadership</div>
+      <div class="sc-name">All areas</div>
+      <div class="sc-desc">Leave the picker on "All areas". Full bank view, same UI — just wider scope. No separate admin mode needed.</div>
+    </div>
+  </div>
+
+  <p style="margin-top:0.6em; font-size:0.75em; color:var(--muted)">
+    Areas are configurable at deploy time — import from your existing tool's taxonomy or define your own.
+    Changes take effect immediately.
+  </p>
+</section>
+
+<!-- ═══════════════════════════════════
+     SLIDE 7 — ROLES & AUDIT
+════════════════════════════════════ -->
+<section>
+  <h2 style="margin-bottom:0.2em; line-height:1.15">Roles + an <span class="grad-text">immutable audit trail</span></h2>
+
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:18px; align-items:start; font-size:0.82em">
+    <div>
+      <p class="muted small" style="margin-bottom:0.5em">Four roles, each with own scope.</p>
+      <div class="roles-grid">
+        <div class="role-card">
+          <div class="rc-badge" style="background:var(--blue-soft); color:var(--blue)">ADM</div>
+          <div><div class="rc-name">admin</div><div class="rc-desc">Full access to all features.</div></div>
+        </div>
+        <div class="role-card">
+          <div class="rc-badge" style="background:var(--purple-soft); color:var(--purple)">OPS</div>
+          <div><div class="rc-name">ops</div><div class="rc-desc">Reconcile and export results.</div></div>
+        </div>
+        <div class="role-card">
+          <div class="rc-badge" style="background:var(--amber-soft); color:var(--amber)">AUD</div>
+          <div><div class="rc-name">audit</div><div class="rc-desc">View logs and export only.</div></div>
+        </div>
+        <div class="role-card">
+          <div class="rc-badge" style="background:var(--green-soft); color:var(--green)">IC</div>
+          <div><div class="rc-name">internal_control</div><div class="rc-desc">Same as audit, own scope area.</div></div>
+        </div>
+      </div>
+      <p style="margin-top:6px; font-size:0.76em; color:var(--muted)">
+        TOTP MFA on every account. Works with any authenticator app.
+      </p>
+    </div>
+    <div>
+      <p class="muted small" style="margin-bottom:0.6em">Every action written to one immutable log.</p>
+      <div class="audit-log-mock">
+        <div class="log-line">
+          <span class="log-ts">08:14:02</span>
+          <span class="log-user">k.mensah</span>
+          <span class="log-act">login</span>
+          <span class="log-det">Branch 001</span>
+        </div>
+        <div class="log-line">
+          <span class="log-ts">08:15:11</span>
+          <span class="log-user">k.mensah</span>
+          <span class="log-act">decision</span>
+          <span class="log-det">confirmed T1 #4421</span>
+        </div>
+        <div class="log-line">
+          <span class="log-ts">08:15:43</span>
+          <span class="log-user">k.mensah</span>
+          <span class="log-act">decision</span>
+          <span class="log-det">rejected T3 #4422</span>
+        </div>
+        <div class="log-line">
+          <span class="log-ts">08:22:05</span>
+          <span class="log-user">k.mensah</span>
+          <span class="log-act">export</span>
+          <span class="log-det">session 42, xlsx</span>
+        </div>
+        <div class="log-line">
+          <span class="log-ts">09:01:18</span>
+          <span class="log-user">a.otieno</span>
+          <span class="log-act">audit_export</span>
+          <span class="log-det">1,204 rows, CSV</span>
+        </div>
+      </div>
+      <p style="margin-top:6px; font-size:0.68em; color:var(--dim)">DB trigger prevents deletion or update. Every row is permanent.</p>
+      <div style="margin-top:8px; padding:9px 12px; background:var(--blue-soft); border:1px solid rgba(59,130,246,0.25); border-radius:9px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+        <span style="font-size:0.76em; color:var(--ink)">"Who cleared this on the 14th?" &nbsp;→&nbsp;</span>
+        <span style="font-size:0.82em; font-weight:800; background:var(--grad); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text">Under 1 second.</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════
+     SLIDE 8 — SCHEDULER
+════════════════════════════════════ -->
+<section>
+  <h2 style="font-size:1.1em">It works <span class="grad-text">while you sleep</span></h2>
+  <p class="muted small" style="margin:0 0 4px">7 pre-seeded jobs. No cron, no scripts.</p>
+
+  <div class="sched-cols">
+    <div class="sched-wrap">
+      <div class="sched-node ng">
+        <div class="sched-time">02:00</div>
+        <div class="sched-body">
+          <div class="sched-name">DB Backup</div>
+          <div class="sched-desc">7 nightly copies, auto-kept.</div>
+        </div>
+      </div>
+      <div class="sched-node nc">
+        <div class="sched-time">05:45</div>
+        <div class="sched-body">
+          <div class="sched-name">Flexcube Extract</div>
+          <div class="sched-desc">Oracle GL pull. No manual export.</div>
+        </div>
+      </div>
+      <div class="sched-node">
+        <div class="sched-time">06:00</div>
+        <div class="sched-body">
+          <div class="sched-name">Intake Scan</div>
+          <div class="sched-desc">SWIFT + Flex file parser.</div>
+        </div>
+      </div>
+      <div class="sched-node">
+        <div class="sched-time">06:15</div>
+        <div class="sched-body">
+          <div class="sched-name">Daily Breaks Report</div>
+          <div class="sched-desc">Breaks emailed to treasury.</div>
+        </div>
+      </div>
+      <div class="sched-node nc">
+        <div class="sched-time">08:00</div>
+        <div class="sched-body">
+          <div class="sched-name">SLA Check</div>
+          <div class="sched-desc">Teams/email SLA alert.</div>
+        </div>
+      </div>
+      <div class="sched-node">
+        <div class="sched-time">23:55</div>
+        <div class="sched-body">
+          <div class="sched-name">Daily Close</div>
+          <div class="sched-desc">Rolls breaks to open items.</div>
+        </div>
+      </div>
+      <div class="sched-weekly">── weekly ──</div>
+      <div class="sched-node ng">
+        <div class="sched-time">Mon</div>
+        <div class="sched-body">
+          <div class="sched-name">Session Cleanup</div>
+          <div class="sched-desc">Prunes stale sessions.</div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="sched-callout">
+        <div class="sc-big">You walk in at 08:00.<br><span class="grad-text">All of this is already done.</span></div>
+        <div class="sc-body" style="margin-top:10px; color:var(--muted)">
+          DB backed up. Files parsed. Breaks emailed. SLA sent. Queue ready.
+        </div>
+      </div>
+      <div style="margin-top:10px; padding:10px 14px; background:var(--bg-card); border:1px solid var(--border); border-radius:11px;">
+        <p style="font-size:0.72em; color:var(--muted); margin:0 0 5px;">All 7 jobs are</p>
+        <div style="display:flex; gap:6px; flex-wrap:wrap">
+          <span class="pill pill-green">Pre-seeded</span>
+          <span class="pill pill-blue">UI-configurable</span>
+          <span class="pill pill-cyan">Manually triggerable</span>
+          <span class="pill pill-amber">Logged to audit trail</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="notes">
+    The key message: ops walks in at 08:00 and the database is already backed up, the files are already parsed,
+    the SLA alerts are already sent. The review queue is ready. This is what "automated" actually means.
+  </aside>
+</section>
+
+<!-- ═══════════════════════════════════
+     SLIDE 9 — SECURITY
+════════════════════════════════════ -->
+<section>
+  <div style="display:flex; align-items:flex-start; gap:16px; margin-bottom:0.6em">
+    <div>
+      <h2 style="margin-bottom:4px">Security <span class="grad-text">by default</span></h2>
+      <p class="muted small">Pre-launch security review complete. All blocking findings resolved.</p>
+    </div>
+    <div style="flex-shrink:0; background:var(--green-soft); border:1px solid rgba(16,185,129,0.35); border-radius:10px; padding:10px 16px; text-align:center; box-shadow:0 0 20px rgba(16,185,129,0.15)">
+      <div style="font-size:1.6em; color:var(--green)">&#10003;</div>
+      <div style="font-size:0.65em; font-weight:700; color:var(--green); text-transform:uppercase; letter-spacing:0.5px">All clear</div>
+    </div>
+  </div>
+
+  <div class="sec-grid">
+    <div class="sec-item">
+      <div class="sec-check">&#10003;</div>
+      <div class="sec-text"><strong>Non-root deploy</strong><span>UID 10001 · read-only FS</span></div>
+    </div>
+    <div class="sec-item">
+      <div class="sec-check">&#10003;</div>
+      <div class="sec-text"><strong>TOTP MFA</strong><span>6-digit per login, replay-blocked</span></div>
+    </div>
+    <div class="sec-item">
+      <div class="sec-check">&#10003;</div>
+      <div class="sec-text"><strong>SameSite=Strict</strong><span>Session can't leak via HTTP/XSS</span></div>
+    </div>
+    <div class="sec-item">
+      <div class="sec-check">&#10003;</div>
+      <div class="sec-text"><strong>HSTS · CSP · XFO</strong><span>Security headers on every response</span></div>
+    </div>
+    <div class="sec-item">
+      <div class="sec-check">&#10003;</div>
+      <div class="sec-text"><strong>Rate 10/min per IP</strong><span>Brute-force &amp; stuffing blocked</span></div>
+    </div>
+    <div class="sec-item">
+      <div class="sec-check">&#10003;</div>
+      <div class="sec-text"><strong>Immutable audit</strong><span>DB trigger — no deletion ever</span></div>
+    </div>
+    <div class="sec-item">
+      <div class="sec-check">&#10003;</div>
+      <div class="sec-text"><strong>Fernet at rest</strong><span>AES-128, key outside database</span></div>
+    </div>
+    <div class="sec-item">
+      <div class="sec-check">&#10003;</div>
+      <div class="sec-text"><strong>300 MB upload cap</strong><span>Blocks disk-fill attacks</span></div>
+    </div>
+  </div>
+  <aside class="notes">
+    Go through this quickly but let every check mark land. The immutable audit log tends to get a nod
+    from compliance-minded attendees — regulators love "can't be deleted".
+  </aside>
+</section>
+
+<!-- ═══════════════════════════════════
+     SLIDE 10 — NUMBERS
+════════════════════════════════════ -->
+<section>
+  <h2>What the numbers look like</h2>
+  <p class="muted small">Fill in your pilot numbers before presenting — or swap this slide for a pilot plan.</p>
+  <div class="num-grid">
+    <div class="num-card n-blue">
+      <div class="nc-label">Month-end close cycle</div>
+      <div class="nc-before"><span class="fill">[FILL] hours</span> today</div>
+      <div class="nc-after"><span class="fill">[FILL]</span><span style="font-size:0.5em; font-weight:600; color:var(--muted)"> hrs</span></div>
+      <div class="nc-note">Tier 1 matches auto-proposed; ops reviews only the exceptions.</div>
+    </div>
+    <div class="num-card n-green">
+      <div class="nc-label">"Who cleared this?" answered in</div>
+      <div class="nc-before">Minutes, if someone logged it</div>
+      <div class="nc-after">&lt; 1s</div>
+      <div class="nc-note">One query on the immutable audit log. Always.</div>
+    </div>
+    <div class="num-card n-amber">
+      <div class="nc-label">Overnight automation jobs</div>
+      <div class="nc-before">0 — manual every time</div>
+      <div class="nc-after">7</div>
+      <div class="nc-note">Backup, scan, extract, SLA alerts, close, breaks report, cleanup.</div>
+    </div>
+    <div class="num-card n-cyan">
+      <div class="nc-label">Tool support contract</div>
+      <div class="nc-before">End-of-life, no patches</div>
+      <div class="nc-after">In-house</div>
+      <div class="nc-note">v1.0, security-reviewed, self-hosted on your own servers.</div>
+    </div>
+  </div>
+  <p style="margin-top:0.4em; font-size:0.68em; color:var(--dim); font-style:italic">
+    No pilot numbers yet? Replace with: "Pilot plan: 1 currency, 1 branch, 1 month. Measure before-and-after on these four metrics."
+  </p>
+</section>
+
+<!-- ═══════════════════════════════════
+     SLIDE 11 — PRODUCTION READY
+════════════════════════════════════ -->
+<section>
+  <h2><span class="grad-text">Production-ready today.</span><br><span style="font-size:0.7em; color:var(--muted); font-weight:500">No roadmap asterisks.</span></h2>
+
+  <div class="ready-wrap">
+    <div class="chip-flow">
+      <span class="chip hi"><span class="chip-dot"></span>Nostro + GL recon</span>
+      <span class="chip hi"><span class="chip-dot"></span>MT940 / MT950 / camt.053 / camt.054</span>
+      <span class="chip hi"><span class="chip-dot"></span>4-tier matching engine</span>
+      <span class="chip hi"><span class="chip-dot"></span>Review queue + keyboard shortcuts</span>
+      <span class="chip hi"><span class="chip-dot"></span>Open-items ledger</span>
+      <span class="chip hi"><span class="chip-dot"></span>Month-end certificates</span>
+      <span class="chip hi"><span class="chip-dot"></span>TOTP MFA (any app)</span>
+      <span class="chip hi"><span class="chip-dot"></span>4 roles + access-area scoping</span>
+      <span class="chip hi"><span class="chip-dot"></span>Immutable audit log + CSV export</span>
+      <span class="chip hi"><span class="chip-dot"></span>7 automation jobs (scheduler)</span>
+      <span class="chip hi"><span class="chip-dot"></span>Nightly DB backup</span>
+      <span class="chip hi"><span class="chip-dot"></span>SLA alerts (Teams / email)</span>
+      <span class="chip hi"><span class="chip-dot"></span>Docker single-container deploy</span>
+      <span class="chip hi"><span class="chip-dot"></span>Pre-launch security review &#10003;</span>
+    </div>
+
+    <div class="v1-badge">
+      <div class="v1-v">Version</div>
+      <div class="v1-num">1.0</div>
+      <div class="v1-sub">Production-ready</div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════
+     SLIDE 12 — THE ASK
+════════════════════════════════════ -->
+<section>
+  <h2>Three things. <span class="grad-text">That's the ask.</span></h2>
+
+  <ol class="ask-list">
+    <li>
+      <div class="ask-num">1</div>
+      <div class="ask-text">
+        <strong>Green-light a 1-branch / 1-month pilot.</strong>
+        Low-risk, parallel run. Measure real close-cycle and audit numbers before any commitment.
+      </div>
+    </li>
+    <li>
+      <div class="ask-num">2</div>
+      <div class="ask-text">
+        <strong>Name an ops champion.</strong>
+        One person who works the review queue and owns the before/after numbers.
+      </div>
+    </li>
+    <li>
+      <div class="ask-num">3</div>
+      <div class="ask-text">
+        <strong>Commit a go/no-go date.</strong>
+        <span class="fill">[FILL: ~6 weeks out]</span> &mdash; one meeting, the numbers, the decision.
+      </div>
+    </li>
+  </ol>
+
+  <div class="ask-cta">
+    <p><strong>Demo next.</strong> See <code style="background:rgba(255,255,255,0.08); padding:1px 6px; border-radius:4px; font-size:0.9em">script.html</code> for the full 11-minute walkthrough.</p>
+  </div>
+</section>
+
+</div><!-- /slides -->
+</div><!-- /reveal -->
+
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/notes/notes.js"></script>
+<script>
+  Reveal.initialize({
+    width: 1280,
+    height: 720,
+    margin: 0.05,
+    hash: true,
+    slideNumber: 'c/t',
+    controls: true,
+    progress: true,
+    transition: 'fade',
+    transitionSpeed: 'fast',
+    backgroundTransition: 'fade',
+    plugins: [ RevealNotes ],
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,585 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Kilter — Pricing</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --ink: #0f172a; --muted: #52606d; --subtle: #8899aa;
+      --primary: #1f3a8a; --primary-soft: #eff4fb; --primary-mid: #2d4faa;
+      --accent: #0891b2;
+      --success: #059669; --success-soft: #d1fae5;
+      --warn: #b45309; --warn-soft: #fef3c7;
+      --danger: #b91c1c; --danger-soft: #fee2e2;
+      --border: #e4e7eb; --surface: #ffffff; --bg: #f7f8fa;
+      --radius: 12px;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg); color: var(--ink); font-size: 15px; line-height: 1.55;
+    }
+
+    /* ── Header ── */
+    .hero {
+      background: linear-gradient(135deg, var(--primary) 0%, #163580 50%, var(--accent) 100%);
+      color: white; padding: 52px 32px 48px; text-align: center;
+    }
+    .hero .brand { display: inline-flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+    .hero .brand-badge {
+      width: 48px; height: 48px; border-radius: 10px;
+      background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.25);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.5em; font-weight: 800; color: white; letter-spacing: -1px;
+    }
+    .hero .brand-name { font-size: 1.5em; font-weight: 700; letter-spacing: -0.3px; }
+    .hero h1 { font-size: 2.2em; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 10px; }
+    .hero p { font-size: 1.05em; opacity: 0.88; max-width: 540px; margin: 0 auto 28px; }
+
+    /* ── Currency toggle ── */
+    .currency-toggle {
+      display: inline-flex; background: rgba(255,255,255,0.12);
+      border: 1px solid rgba(255,255,255,0.2); border-radius: 30px;
+      padding: 4px; gap: 2px;
+    }
+    .currency-toggle button {
+      border: none; border-radius: 24px; padding: 7px 22px;
+      font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+      transition: all 0.18s ease; background: transparent; color: rgba(255,255,255,0.75);
+    }
+    .currency-toggle button.active {
+      background: white; color: var(--primary);
+    }
+
+    /* ── Layout ── */
+    .wrap { max-width: 1060px; margin: 0 auto; padding: 0 24px; }
+    section { padding: 56px 0; }
+    section + section { border-top: 1px solid var(--border); }
+
+    h2 {
+      font-size: 1.6em; font-weight: 700; letter-spacing: -0.3px;
+      color: var(--primary); margin-bottom: 6px;
+    }
+    .section-sub { color: var(--muted); font-size: 0.92em; margin-bottom: 32px; }
+
+    /* ── Pricing cards ── */
+    .plan-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr);
+      gap: 18px; align-items: start; margin-bottom: 24px;
+    }
+    .plan-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 28px 24px;
+      display: flex; flex-direction: column;
+    }
+    .plan-card.featured {
+      border-color: var(--primary); border-width: 2px;
+      box-shadow: 0 4px 24px rgba(31,58,138,0.12);
+      position: relative;
+    }
+    .plan-card.featured::before {
+      content: "Most popular";
+      position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
+      background: var(--primary); color: white;
+      font-size: 11px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase;
+      padding: 3px 14px; border-radius: 20px;
+    }
+    .plan-label {
+      font-size: 11px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase;
+      color: var(--muted); margin-bottom: 8px;
+    }
+    .plan-name {
+      font-size: 1.35em; font-weight: 700; color: var(--ink); margin-bottom: 6px;
+    }
+    .plan-desc {
+      font-size: 0.83em; color: var(--muted); margin-bottom: 20px; line-height: 1.5;
+    }
+    .plan-price {
+      margin-bottom: 6px;
+    }
+    .plan-price .amount {
+      font-size: 2.2em; font-weight: 800; color: var(--primary); letter-spacing: -1px; line-height: 1;
+    }
+    .plan-price .period {
+      font-size: 0.8em; color: var(--muted); font-weight: 500; margin-left: 2px;
+    }
+    .plan-price .alt-currency {
+      font-size: 0.82em; color: var(--muted); margin-top: 3px;
+    }
+    .plan-impl {
+      background: var(--bg); border-radius: 6px; padding: 8px 10px;
+      font-size: 0.78em; color: var(--muted); margin-bottom: 22px;
+      border: 1px solid var(--border);
+    }
+    .plan-impl strong { color: var(--ink); }
+    .plan-cta {
+      display: block; text-align: center; padding: 11px 20px; border-radius: 8px;
+      font-size: 0.9em; font-weight: 600; cursor: pointer; text-decoration: none;
+      border: 2px solid var(--primary); color: var(--primary); background: transparent;
+      transition: all 0.15s ease; margin-bottom: 22px;
+    }
+    .plan-card.featured .plan-cta {
+      background: var(--primary); color: white;
+    }
+    .plan-cta:hover { background: var(--primary); color: white; }
+    .plan-divider { border: none; border-top: 1px solid var(--border); margin-bottom: 18px; }
+    .plan-features { list-style: none; padding: 0; flex: 1; }
+    .plan-features li {
+      display: flex; align-items: flex-start; gap: 9px;
+      font-size: 0.83em; color: var(--ink); padding: 5px 0;
+      border-bottom: 1px solid #f5f7fa;
+    }
+    .plan-features li:last-child { border-bottom: none; }
+    .plan-features li .ck {
+      flex-shrink: 0; width: 16px; height: 16px; border-radius: 50%;
+      background: var(--success-soft); color: var(--success);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 9px; font-weight: 800; margin-top: 1px;
+    }
+    .plan-features li .ck.dim { background: #f0f0f0; color: var(--subtle); }
+    .plan-features li .txt { line-height: 1.4; }
+    .plan-features li .txt .note { color: var(--muted); font-size: 0.92em; }
+
+    /* ── Add-on card ── */
+    .addon-bar {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 20px 24px;
+      display: flex; align-items: center; gap: 20px; flex-wrap: wrap;
+    }
+    .addon-bar .addon-info { flex: 1; min-width: 200px; }
+    .addon-bar .addon-name { font-weight: 700; font-size: 0.95em; color: var(--ink); }
+    .addon-bar .addon-desc { font-size: 0.82em; color: var(--muted); margin-top: 2px; }
+    .addon-bar .addon-price { text-align: right; }
+    .addon-bar .addon-price .amount { font-size: 1.4em; font-weight: 800; color: var(--primary); }
+    .addon-bar .addon-price .period { font-size: 0.8em; color: var(--muted); }
+    .addon-bar .addon-price .alt { font-size: 0.78em; color: var(--muted); display: block; }
+
+    /* ── Comparison table ── */
+    .comp-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.85em; }
+    .comp-table th {
+      background: #f5f7fa; padding: 11px 14px; border-bottom: 2px solid var(--border);
+      text-align: left; font-weight: 600; color: var(--muted); font-size: 0.9em;
+    }
+    .comp-table th.plan-col { text-align: center; min-width: 110px; }
+    .comp-table th.plan-col.hi { background: var(--primary-soft); color: var(--primary); }
+    .comp-table td {
+      padding: 10px 14px; border-bottom: 1px solid #f0f2f5; vertical-align: middle;
+    }
+    .comp-table td.plan-col { text-align: center; }
+    .comp-table td.plan-col.hi { background: #fafcff; }
+    .comp-table tr:last-child td { border-bottom: none; }
+    .comp-table .cat-row td { background: #f5f7fa; font-weight: 700; font-size: 0.82em; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; padding: 7px 14px; }
+    .comp-tick { color: var(--success); font-weight: 800; font-size: 1.1em; }
+    .comp-dash { color: #d0d5dd; font-size: 1.2em; }
+    .comp-val { font-weight: 600; color: var(--ink); }
+
+    /* ── FAQ ── */
+    .faq-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .faq-item { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; }
+    .faq-item h3 { font-size: 0.92em; font-weight: 700; color: var(--ink); margin-bottom: 8px; }
+    .faq-item p { font-size: 0.83em; color: var(--muted); line-height: 1.6; }
+    .faq-item p strong { color: var(--ink); }
+
+    /* ── CTA footer ── */
+    .cta-footer {
+      background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
+      border-radius: var(--radius); padding: 40px 36px; text-align: center; color: white;
+    }
+    .cta-footer h2 { color: white; font-size: 1.5em; margin-bottom: 10px; }
+    .cta-footer p { opacity: 0.88; font-size: 0.92em; max-width: 480px; margin: 0 auto 24px; }
+    .cta-footer .cta-btn {
+      display: inline-block; background: white; color: var(--primary);
+      padding: 12px 32px; border-radius: 8px; font-weight: 700; font-size: 0.95em;
+      text-decoration: none; transition: opacity 0.15s;
+    }
+    .cta-footer .cta-btn:hover { opacity: 0.9; }
+    .cta-footer .contact-line { margin-top: 18px; font-size: 0.82em; opacity: 0.75; }
+
+    /* ── FX notice ── */
+    .fx-notice {
+      background: var(--warn-soft); border: 1px solid rgba(180,83,9,0.2);
+      border-radius: 8px; padding: 10px 14px;
+      font-size: 0.8em; color: var(--warn); margin-top: 16px;
+      display: flex; align-items: flex-start; gap: 8px;
+    }
+    .fx-notice::before { content: "⚠"; flex-shrink: 0; }
+
+    /* ── Print ── */
+    @media print {
+      body { background: white; font-size: 12px; }
+      .hero { background: var(--primary) !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .currency-toggle { display: none; }
+      .plan-card.featured { border-color: var(--primary) !important; }
+      .cta-footer { background: var(--primary) !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      section { padding: 32px 0; }
+    }
+
+    @media (max-width: 760px) {
+      .plan-grid { grid-template-columns: 1fr; }
+      .faq-grid { grid-template-columns: 1fr; }
+      .addon-bar { flex-direction: column; align-items: flex-start; }
+      .addon-bar .addon-price { text-align: left; }
+      .hero h1 { font-size: 1.6em; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Hero ── -->
+<div class="hero">
+  <div class="brand">
+    <div class="brand-badge">K</div>
+    <span class="brand-name">Kilter</span>
+  </div>
+  <h1>Simple, transparent pricing</h1>
+  <p>Self-hosted reconciliation for correspondent-banking treasuries. No per-user fees, no hidden modules.</p>
+
+  <div class="currency-toggle">
+    <button class="active" onclick="setCurrency('usd')" id="btn-usd">USD $</button>
+    <button onclick="setCurrency('ghs')" id="btn-ghs">GHS ₵</button>
+  </div>
+</div>
+
+<!-- ── Plans ── -->
+<div class="wrap">
+
+  <section id="plans">
+    <h2>Choose your plan</h2>
+    <p class="section-sub">All plans are self-hosted on your own infrastructure. Kilter never phones home.</p>
+
+    <div class="plan-grid">
+
+      <!-- Pilot -->
+      <div class="plan-card">
+        <div class="plan-label">Get started</div>
+        <div class="plan-name">Pilot</div>
+        <div class="plan-desc">Fixed-term proof of concept. Run parallel to your existing tool and measure the real numbers before you commit.</div>
+        <div class="plan-price">
+          <div class="amount usd-price">$7,500</div>
+          <div class="amount ghs-price" style="display:none">₵84,000</div>
+          <span class="period">/ 3 months, one-time</span>
+          <div class="alt-currency usd-price">≈ ₵84,000 at today's rate</div>
+          <div class="alt-currency ghs-price" style="display:none">≈ $7,500 USD</div>
+        </div>
+        <div class="plan-impl">
+          <strong>Includes:</strong> deployment, onboarding session, and staff walk-through. No separate implementation fee.
+        </div>
+        <a href="#contact" class="plan-cta">Start a pilot</a>
+        <hr class="plan-divider">
+        <ul class="plan-features">
+          <li><span class="ck">✓</span><span class="txt">Up to 5 nostro accounts</span></li>
+          <li><span class="ck">✓</span><span class="txt">SWIFT MT940/950 + camt.053/054</span></li>
+          <li><span class="ck">✓</span><span class="txt">Flexcube GL reconciliation</span></li>
+          <li><span class="ck">✓</span><span class="txt">4 roles + TOTP MFA</span></li>
+          <li><span class="ck">✓</span><span class="txt">Immutable audit log + CSV export</span></li>
+          <li><span class="ck">✓</span><span class="txt">Manual intake (upload)</span></li>
+          <li><span class="ck dim">–</span><span class="txt" style="color:var(--subtle)">Scheduler automation</span></li>
+          <li><span class="ck dim">–</span><span class="txt" style="color:var(--subtle)">Mobile money module</span></li>
+          <li><span class="ck dim">–</span><span class="txt" style="color:var(--subtle)">Cards module</span></li>
+          <li><span class="ck">✓</span><span class="txt">Email support <span class="note">(48 h response)</span></span></li>
+          <li><span class="ck">✓</span><span class="txt">Converts to Standard at term end</span></li>
+        </ul>
+      </div>
+
+      <!-- Standard (featured) -->
+      <div class="plan-card featured">
+        <div class="plan-label">Full production</div>
+        <div class="plan-name">Standard</div>
+        <div class="plan-desc">Everything a treasury operations team needs for day-to-day reconciliation, automated overnight runs, and regulatory reporting.</div>
+        <div class="plan-price">
+          <div class="amount usd-price">$28,000</div>
+          <div class="amount ghs-price" style="display:none">₵314,000</div>
+          <span class="period">/ year</span>
+          <div class="alt-currency usd-price">≈ ₵314,000 at today's rate</div>
+          <div class="alt-currency ghs-price" style="display:none">≈ $28,000 USD</div>
+        </div>
+        <div class="plan-impl">
+          <strong>+ One-time implementation fee:</strong>
+          <span class="usd-price">$8,000</span><span class="ghs-price" style="display:none">₵90,000</span>
+          — deployment, data migration, onboarding, and go-live sign-off.
+        </div>
+        <a href="#contact" class="plan-cta">Get Standard</a>
+        <hr class="plan-divider">
+        <ul class="plan-features">
+          <li><span class="ck">✓</span><span class="txt">Up to 15 nostro accounts</span></li>
+          <li><span class="ck">✓</span><span class="txt">SWIFT MT940/950 + camt.053/054</span></li>
+          <li><span class="ck">✓</span><span class="txt">Flexcube GL reconciliation</span></li>
+          <li><span class="ck">✓</span><span class="txt">4 roles + TOTP MFA (any app)</span></li>
+          <li><span class="ck">✓</span><span class="txt">Immutable audit log + CSV export</span></li>
+          <li><span class="ck">✓</span><span class="txt">Auto-scan <span class="note">(watched folder + manual upload)</span></span></li>
+          <li><span class="ck">✓</span><span class="txt"><strong>7 automation jobs</strong> <span class="note">(backup, scan, close, SLA, breaks report, cleanup)</span></span></li>
+          <li><span class="ck">✓</span><span class="txt">Mobile money module <span class="note">(M-Pesa, MTN MoMo, Airtel)</span></span></li>
+          <li><span class="ck">✓</span><span class="txt">BYO format profiles</span></li>
+          <li><span class="ck">✓</span><span class="txt">Month-end certificates</span></li>
+          <li><span class="ck dim">–</span><span class="txt" style="color:var(--subtle)">Cards module (Visa / Mastercard)</span></li>
+          <li><span class="ck dim">–</span><span class="txt" style="color:var(--subtle)">Oracle Flexcube extract automation</span></li>
+          <li><span class="ck">✓</span><span class="txt">Email support <span class="note">(48 h response)</span></span></li>
+        </ul>
+      </div>
+
+      <!-- Enterprise -->
+      <div class="plan-card">
+        <div class="plan-label">Full capability</div>
+        <div class="plan-name">Enterprise</div>
+        <div class="plan-desc">For larger treasury operations with multiple account clusters, card settlement, Oracle extract automation, and an SLA-backed support contract.</div>
+        <div class="plan-price">
+          <div class="amount usd-price">$45,000</div>
+          <div class="amount ghs-price" style="display:none">₵504,000</div>
+          <span class="period">/ year</span>
+          <div class="alt-currency usd-price">≈ ₵504,000 at today's rate</div>
+          <div class="alt-currency ghs-price" style="display:none">≈ $45,000 USD</div>
+        </div>
+        <div class="plan-impl">
+          <strong>+ One-time implementation fee:</strong>
+          <span class="usd-price">$12,000</span><span class="ghs-price" style="display:none">₵134,500</span>
+          — includes custom format mapping, Oracle extract setup, and extended onboarding.
+        </div>
+        <a href="#contact" class="plan-cta">Talk to us</a>
+        <hr class="plan-divider">
+        <ul class="plan-features">
+          <li><span class="ck">✓</span><span class="txt"><strong>Unlimited</strong> nostro accounts</span></li>
+          <li><span class="ck">✓</span><span class="txt">SWIFT MT940/950 + camt.053/054</span></li>
+          <li><span class="ck">✓</span><span class="txt">Flexcube GL reconciliation</span></li>
+          <li><span class="ck">✓</span><span class="txt">4 roles + TOTP MFA + AD/LDAP integration</span></li>
+          <li><span class="ck">✓</span><span class="txt">Immutable audit log + CSV export</span></li>
+          <li><span class="ck">✓</span><span class="txt">Auto-scan + Oracle Flexcube extract automation</span></li>
+          <li><span class="ck">✓</span><span class="txt"><strong>7 automation jobs</strong> + custom schedule params</span></li>
+          <li><span class="ck">✓</span><span class="txt">Mobile money module <span class="note">(all profiles)</span></span></li>
+          <li><span class="ck">✓</span><span class="txt"><strong>Cards module</strong> <span class="note">(Visa Base II / Mastercard IPM)</span></span></li>
+          <li><span class="ck">✓</span><span class="txt">BYO format profiles — unlimited</span></li>
+          <li><span class="ck">✓</span><span class="txt">Month-end certificates</span></li>
+          <li><span class="ck">✓</span><span class="txt">Priority support <span class="note">(4 h SLA, direct contact)</span></span></li>
+          <li><span class="ck">✓</span><span class="txt">Dedicated account manager</span></li>
+        </ul>
+      </div>
+
+    </div><!-- /plan-grid -->
+
+    <!-- Add-on -->
+    <div class="addon-bar">
+      <div style="flex-shrink:0; width:36px; height:36px; border-radius:8px; background:var(--primary-soft); display:flex; align-items:center; justify-content:center;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.72 11a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.62 0h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+      </div>
+      <div class="addon-info">
+        <div class="addon-name">Priority Support Add-on <span style="background:var(--primary-soft);color:var(--primary);font-size:10px;font-weight:700;padding:2px 8px;border-radius:12px;margin-left:6px;letter-spacing:0.3px;text-transform:uppercase;">Standard only</span></div>
+        <div class="addon-desc">Upgrades Standard to a 4 h response SLA with direct contact. Recommended for banks processing more than 500 transactions per cycle.</div>
+      </div>
+      <div class="addon-price">
+        <div>
+          <span class="amount usd-price">$10,000</span>
+          <span class="amount ghs-price" style="display:none">₵112,000</span>
+          <span class="period"> / year</span>
+        </div>
+        <span class="alt usd-price">≈ ₵112,000</span>
+        <span class="alt ghs-price" style="display:none">≈ $10,000 USD</span>
+      </div>
+    </div>
+
+    <div class="fx-notice">
+      GHS prices are indicative, calculated at <strong>1 USD = 11.20 GHS</strong> (mid-market, May 2026).
+      Contracts denominated in GHS will reference the Bank of Ghana mid-rate on the invoice date.
+      Annual renewals are re-quoted at the prevailing rate unless a USD-denominated contract is agreed.
+    </div>
+
+  </section>
+
+  <!-- ── Comparison table ── -->
+  <section id="compare">
+    <h2>Full feature comparison</h2>
+    <p class="section-sub">Everything included in each plan at a glance.</p>
+
+    <div style="overflow-x:auto">
+    <table class="comp-table">
+      <thead>
+        <tr>
+          <th style="width:42%">Feature</th>
+          <th class="plan-col">Pilot</th>
+          <th class="plan-col hi">Standard</th>
+          <th class="plan-col">Enterprise</th>
+        </tr>
+      </thead>
+      <tbody>
+
+        <tr class="cat-row"><td colspan="4">Reconciliation</td></tr>
+        <tr><td>Nostro accounts</td><td class="plan-col">Up to 5</td><td class="plan-col hi">Up to 15</td><td class="plan-col">Unlimited</td></tr>
+        <tr><td>SWIFT MT940 / MT950</td><td class="plan-col"><span class="comp-tick">✓</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
+        <tr><td>ISO 20022 camt.053 / camt.054</td><td class="plan-col"><span class="comp-tick">✓</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
+        <tr><td>Flexcube GL reconciliation</td><td class="plan-col"><span class="comp-tick">✓</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
+        <tr><td>Mobile money (M-Pesa, MTN MoMo, Airtel, Telcel)</td><td class="plan-col"><span class="comp-dash">—</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
+        <tr><td>Cards settlement (Visa Base II / Mastercard IPM)</td><td class="plan-col"><span class="comp-dash">—</span></td><td class="plan-col hi"><span class="comp-dash">—</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
+        <tr><td>BYO format profiles</td><td class="plan-col"><span class="comp-dash">—</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span> Unlimited</td></tr>
+        <tr><td>Four-tier matching engine</td><td class="plan-col"><span class="comp-tick">✓</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
+
+        <tr class="cat-row"><td colspan="4">Intake &amp; automation</td></tr>
+        <tr><td>Manual upload</td><td class="plan-col"><span class="comp-tick">✓</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
+        <tr><td>Watched-folder auto-scan</td><td class="plan-col"><span class="comp-dash">—</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
+        <tr><td>Oracle Flexcube extract automation</td><td class="plan-col"><span class="comp-dash">—</span></td><td class="plan-col hi"><span class="comp-dash">—</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
+        <tr><td>Scheduler jobs (pre-seeded)</td><td class="plan-col"><span class="comp-dash">—</span></td><td class="plan-col hi"><span class="comp-val">7 jobs</span></td><td class="plan-col"><span class="comp-val">7 jobs</span></td></tr>
+        <tr><td>Nightly DB backup (built-in)</td><td class="plan-col"><span class="comp-dash">—</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
+        <tr><td>SLA alerts (Teams / email)</td><td class="plan-col"><span class="comp-dash">—</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
+        <tr><td>Daily breaks report (email)</td><td class="plan-col"><span class="comp-dash">—</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
+
+        <tr class="cat-row"><td colspan="4">Access control &amp; compliance</td></tr>
+        <tr><td>Roles (admin, ops, audit, internal control)</td><td class="plan-col"><span class="comp-tick">✓</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
+        <tr><td>TOTP MFA (any authenticator app)</td><td class="plan-col"><span class="comp-tick">✓</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
+        <tr><td>AD / LDAP integration</td><td class="plan-col"><span class="comp-dash">—</span></td><td class="plan-col hi"><span class="comp-dash">—</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
+        <tr><td>Access-area scoping (branch / cluster / all)</td><td class="plan-col"><span class="comp-tick">✓</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
+        <tr><td>Immutable audit log</td><td class="plan-col"><span class="comp-tick">✓</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
+        <tr><td>Audit log CSV export</td><td class="plan-col"><span class="comp-tick">✓</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
+        <tr><td>Month-end certificates</td><td class="plan-col"><span class="comp-dash">—</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
+        <tr><td>Two-person approval gate (maker-checker)</td><td class="plan-col"><span class="comp-dash">—</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
+
+        <tr class="cat-row"><td colspan="4">Infrastructure &amp; security</td></tr>
+        <tr><td>Self-hosted on your own servers</td><td class="plan-col"><span class="comp-tick">✓</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
+        <tr><td>Docker single-container deploy</td><td class="plan-col"><span class="comp-tick">✓</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
+        <tr><td>HSTS, CSP, X-Frame-Options headers</td><td class="plan-col"><span class="comp-tick">✓</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
+        <tr><td>Encrypted secrets at rest (Fernet)</td><td class="plan-col"><span class="comp-tick">✓</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
+        <tr><td>Pre-launch security review completed</td><td class="plan-col"><span class="comp-tick">✓</span></td><td class="plan-col hi"><span class="comp-tick">✓</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
+
+        <tr class="cat-row"><td colspan="4">Support</td></tr>
+        <tr><td>Email support</td><td class="plan-col"><span class="comp-val">48 h</span></td><td class="plan-col hi"><span class="comp-val">48 h</span></td><td class="plan-col"><span class="comp-val">4 h SLA</span></td></tr>
+        <tr><td>Priority support (4 h SLA)</td><td class="plan-col"><span class="comp-dash">—</span></td><td class="plan-col hi">Add-on</td><td class="plan-col"><span class="comp-tick">✓</span> Included</td></tr>
+        <tr><td>Dedicated account manager</td><td class="plan-col"><span class="comp-dash">—</span></td><td class="plan-col hi"><span class="comp-dash">—</span></td><td class="plan-col"><span class="comp-tick">✓</span></td></tr>
+
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  <!-- ── FAQ ── -->
+  <section id="faq">
+    <h2>Common questions</h2>
+    <p class="section-sub">If your question isn't here, get in touch.</p>
+
+    <div class="faq-grid">
+
+      <div class="faq-item">
+        <h3>Is there a free trial?</h3>
+        <p>No free trial — but the Pilot plan is designed to serve the same purpose with real skin in the game on both sides.
+        A paid pilot means both parties are committed to a real outcome, not a slideware evaluation.
+        At <strong>$7,500 / ₵84,000</strong> it is well within a departmental discretionary budget.</p>
+      </div>
+
+      <div class="faq-item">
+        <h3>What does the implementation fee cover?</h3>
+        <p>Server deployment, schema setup, initial account registration, user onboarding session,
+        and a go-live sign-off call. For Enterprise it also includes custom format mapping for any
+        non-standard GL extract and Oracle Flexcube extract configuration.
+        <strong>There are no surprise fees after this — support and updates are included in the annual license.</strong></p>
+      </div>
+
+      <div class="faq-item">
+        <h3>How does the Pilot convert to Standard?</h3>
+        <p>At the end of the 3-month pilot term, we invoice the annual Standard license (minus the Pilot fee already paid — so you pay
+        <strong>$28,000 − $7,500 = $20,500</strong> to complete year one). No data migration needed — the same database carries forward.</p>
+      </div>
+
+      <div class="faq-item">
+        <h3>Can the GHS price be locked?</h3>
+        <p>Yes. Contracts can be denominated in GHS with a fixed exchange rate agreed at signing, locked for 12 months.
+        At renewal the rate is re-negotiated based on the prevailing Bank of Ghana mid-rate.
+        <strong>USD-denominated contracts are also available</strong> and are recommended for multi-year commitments.</p>
+      </div>
+
+      <div class="faq-item">
+        <h3>Does our data leave our servers?</h3>
+        <p>No. Kilter is entirely self-hosted — it runs on your own VM or Docker host and
+        <strong>never phones home</strong>. No telemetry, no cloud sync, no vendor access to your data.
+        Your SWIFT statements and GL data stay inside your network perimeter at all times.</p>
+      </div>
+
+      <div class="faq-item">
+        <h3>What happens at renewal?</h3>
+        <p>Renewal invoices are sent 45 days before the license anniversary.
+        You can upgrade tiers at renewal at the then-current pricing.
+        Downgrading from Enterprise to Standard requires a 90-day notice.
+        <strong>There is no auto-renew without a signed order form.</strong></p>
+      </div>
+
+      <div class="faq-item">
+        <h3>How many users are included?</h3>
+        <p>All plans are <strong>unlimited users</strong> within your organisation. There are no per-seat fees.
+        Pricing is based on accounts (for Pilot / Standard) or flat (Enterprise).
+        Add as many ops staff, auditors, and internal control users as you need.</p>
+      </div>
+
+      <div class="faq-item">
+        <h3>What's included in software updates?</h3>
+        <p>The annual license includes all point releases and minor version upgrades
+        (e.g. 1.1, 1.2). Major version upgrades (2.0+) are offered at a discounted upgrade price for existing customers.
+        <strong>Security patches are always included</strong> and will be flagged as urgent when applicable.</p>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ── Year 1 cost summary ── -->
+  <section id="summary">
+    <h2>What you pay in year one</h2>
+    <p class="section-sub">Implementation fee + first year license, all-in.</p>
+
+    <div style="display:grid; grid-template-columns: repeat(3,1fr); gap:16px;">
+
+      <div style="background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:24px; text-align:center;">
+        <div style="font-size:0.8em; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); margin-bottom:8px;">Pilot</div>
+        <div style="font-size:2em; font-weight:800; color:var(--primary); letter-spacing:-1px;" class="usd-price">$7,500</div>
+        <div style="font-size:2em; font-weight:800; color:var(--primary); letter-spacing:-1px; display:none" class="ghs-price">₵84,000</div>
+        <div style="font-size:0.78em; color:var(--muted); margin-top:4px;">flat, 3 months</div>
+        <div style="font-size:0.78em; color:var(--muted); margin-top:2px; font-style:italic;" class="usd-price">≈ ₵84,000</div>
+        <div style="font-size:0.78em; color:var(--muted); margin-top:2px; font-style:italic; display:none" class="ghs-price">≈ $7,500</div>
+      </div>
+
+      <div style="background:var(--primary-soft); border:2px solid var(--primary); border-radius:var(--radius); padding:24px; text-align:center;">
+        <div style="font-size:0.8em; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:var(--primary); margin-bottom:8px;">Standard — Year 1</div>
+        <div style="font-size:2em; font-weight:800; color:var(--primary); letter-spacing:-1px;" class="usd-price">$36,000</div>
+        <div style="font-size:2em; font-weight:800; color:var(--primary); letter-spacing:-1px; display:none" class="ghs-price">₵403,000</div>
+        <div style="font-size:0.78em; color:var(--muted); margin-top:4px;">$28K license + $8K implementation</div>
+        <div style="font-size:0.78em; color:var(--muted); margin-top:2px; font-style:italic;" class="usd-price">≈ ₵403,000</div>
+        <div style="font-size:0.78em; color:var(--muted); margin-top:2px; font-style:italic; display:none" class="ghs-price">≈ $36,000</div>
+        <div style="font-size:0.76em; color:var(--primary); font-weight:600; margin-top:6px;">Year 2+: $28,000 / ₵314,000</div>
+      </div>
+
+      <div style="background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:24px; text-align:center;">
+        <div style="font-size:0.8em; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); margin-bottom:8px;">Enterprise — Year 1</div>
+        <div style="font-size:2em; font-weight:800; color:var(--primary); letter-spacing:-1px;" class="usd-price">$57,000</div>
+        <div style="font-size:2em; font-weight:800; color:var(--primary); letter-spacing:-1px; display:none" class="ghs-price">₵638,500</div>
+        <div style="font-size:0.78em; color:var(--muted); margin-top:4px;">$45K license + $12K implementation</div>
+        <div style="font-size:0.78em; color:var(--muted); margin-top:2px; font-style:italic;" class="usd-price">≈ ₵638,500</div>
+        <div style="font-size:0.78em; color:var(--muted); margin-top:2px; font-style:italic; display:none" class="ghs-price">≈ $57,000</div>
+        <div style="font-size:0.76em; color:var(--muted); font-weight:600; margin-top:6px;">Year 2+: $45,000 / ₵504,000</div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ── CTA ── -->
+  <section id="contact" style="border-top:none; padding-top:0;">
+    <div class="cta-footer">
+      <h2>Ready to talk?</h2>
+      <p>We'll walk you through the right plan for your account volume and team size, and structure a pilot proposal you can take to your procurement committee.</p>
+      <a href="mailto:timelessnypotech@outlook.com" class="cta-btn">Get in touch</a>
+      <div class="contact-line">
+        Email &nbsp;<strong>timelessnypotech@outlook.com</strong>&nbsp; · Response within 1 business day
+      </div>
+    </div>
+  </section>
+
+</div><!-- /wrap -->
+
+<script>
+  function setCurrency(c) {
+    const isGhs = c === 'ghs';
+    document.querySelectorAll('.usd-price').forEach(el => el.style.display = isGhs ? 'none' : '');
+    document.querySelectorAll('.ghs-price').forEach(el => el.style.display = isGhs ? '' : 'none');
+    document.getElementById('btn-usd').classList.toggle('active', !isGhs);
+    document.getElementById('btn-ghs').classList.toggle('active', isGhs);
+  }
+</script>
+
+</body>
+</html>

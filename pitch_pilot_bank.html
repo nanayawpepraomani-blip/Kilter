@@ -1,0 +1,856 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Kilter — Pitch (Pilot Bank)</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reset.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/theme/white.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --ink:        #0b1020;
+      --ink-2:      #1f2540;
+      --muted:      #596082;
+      --muted-2:    #8b92a9;
+      --primary:    #3730a3;   /* indigo-800 */
+      --primary-2:  #4f46e5;   /* indigo-600 */
+      --primary-3:  #818cf8;   /* indigo-400 */
+      --accent:     #0891b2;   /* cyan-600 */
+      --accent-2:   #06b6d4;   /* cyan-500 */
+      --teal:       #0d9488;
+      --success:    #059669;
+      --success-2:  #10b981;
+      --warn:       #b45309;
+      --warn-soft:  #fef3c7;
+      --danger:     #be123c;
+      --danger-soft:#ffe4e6;
+      --border:     #e5e7eb;
+      --border-2:   #d1d5db;
+      --surface:    #ffffff;
+      --surface-2:  #f8fafc;
+      --surface-3:  #f1f5f9;
+      --grad-primary: linear-gradient(135deg, #1e1b4b 0%, #3730a3 55%, #4f46e5 100%);
+      --grad-accent:  linear-gradient(135deg, #0e7490 0%, #0891b2 50%, #06b6d4 100%);
+      --grad-soft:    linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
+      --shadow-sm:  0 1px 2px rgba(15,23,42,0.06), 0 1px 3px rgba(15,23,42,0.08);
+      --shadow-md:  0 4px 10px rgba(15,23,42,0.08), 0 2px 4px rgba(15,23,42,0.06);
+      --shadow-lg:  0 12px 32px rgba(30,27,75,0.12), 0 4px 10px rgba(30,27,75,0.08);
+    }
+
+    .reveal {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: var(--ink);
+      font-feature-settings: "cv11","ss01","ss03";
+    }
+    .reveal h1, .reveal h2, .reveal h3 { font-family: 'Inter', sans-serif; }
+    .reveal h1 { font-size: 2.6em; font-weight: 800; letter-spacing: -1.4px; line-height: 1.02; color: #fff; margin: 0.2em 0; text-transform: none; }
+    .reveal h2 { font-size: 1.35em; font-weight: 700; letter-spacing: -0.4px; line-height: 1.2; color: var(--ink); margin: 0 0 0.2em; text-transform: none; }
+    .reveal h3 { font-size: 0.92em; font-weight: 700; color: var(--ink-2); text-transform: none; letter-spacing: -0.1px; margin: 0 0 0.3em; }
+
+    .reveal section { text-align: left; padding: 16px 28px; font-size: 0.92em; }
+    .reveal section.center { text-align: center; }
+    .reveal p, .reveal li { color: var(--ink-2); line-height: 1.5; }
+    .reveal .muted    { color: var(--muted); font-size: 0.85em; }
+    .reveal .eyebrow  {
+      color: var(--primary-2); font-size: 0.6em; font-weight: 700;
+      letter-spacing: 1.4px; text-transform: uppercase; margin-bottom: 0.4em;
+    }
+    .reveal strong { color: var(--ink); font-weight: 700; }
+    .reveal em { color: var(--muted); font-style: italic; }
+    .reveal code {
+      font-family: 'JetBrains Mono', ui-monospace, monospace;
+      background: var(--surface-3); padding: 1px 6px; border-radius: 4px;
+      font-size: 0.85em; color: var(--primary);
+    }
+
+    /* Ornamental slide header bar */
+    .reveal section::before {
+      content: ""; display: block; position: absolute; top: 0; left: 0;
+      width: 100%; height: 4px;
+      background: linear-gradient(90deg, var(--primary) 0%, var(--primary-2) 40%, var(--accent-2) 100%);
+      opacity: 0.9;
+    }
+    .reveal section.center::before { display: none; }
+
+    /* Tables */
+    .reveal table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.72em; }
+    .reveal table th {
+      background: var(--surface-3); color: var(--muted);
+      padding: 10px 12px; text-align: left; font-weight: 600;
+      border-bottom: 2px solid var(--border); font-size: 0.85em;
+      letter-spacing: 0.2px;
+    }
+    .reveal table td {
+      padding: 10px 12px; border-bottom: 1px solid var(--border);
+      vertical-align: top; color: var(--ink-2);
+    }
+    .reveal table td.num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 500; }
+    .reveal table tr:last-child td { border-bottom: none; }
+
+    .reveal ul { margin-left: 1.1em; }
+    .reveal ol { margin-left: 1.2em; }
+    .reveal ul li, .reveal ol li { margin-bottom: 0.35em; }
+
+    /* Blockquote — product statement */
+    .reveal blockquote {
+      background: var(--grad-soft);
+      border-left: 4px solid var(--primary-2);
+      padding: 12px 18px; margin: 0.5em 0; font-style: normal;
+      box-shadow: none; border-radius: 0 8px 8px 0;
+      font-size: 0.78em; color: var(--ink); line-height: 1.5;
+    }
+    .reveal blockquote p { margin: 0; }
+
+    /* Pills & tags */
+    .reveal .pill {
+      display: inline-block; background: var(--primary); color: white;
+      padding: 4px 11px; border-radius: 20px; font-size: 0.68em;
+      font-weight: 600; letter-spacing: 0.3px;
+    }
+    .reveal .pill-soft    { background: #eef2ff; color: var(--primary-2); }
+    .reveal .pill-ok      { background: #d1fae5; color: var(--success); }
+    .reveal .pill-warn    { background: var(--warn-soft); color: var(--warn); }
+    .reveal .pill-accent  { background: #cffafe; color: var(--accent); }
+    .reveal .fill {
+      display: inline-block; background: var(--warn-soft); color: var(--warn);
+      padding: 0 8px; border-radius: 4px; font-size: 0.82em; font-weight: 600;
+      font-style: italic;
+    }
+
+    /* Cards */
+    .reveal .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 16px 18px; box-shadow: var(--shadow-sm);
+    }
+    .reveal .card-accent {
+      border-top: 3px solid var(--primary-2);
+    }
+    .reveal .card-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .reveal .card-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+    .reveal .card-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+
+    /* Stat card — big number */
+    .reveal .stat {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 14px; text-align: center;
+    }
+    .reveal .stat .num {
+      font-size: 1.9em; font-weight: 800; line-height: 1;
+      color: var(--primary-2); letter-spacing: -1px;
+      font-variant-numeric: tabular-nums;
+    }
+    .reveal .stat .lbl {
+      color: var(--muted); font-size: 0.65em; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.5px; margin-top: 6px;
+    }
+
+    /* Callouts */
+    .reveal .callout {
+      background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%);
+      border-left: 4px solid var(--primary-2);
+      padding: 14px 18px; border-radius: 0 10px 10px 0;
+      margin: 0.5em 0; font-size: 0.82em;
+    }
+    .reveal .callout strong { color: var(--primary); }
+    .reveal .callout-win {
+      background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+      border-left: 4px solid var(--warn);
+    }
+    .reveal .callout-win strong { color: var(--warn); }
+
+    /* Screenshot placeholder */
+    .reveal .screen-ph {
+      margin: 0.6em 0; padding: 20px 24px;
+      border: 2px dashed var(--border-2); border-radius: 10px;
+      background: var(--surface-2); color: var(--muted);
+      font-size: 0.72em; font-style: italic;
+      text-align: center;
+    }
+
+    /* Numbered ask list */
+    .reveal .ask-list { counter-reset: ask; padding: 0; list-style: none; margin-left: 0; }
+    .reveal .ask-list li {
+      counter-increment: ask; position: relative;
+      padding: 12px 14px 12px 52px; margin-bottom: 10px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; font-size: 0.88em;
+    }
+    .reveal .ask-list li::before {
+      content: counter(ask); position: absolute; left: 12px; top: 10px;
+      width: 28px; height: 28px; border-radius: 8px;
+      background: var(--grad-primary); color: white;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 800; font-size: 0.9em;
+      box-shadow: 0 2px 6px rgba(55,48,163,0.25);
+    }
+
+    /* Title slide */
+    .reveal section.hero {
+      background: var(--grad-primary); text-align: center;
+    }
+    .reveal section.hero::before { display: none; }
+    .reveal .hero-mark {
+      display: inline-block; width: 72px; height: 72px; border-radius: 16px;
+      background: rgba(255,255,255,0.10);
+      border: 1.5px solid rgba(255,255,255,0.35);
+      backdrop-filter: blur(8px);
+      font-size: 2.2em; font-weight: 800; color: #fff;
+      line-height: 72px; letter-spacing: -2px; margin-bottom: 14px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.2);
+    }
+    .reveal .hero .subtitle {
+      color: rgba(255,255,255,0.85); font-size: 1.0em; font-weight: 500;
+      margin-top: -0.2em;
+    }
+    .reveal .hero .tagline {
+      color: rgba(255,255,255,0.65); font-size: 0.72em;
+      letter-spacing: 0.8px; margin-top: 1.4em;
+    }
+    .reveal .hero .tagline strong { color: #fff; font-weight: 600; }
+    .reveal .hero .meeting-line {
+      color: rgba(255,255,255,0.55); font-size: 0.64em; margin-top: 2em;
+    }
+    .reveal .hero .fill {
+      background: rgba(251, 191, 36, 0.22); color: #fde68a;
+      border: 1px solid rgba(251,191,36,0.3);
+    }
+
+    /* Decorative */
+    .reveal .divider {
+      height: 2px; background: linear-gradient(90deg, var(--primary-2), transparent);
+      margin: 0.8em 0;
+    }
+
+    /* Two-column layout helper */
+    .reveal .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+    .reveal .two-col-6040 { display: grid; grid-template-columns: 6fr 4fr; gap: 22px; }
+    .reveal .two-col-4060 { display: grid; grid-template-columns: 4fr 6fr; gap: 22px; }
+
+    /* Competitive table — highlighted Kilter column */
+    .reveal .compare-table th.kilter { background: var(--primary); color: white; }
+    .reveal .compare-table td.kilter {
+      background: #eef2ff; color: var(--ink); font-weight: 600;
+      border-left: 2px solid var(--primary-2); border-right: 2px solid var(--primary-2);
+    }
+    .reveal .compare-table tr:last-child td.kilter {
+      border-bottom: 2px solid var(--primary-2);
+    }
+    .reveal .compare-table tr:first-child th.kilter {
+      border-top-left-radius: 6px; border-top-right-radius: 6px;
+    }
+
+    .reveal .footnote { color: var(--muted); font-size: 0.65em; margin-top: 1.2em; font-style: italic; }
+
+    .reveal aside.notes { display: none; }
+
+    /* Chart & SVG niceties */
+    .reveal svg { display: block; margin: 0 auto; }
+    .reveal .chart-title {
+      font-size: 0.68em; font-weight: 600; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.8px;
+      margin-bottom: 8px;
+    }
+
+    /* Tier pyramid row colouring in slide 4 */
+    .reveal .tier-row td:first-child {
+      font-weight: 700; color: var(--primary); white-space: nowrap;
+    }
+
+    /* Slide-level utility */
+    .reveal .lead { font-size: 0.82em; font-weight: 500; color: var(--ink); line-height: 1.45; }
+
+    /* Card font normalisation */
+    .reveal .card h3 { font-size: 0.88em; }
+    .reveal .card p { font-size: 0.76em; line-height: 1.45; }
+
+    /* List default sizing inside slides */
+    .reveal ul li, .reveal ol li { font-size: 0.82em; }
+    .reveal .ask-list li { font-size: 0.84em; }
+  </style>
+</head>
+<body>
+<div class="reveal">
+  <div class="slides">
+
+    <!-- ======================================================== -->
+    <!-- Slide 1 — Title                                           -->
+    <!-- ======================================================== -->
+    <section class="hero center">
+      <div class="hero-mark">K</div>
+      <h1>Kilter</h1>
+      <p class="subtitle">Modern nostro + GL reconciliation</p>
+      <p class="tagline">
+        <strong>Self-hosted</strong> &middot;
+        <strong>Audit-first</strong> &middot;
+        <strong>Format-agnostic</strong>
+        <br>
+        <span style="font-size: 0.85em; opacity: 0.8">
+          MT940 / 950 &middot; camt.053 / 054 &middot; any core-banking GL extract
+        </span>
+      </p>
+      <p class="meeting-line">
+        Presented by Kilter &nbsp;·&nbsp;
+        <span class="fill">prospect bank</span> &nbsp;·&nbsp;
+        <span class="fill">meeting date</span>
+      </p>
+      <aside class="notes">
+        Kilter is a nostro-and-GL reconciliation platform built for correspondent-banking
+        treasuries. Thirty minutes from now you'll know whether it's worth running for one
+        month on one of your accounts.
+      </aside>
+    </section>
+
+    <!-- ======================================================== -->
+    <!-- Slide 2 — Problem                                         -->
+    <!-- ======================================================== -->
+    <section>
+      <div class="eyebrow">The problem</div>
+      <h2>Every correspondent treasury is feeling the same three pressures</h2>
+
+      <div class="two-col-6040" style="margin-top: 0.8em">
+        <div>
+          <ul style="font-size: 0.88em">
+            <li><strong>Your reconciliation tool is aging.</strong> Most mid-tier banks still run a late-90s legacy product. No active vendor support. No Windows 11 hardening. UI built for 1024&times;768.</li>
+            <li><strong>Month-end close is still manual.</strong> Ops exports from your core, pulls SWIFT, eyeballs matches in Excel.</li>
+            <li><strong>Audit cannot trace decisions.</strong> &ldquo;Who cleared this on the 14th?&rdquo; &rarr; a spreadsheet filename and a person's memory.</li>
+          </ul>
+        </div>
+
+        <div style="display: flex; flex-direction: column; justify-content: center;">
+          <div class="chart-title">Reported monthly recon effort</div>
+          <svg viewBox="0 0 280 160" width="100%" height="160" aria-label="Chart: manual vs Kilter hours">
+            <!-- Axis -->
+            <line x1="80" y1="10" x2="80" y2="150" stroke="#e5e7eb" stroke-width="1"/>
+            <!-- Manual bar -->
+            <rect x="80" y="28" width="180" height="30" rx="4" fill="url(#manualGrad)"/>
+            <text x="90" y="48" fill="#fff" font-size="11" font-weight="700">40 &ndash; 80 hrs / cycle</text>
+            <text x="0" y="48" fill="#4b5563" font-size="10" font-weight="600">Manual</text>
+            <!-- Kilter bar -->
+            <rect x="80" y="80" width="52" height="30" rx="4" fill="url(#kilterGrad)"/>
+            <text x="140" y="100" fill="#1f2937" font-size="11" font-weight="700">~1 / cycle</text>
+            <text x="4" y="100" fill="#4b5563" font-size="10" font-weight="600">+ Kilter</text>
+            <!-- Delta callout -->
+            <text x="80" y="140" fill="#059669" font-size="10" font-weight="700">&darr; typically 90%+ reduction in ops time</text>
+            <defs>
+              <linearGradient id="manualGrad" x1="0" x2="1" y1="0" y2="0">
+                <stop offset="0%" stop-color="#be123c"/><stop offset="100%" stop-color="#f43f5e"/>
+              </linearGradient>
+              <linearGradient id="kilterGrad" x1="0" x2="1" y1="0" y2="0">
+                <stop offset="0%" stop-color="#3730a3"/><stop offset="100%" stop-color="#4f46e5"/>
+              </linearGradient>
+            </defs>
+          </svg>
+          <p class="footnote" style="text-align: center; margin-top: 4px">
+            Industry practitioner estimate &middot; mid-size FX desk
+          </p>
+        </div>
+      </div>
+
+      <aside class="notes">
+        We didn't invent these pressures — they're industry-wide. What we built is the
+        answer that fits a bank that wants something modern but doesn't want to hand its
+        nostro data to SmartStream's cloud.
+      </aside>
+    </section>
+
+    <!-- ======================================================== -->
+    <!-- Slide 3 — What Kilter is                                  -->
+    <!-- ======================================================== -->
+    <section>
+      <div class="eyebrow">What it is</div>
+      <h2>One sentence, four parts</h2>
+      <blockquote class="lead">
+        <strong>Pairs SWIFT messages with core-banking GL transactions</strong>, proposes matches in tiers,
+        and lets ops confirm or reject &mdash; with every click logged.
+      </blockquote>
+
+      <div class="card-grid-4" style="margin-top: 1em">
+        <div class="card card-accent">
+          <div style="color: var(--primary-2); font-size: 0.65em; font-weight: 700; letter-spacing: 1px; margin-bottom: 4px;">01 &middot; INTAKE</div>
+          <p style="font-size: 0.78em; margin: 0">Drop SWIFT <code>.out</code> / <code>.xml</code> and core <code>.xlsx</code> into a folder. Scanner parses and routes.</p>
+        </div>
+        <div class="card card-accent">
+          <div style="color: var(--primary-2); font-size: 0.65em; font-weight: 700; letter-spacing: 1px; margin-bottom: 4px;">02 &middot; REVIEW</div>
+          <p style="font-size: 0.78em; margin: 0">Ranked candidates per unmatched transaction. Confirm in one keyboard click.</p>
+        </div>
+        <div class="card card-accent">
+          <div style="color: var(--primary-2); font-size: 0.65em; font-weight: 700; letter-spacing: 1px; margin-bottom: 4px;">03 &middot; DASHBOARD</div>
+          <p style="font-size: 0.78em; margin: 0">Scoped per user &mdash; a branch, a cluster, or all. Each team sees their own work.</p>
+        </div>
+        <div class="card card-accent">
+          <div style="color: var(--primary-2); font-size: 0.65em; font-weight: 700; letter-spacing: 1px; margin-bottom: 4px;">04 &middot; EXPORT + AUDIT</div>
+          <p style="font-size: 0.78em; margin: 0">xlsx report for finance. Immutable audit log for compliance. One source of truth.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================== -->
+    <!-- Slide 4 — Matching engine                                 -->
+    <!-- ======================================================== -->
+    <section>
+      <div class="eyebrow">The matching engine</div>
+      <h2>Four tiers &mdash; the engine proposes, the human decides</h2>
+
+      <div class="two-col-4060" style="margin-top: 0.8em; align-items: center;">
+        <div>
+          <div class="chart-title" style="text-align: center">Confidence pyramid</div>
+          <svg viewBox="0 0 220 220" width="100%" height="220" aria-label="Tier pyramid">
+            <defs>
+              <linearGradient id="tierGrad" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stop-color="#059669"/>
+                <stop offset="33%" stop-color="#0891b2"/>
+                <stop offset="66%" stop-color="#4f46e5"/>
+                <stop offset="100%" stop-color="#be123c"/>
+              </linearGradient>
+            </defs>
+            <!-- Pyramid (stacked trapezoids) -->
+            <polygon points="80,10 140,10 150,50 70,50" fill="#059669"/>
+            <polygon points="70,52 150,52 160,92 60,92" fill="#0891b2"/>
+            <polygon points="60,94 160,94 175,140 45,140" fill="#4f46e5"/>
+            <polygon points="45,142 175,142 195,195 25,195" fill="#be123c" opacity="0.88"/>
+            <!-- Labels on pyramid -->
+            <text x="110" y="35" text-anchor="middle" fill="#fff" font-size="11" font-weight="700">TIER 1</text>
+            <text x="110" y="78" text-anchor="middle" fill="#fff" font-size="11" font-weight="700">TIER 2</text>
+            <text x="110" y="123" text-anchor="middle" fill="#fff" font-size="11" font-weight="700">TIER 3</text>
+            <text x="110" y="175" text-anchor="middle" fill="#fff" font-size="11" font-weight="700">TIER 4</text>
+            <!-- Arrow on right -->
+            <text x="210" y="22" fill="#4b5563" font-size="9" font-weight="600">strict</text>
+            <text x="210" y="200" fill="#4b5563" font-size="9" font-weight="600">fuzzy</text>
+            <line x1="205" y1="28" x2="205" y2="190" stroke="#9ca3af" stroke-width="1" stroke-dasharray="2,2"/>
+          </svg>
+        </div>
+        <div>
+          <table>
+            <thead>
+              <tr><th style="width: 26%">Tier</th><th>What matches</th></tr>
+            </thead>
+            <tbody>
+              <tr class="tier-row"><td>1 &middot; Strict</td><td>Reference + amount + date</td></tr>
+              <tr class="tier-row"><td>2 &middot; Ref hit</td><td>Same ref, amount off by fees/FX</td></tr>
+              <tr class="tier-row"><td>3 &middot; Amt + date</td><td>No ref, same amount same day</td></tr>
+              <tr class="tier-row"><td>4 &middot; &plusmn;1 day</td><td>Same amount, next-day booking</td></tr>
+            </tbody>
+          </table>
+          <div class="callout" style="margin-top: 10px; font-size: 0.78em">
+            Tier 1 still needs one click &mdash; but it's <em>one</em> click, not a forensic exercise.
+            <br><span class="pill pill-soft" style="margin-top:6px">Auto-confirmation rules: admin-defined, audit-logged, no code changes</span>
+            <br><span class="pill" style="margin-top:4px;background:var(--grad-primary);color:#fff">Two-person approval gate: one config flag, self-approval blocked</span>
+          </div>
+        </div>
+      </div>
+
+      <aside class="notes">
+        The engine isn't replacing the ops team. It's doing the searching — the part that
+        burns hours — so the team can do the deciding — the part that actually needs judgement.
+      </aside>
+    </section>
+
+    <!-- ======================================================== -->
+    <!-- Slide 5 — Format support                                  -->
+    <!-- ======================================================== -->
+    <section>
+      <div class="eyebrow">Format support</div>
+      <h2>What plugs in on day one</h2>
+
+      <div class="card-grid-2" style="margin-top: 0.6em">
+        <div class="card">
+          <h3 style="color: var(--primary-2)">Correspondent statements</h3>
+          <p style="font-size: 0.82em; margin: 0 0 6px">
+            <span class="pill pill-soft">SWIFT FIN</span> MT940 (end-of-day) &middot; MT950 (statement)
+          </p>
+          <p style="font-size: 0.82em; margin: 0">
+            <span class="pill pill-accent">SWIFT MX</span> camt.053 (EoD) &middot; camt.054 (intraday)
+          </p>
+        </div>
+        <div class="card">
+          <h3 style="color: var(--accent)">Core-banking GL</h3>
+          <p style="font-size: 0.82em; margin: 0 0 6px">
+            <span class="pill pill-soft">Flexcube</span> <code>.xlsx</code> export, direct Oracle pull optional
+          </p>
+          <p style="font-size: 0.82em; margin: 0">
+            <span class="pill pill-soft">Other</span> T24, Finacle, Equation &mdash; xlsx + mapping config, no rewrite
+          </p>
+        </div>
+      </div>
+
+      <div class="callout" style="margin-top: 1em">
+        <strong>What comes out:</strong> daily breaks workbook + month-end certificate in the format your ops team already recognises.
+      </div>
+
+      <p class="screen-ph" style="margin-top: 0.6em">
+        If Kilter has already parsed a prospect's sample files, cite it here &mdash;
+        e.g. <em>&ldquo;Parsed 7 of your camt.053 files on receipt, zero errors.&rdquo;</em>
+      </p>
+    </section>
+
+    <!-- ======================================================== -->
+    <!-- Slide 6 — Review experience                               -->
+    <!-- ======================================================== -->
+    <section>
+      <div class="eyebrow">The review experience</div>
+      <h2>One candidate. One click. Keyboard-native.</h2>
+
+      <div class="two-col" style="margin-top: 0.7em">
+        <div>
+          <p class="screen-ph" style="height: 200px; display: flex; align-items: center; justify-content: center;">
+            Screenshot placeholder<br>
+            review queue card &mdash; tier banner, SWIFT vs GL side, Confirm / Reject / Skip buttons.<br>
+            Capture from live Kilter instance.
+          </p>
+        </div>
+        <div>
+          <ul style="font-size: 0.88em">
+            <li><strong>One candidate at a time.</strong> No Excel scrolling, no context switching.</li>
+            <li><strong>Confirm / Reject / Skip</strong> on keyboard. Ops can clear a queue without touching the mouse.</li>
+            <li><strong>Swap</strong> &mdash; if the top pick is wrong, the next-ranked candidate surfaces without re-running the engine.</li>
+            <li><strong>Queue cleared?</strong> Download the reconciliation xlsx. Day is done.</li>
+          </ul>
+          <div class="callout" style="margin-top: 10px; font-size: 0.8em">
+            <strong>The before/after ops most underestimate:</strong> minutes per decision, not hours per cycle.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================== -->
+    <!-- Slide 7 — Scoping                                         -->
+    <!-- ======================================================== -->
+    <section>
+      <div class="eyebrow">Access-area scoping</div>
+      <h2>For the &ldquo;just my branch&rdquo; crowd &mdash; and the &ldquo;show me the whole bank&rdquo; crowd</h2>
+
+      <div class="two-col" style="margin-top: 0.7em">
+        <div>
+          <p class="screen-ph" style="height: 180px; display: flex; align-items: center; justify-content: center;">
+            Screenshot placeholder &mdash; topbar &ldquo;Active area&rdquo; picker open.<br>
+            Capture from live Kilter instance.
+          </p>
+        </div>
+        <div>
+          <ul style="font-size: 0.88em">
+            <li><strong>Top-bar picker</strong> on every page. Always visible.</li>
+            <li><strong>Single area</strong> (most ops) or <strong>multi-select</strong> (regional supervisors).</li>
+            <li>Scope filters Dashboard / Cash accounts / Sessions &mdash; users only see work relevant to them.</li>
+            <li>Areas are configurable: branch codes, business lines, currency pools &mdash; whatever your bank's structure needs.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================== -->
+    <!-- Slide 8 — Security, roles, audit                          -->
+    <!-- ======================================================== -->
+    <section>
+      <div class="eyebrow">Security, roles, audit</div>
+      <h2>Default-secure &mdash; not an add-on module</h2>
+
+      <div class="card-grid-4" style="margin-top: 0.8em">
+        <div class="card">
+          <div style="font-size: 1.5em; color: var(--primary-2); margin-bottom: 4px">&#128274;</div>
+          <h3 style="font-size: 0.9em">Four roles</h3>
+          <p style="font-size: 0.72em; margin: 0; color: var(--muted)">
+            <code>admin</code>, <code>ops</code>, <code>audit</code>, <code>internal_control</code>
+          </p>
+        </div>
+        <div class="card">
+          <div style="font-size: 1.5em; color: var(--primary-2); margin-bottom: 4px">&#9989;</div>
+          <h3 style="font-size: 0.9em">Everything logged</h3>
+          <p style="font-size: 0.72em; margin: 0; color: var(--muted)">
+            Login, match, export, scope change, registration &mdash; one immutable <code>audit_log</code>.
+          </p>
+        </div>
+        <div class="card">
+          <div style="font-size: 1.5em; color: var(--primary-2); margin-bottom: 4px">&#128241;</div>
+          <h3 style="font-size: 0.9em">MFA + recovery codes</h3>
+          <p style="font-size: 0.72em; margin: 0; color: var(--muted)">
+            TOTP (Microsoft / Google Authenticator). 8 single-use recovery codes. Replay prevention. No SMS.
+          </p>
+        </div>
+        <div class="card">
+          <div style="font-size: 1.5em; color: var(--primary-2); margin-bottom: 4px">&#127970;</div>
+          <h3 style="font-size: 0.9em">Self-hosted</h3>
+          <p style="font-size: 0.72em; margin: 0; color: var(--muted)">
+            Linux / Docker. SQLite &rarr; MySQL 8+ &rarr; Postgres. <strong>No nostro data leaves your perimeter.</strong>
+          </p>
+        </div>
+      </div>
+
+      <div class="callout" style="margin-top: 0.6em; font-size: 0.82em">
+        <strong>Immutable audit trail:</strong> database-level triggers block any DELETE or UPDATE on <code>audit_log</code> &mdash; even for admins. Sessions lock permanently after certificate sign-off. &nbsp;|&nbsp;
+        <strong>Two-person approval gate</strong> built in: one config flag, self-approval blocked by the system.
+      </div>
+    </section>
+
+    <!-- ======================================================== -->
+    <!-- Slide 9 — Proof                                           -->
+    <!-- ======================================================== -->
+    <section>
+      <div class="eyebrow">Proof</div>
+      <h2>Send us your files. Get them back parsed in minutes &mdash; before this meeting ends.</h2>
+      <p class="muted">Most vendors show you a polished demo on their own data. We invert it.</p>
+
+      <div class="two-col-4060" style="margin-top: 0.8em">
+        <div>
+          <div class="chart-title" style="text-align: center">Parser corpus today &mdash; real-world messages</div>
+          <svg viewBox="0 0 280 220" width="100%" height="220" aria-label="Parser corpus bar chart">
+            <defs>
+              <linearGradient id="barFiles" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stop-color="#4f46e5"/><stop offset="100%" stop-color="#3730a3"/>
+              </linearGradient>
+              <linearGradient id="barTxns" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stop-color="#06b6d4"/><stop offset="100%" stop-color="#0891b2"/>
+              </linearGradient>
+            </defs>
+            <!-- Axis -->
+            <line x1="70" y1="10" x2="70" y2="190" stroke="#e5e7eb"/>
+            <line x1="70" y1="190" x2="280" y2="190" stroke="#e5e7eb"/>
+            <!-- Labels on Y-axis -->
+            <text x="65" y="32"  text-anchor="end" font-size="9" fill="#4b5563" font-weight="600">MT940</text>
+            <text x="65" y="76"  text-anchor="end" font-size="9" fill="#4b5563" font-weight="600">MT950</text>
+            <text x="65" y="120" text-anchor="end" font-size="9" fill="#4b5563" font-weight="600">camt.053</text>
+            <text x="65" y="164" text-anchor="end" font-size="9" fill="#4b5563" font-weight="600">camt.054</text>
+
+            <!-- Bar pairs — width scaled so max (1033 txns) = 200px -->
+            <!-- MT940: 221 files (43px), 1033 txns (200px) -->
+            <rect x="72" y="22" width="43" height="10" rx="2" fill="url(#barFiles)"/>
+            <text x="118" y="31" font-size="8" fill="#3730a3" font-weight="700">221 files</text>
+            <rect x="72" y="34" width="200" height="10" rx="2" fill="url(#barTxns)"/>
+            <text x="275" y="43" font-size="8" fill="#0891b2" font-weight="700" text-anchor="end">1,033 txns</text>
+
+            <!-- MT950: 14 files (3px), 123 txns (24px) -->
+            <rect x="72" y="66" width="8" height="10" rx="2" fill="url(#barFiles)"/>
+            <text x="84" y="75" font-size="8" fill="#3730a3" font-weight="700">14 files</text>
+            <rect x="72" y="78" width="24" height="10" rx="2" fill="url(#barTxns)"/>
+            <text x="100" y="87" font-size="8" fill="#0891b2" font-weight="700">123 txns</text>
+
+            <!-- camt.053: 3 files (1px visible), 105 txns (20px) -->
+            <rect x="72" y="110" width="5" height="10" rx="2" fill="url(#barFiles)"/>
+            <text x="81" y="119" font-size="8" fill="#3730a3" font-weight="700">3 files</text>
+            <rect x="72" y="122" width="20" height="10" rx="2" fill="url(#barTxns)"/>
+            <text x="96" y="131" font-size="8" fill="#0891b2" font-weight="700">105 txns</text>
+
+            <!-- camt.054: 3 files, 3 txns (both tiny) -->
+            <rect x="72" y="154" width="5" height="10" rx="2" fill="url(#barFiles)"/>
+            <text x="81" y="163" font-size="8" fill="#3730a3" font-weight="700">3 files</text>
+            <rect x="72" y="166" width="5" height="10" rx="2" fill="url(#barTxns)"/>
+            <text x="81" y="175" font-size="8" fill="#0891b2" font-weight="700">3 txns</text>
+
+            <!-- Legend -->
+            <rect x="72" y="202" width="10" height="8" rx="2" fill="url(#barFiles)"/>
+            <text x="86" y="210" font-size="9" fill="#4b5563">Files</text>
+            <rect x="122" y="202" width="10" height="8" rx="2" fill="url(#barTxns)"/>
+            <text x="136" y="210" font-size="9" fill="#4b5563">Transactions</text>
+          </svg>
+          <p class="footnote" style="text-align: center; margin-top: -8px; font-size: 0.6em">
+            Includes SWIFT Alliance Access <code>Saa:DataPDU</code> envelopes &middot; balance-less camt.054 notifications
+          </p>
+        </div>
+
+        <div>
+          <blockquote class="lead">
+            Send 2&ndash;3 of your real SWIFT messages (MT940/950 or camt.053/054) and one GL extract.
+            The converter runs in <strong>1&ndash;2 minutes</strong>. You get back a readable xlsx with every field parsed &mdash; before you sign anything, before pilot scope is agreed.
+          </blockquote>
+
+          <div class="callout callout-win" style="margin-top: 0.8em">
+            <strong>Launch-customer terms.</strong> Kilter is selecting a small number of design-partner banks for the first production deployments.
+            Design partners get <span class="pill pill-warn">50% off year-one &middot; 25% off year-two</span>
+            in exchange for being a named reference at go-live and a 30-minute weekly feedback session during the pilot.
+            Locked at sign-up, not revisited at renewal.
+          </div>
+        </div>
+      </div>
+
+      <aside class="notes">
+        Here's what every vendor in this category can't do: take your file right now and show you
+        a working parse before this meeting ends. We can — the converter runs in 1–2 minutes per
+        file because the parser is built and tested against real-world message messiness, not
+        just the ISO spec.
+
+        PRESENTER NOTE: if the prospect has brought sample files or can send them during the meeting,
+        run the converter live and hand them the readable_messages.xlsx as a walk-out takeaway.
+        That single demo is the strongest thing in this deck — lean into it.
+      </aside>
+    </section>
+
+    <!-- ======================================================== -->
+    <!-- Slide 10 — Pilot                                          -->
+    <!-- ======================================================== -->
+    <section>
+      <div class="eyebrow">The pilot</div>
+      <h2>Low-risk, parallel-run, reversible</h2>
+
+      <div class="two-col" style="margin-top: 0.8em">
+        <div>
+          <div class="card">
+            <h3 style="color: var(--primary-2)">Shape</h3>
+            <ul style="font-size: 0.78em; margin-bottom: 0.6em">
+              <li><strong>Scope:</strong> 1 nostro account &middot; 1 currency &middot; 1 month of daily statements.</li>
+              <li><strong>Parallel</strong> with your existing tool &mdash; no workflow change, no migration risk.</li>
+              <li><strong>Your champion:</strong> ~30 min/day during the pilot window.</li>
+              <li><strong>Kilter commits:</strong> on-site setup, format validation, weekly check-in, full audit log for IC.</li>
+            </ul>
+          </div>
+          <div class="card" style="margin-top: 10px">
+            <h3 style="color: var(--accent)">What we measure together</h3>
+            <ol style="font-size: 0.78em; margin-bottom: 0">
+              <li>Tier 1 auto-match rate on <em>your</em> volume.</li>
+              <li>Cycle-time delta on <em>your</em> close.</li>
+              <li>Break ageing &mdash; how long items stay unmatched vs. today.</li>
+            </ol>
+          </div>
+        </div>
+
+        <div>
+          <div class="card card-accent">
+            <h3 style="color: var(--primary-2)">Commercial</h3>
+            <div style="font-size: 0.78em">
+              <p style="margin: 0 0 10px">
+                <span class="pill pill-ok">PILOT &mdash; FREE</span>
+                Your investment is your champion's time + a weekly 30-min feedback call.
+                No licence fee, no setup charge, no migration bill.
+              </p>
+              <div style="height: 1px; background: var(--border); margin: 8px 0"></div>
+              <p style="margin: 0 0 10px">
+                <span class="pill">PRODUCTION</span>
+                Per-nostro-account annual licence. Unlimited users, unlimited transaction volume.
+                <br>
+                <strong style="color: var(--primary-2); font-size: 1.15em">USD $4,000 &ndash; $8,000</strong>
+                <span style="color: var(--muted); font-size: 0.88em">/ account / year</span>
+                &middot; tiered by count. Firm quote after pilot scoping.
+              </p>
+              <div style="height: 1px; background: var(--border); margin: 8px 0"></div>
+              <p style="margin: 0">
+                <span class="pill pill-accent">INCLUDED</span>
+                On-prem install, 12 months standard support, unlimited parser updates covering new correspondent formats.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================== -->
+    <!-- Slide 11 — Competitive                                    -->
+    <!-- ======================================================== -->
+    <section>
+      <div class="eyebrow">vs. the incumbents</div>
+      <h2>Where Kilter wins &mdash; and where it doesn't try to</h2>
+
+      <table class="compare-table" style="font-size: 0.62em; margin-top: 0.6em">
+        <thead>
+          <tr>
+            <th style="width: 22%"></th>
+            <th>SmartStream TLM / IntelliMatch</th>
+            <th>Trintech Cadency</th>
+            <th>Legacy MT-only tool</th>
+            <th class="kilter">Kilter</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Deployment</strong></td>
+            <td>Cloud / hosted</td>
+            <td>Cloud-first</td>
+            <td>On-prem (EoL)</td>
+            <td class="kilter">Self-hosted on your infra</td>
+          </tr>
+          <tr>
+            <td><strong>Data residency</strong></td>
+            <td>Theirs</td>
+            <td>Theirs</td>
+            <td>Yours</td>
+            <td class="kilter">Yours</td>
+          </tr>
+          <tr>
+            <td><strong>Audit trail</strong></td>
+            <td>Add-on module</td>
+            <td>Yes</td>
+            <td>Partial</td>
+            <td class="kilter">Default, immutable</td>
+          </tr>
+          <tr>
+            <td><strong>SWIFT MX (camt.053/054)</strong></td>
+            <td>Yes</td>
+            <td>Yes</td>
+            <td><em style="color: var(--danger)">No</em></td>
+            <td class="kilter">Yes</td>
+          </tr>
+          <tr>
+            <td><strong>Time-to-pilot</strong></td>
+            <td>3&ndash;6 months</td>
+            <td>2&ndash;4 months</td>
+            <td>n/a</td>
+            <td class="kilter">~2 weeks from files-in-hand</td>
+          </tr>
+          <tr>
+            <td><strong>Pricing shape</strong></td>
+            <td>6&ndash;7-figure annual</td>
+            <td>6-figure annual</td>
+            <td>Maintenance only</td>
+            <td class="kilter">Per-account annual, mid-5 figures</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="callout" style="margin-top: 1em">
+        We're not a like-for-like SmartStream replacement. We're the answer for a treasury that wants
+        <strong>modern workflow + on-prem data residency + an audit trail that does not need an add-on SKU.</strong>
+      </div>
+    </section>
+
+    <!-- ======================================================== -->
+    <!-- Slide 12 — Ask                                            -->
+    <!-- ======================================================== -->
+    <section>
+      <div class="eyebrow">The ask</div>
+      <h2>Three things, in order</h2>
+
+      <ol class="ask-list" style="margin-top: 1em">
+        <li>
+          <strong>Share 2&ndash;3 real files.</strong>
+          camt.053 / MT940 statements and one GL extract.
+          We parse them live during the meeting &mdash; the converter takes 1&ndash;2 minutes &mdash; and you walk out with a read-only readable xlsx.
+        </li>
+        <li>
+          <strong>Scope the pilot.</strong>
+          Pick 1 account &middot; 1 month. We draft the pilot plan within a week of receiving the files.
+        </li>
+        <li>
+          <strong>Commit a go/no-go review date &mdash; 6 weeks from pilot start.</strong>
+          If the success criteria we set at week 0 are met, we move to production scope.
+          If not, the pilot ends and your workflow is unchanged.
+        </li>
+      </ol>
+
+      <div class="callout" style="margin-top: 1em">
+        <strong>Demo next.</strong> Live walkthrough of the review queue, ingest, and audit log (~10 minutes).
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/notes/notes.js"></script>
+<script>
+  Reveal.initialize({
+    hash: true,
+    slideNumber: 'c/t',
+    controls: true,
+    progress: true,
+    transition: 'fade',
+    width: 1280,
+    height: 780,
+    margin: 0.04,
+    minScale: 0.2,
+    maxScale: 1.6,
+    plugins: [ RevealNotes ],
+  });
+</script>
+</body>
+</html>
