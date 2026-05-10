@@ -348,6 +348,59 @@
       line-height: 1.65;
     }
     .hero-ctas { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+
+    /* ── Price teaser pill — sits between sub-text and CTAs ── */
+    .hero-price-pill {
+      display: inline-flex; align-items: center; gap: 16px;
+      padding: 11px 22px; border-radius: 999px;
+      background: var(--surface-glass);
+      backdrop-filter: blur(12px) saturate(1.5);
+      -webkit-backdrop-filter: blur(12px) saturate(1.5);
+      border: 1px solid var(--border-strong);
+      font-size: 0.86rem; font-weight: 500; color: var(--muted);
+      transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+      text-decoration: none;
+      margin-bottom: 32px;
+      font-variant-numeric: tabular-nums;
+    }
+    .hero-price-pill:hover {
+      border-color: var(--brand-500);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(47,83,224,0.18);
+    }
+    .hero-price-pill .pp-item {
+      display: inline-flex; align-items: center; gap: 6px; color: var(--ink);
+      white-space: nowrap;
+    }
+    .hero-price-pill .pp-item strong {
+      font-weight: 800; color: var(--brand-700);
+    }
+    [data-theme="dark"] .hero-price-pill .pp-item strong { color: var(--brand-400); }
+    .hero-price-pill .pp-dot {
+      width: 4px; height: 4px; border-radius: 50%; background: var(--subtle);
+      flex-shrink: 0;
+    }
+    .hero-price-pill .pp-cta {
+      display: inline-flex; align-items: center; gap: 4px;
+      color: var(--brand-700); font-weight: 700;
+      padding-left: 4px;
+    }
+    [data-theme="dark"] .hero-price-pill .pp-cta { color: var(--brand-400); }
+    .hero-price-pill .pp-cta svg { transition: transform 0.18s; }
+    .hero-price-pill:hover .pp-cta svg { transform: translateX(3px); }
+    .hero-price-pill .pp-spark {
+      display: inline-flex; color: var(--accent-emerald);
+    }
+
+    @media (max-width: 720px) {
+      .hero-price-pill {
+        flex-direction: column; gap: 8px;
+        padding: 14px 22px; border-radius: 18px;
+        font-size: 0.82rem;
+      }
+      .hero-price-pill .pp-dot { display: none; }
+      .hero-price-pill .pp-cta { padding-left: 0; }
+    }
     .btn-hero-primary {
       display: inline-flex; align-items: center; gap: 8px;
       padding: 15px 32px; border-radius: var(--radius);
@@ -1074,6 +1127,19 @@
         Self-hosted reconciliation across nostro&nbsp;/&nbsp;GL, mobile money, and card-scheme settlements —
         all in one platform, on your infrastructure.
       </p>
+
+      <a href="pricing.html#calculator" class="hero-price-pill" aria-label="Pricing — open calculator">
+        <span class="pp-spark" aria-hidden="true"><svg width="14" height="14"><use href="#i-zap"/></svg></span>
+        <span class="pp-item"><strong>From&nbsp;$24K&nbsp;/&nbsp;yr</strong></span>
+        <span class="pp-dot" aria-hidden="true"></span>
+        <span class="pp-item"><strong>$5K</strong>&nbsp;90-day pilot</span>
+        <span class="pp-dot" aria-hidden="true"></span>
+        <span class="pp-item">No per-seat fees</span>
+        <span class="pp-cta">
+          Calculate yours
+          <svg width="13" height="13" aria-hidden="true"><use href="#i-arrow-right"/></svg>
+        </span>
+      </a>
 
       <div class="hero-ctas">
         <a href="#demo" class="btn-hero-primary">
