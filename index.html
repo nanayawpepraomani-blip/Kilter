@@ -39,7 +39,7 @@
       /* text */
       --ink: #0f172a;
       --muted: #475569;
-      --subtle: #94a3b8;
+      --subtle: #64748b;
 
       /* shadow */
       --shadow-sm: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
@@ -63,8 +63,8 @@
       --border: rgba(255,255,255,0.08);
       --border-strong: rgba(255,255,255,0.14);
       --ink: #f1f5f9;
-      --muted: #94a3b8;
-      --subtle: #475569;
+      --muted: #cbd5e1;
+      --subtle: #94a3b8;
       --shadow-sm: 0 1px 3px rgba(0,0,0,0.4);
       --shadow-md: 0 4px 16px rgba(0,0,0,0.5);
       --shadow-lg: 0 16px 48px rgba(0,0,0,0.6);
@@ -75,7 +75,7 @@
        RESET & BASE
     ═══════════════════════════════════════════════════════════ */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html { scroll-behavior: smooth; font-size: 16px; }
+    html { scroll-behavior: smooth; font-size: 16px; scroll-padding-top: 80px; }
     body {
       font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       background: var(--bg);
@@ -83,11 +83,55 @@
       line-height: 1.6;
       overflow-x: hidden;
       transition: background 0.3s ease, color 0.3s ease;
+      -webkit-tap-highlight-color: transparent;
     }
     img, svg { display: block; max-width: 100%; }
     a { color: inherit; text-decoration: none; }
     button { cursor: pointer; border: none; background: none; font-family: inherit; }
     ul { list-style: none; }
+
+    /* ── Focus rings — keyboard accessibility ── */
+    *:focus { outline: none; }
+    *:focus-visible {
+      outline: 2px solid var(--brand-500);
+      outline-offset: 3px;
+      border-radius: 6px;
+    }
+    .btn-primary:focus-visible,
+    .btn-hero-primary:focus-visible,
+    .btn-pricing-primary:focus-visible,
+    .btn-demo-white:focus-visible {
+      outline-color: white;
+      outline-offset: 4px;
+      box-shadow: 0 0 0 6px rgba(47,83,224,0.5);
+    }
+
+    /* ── Skip-to-content link ── */
+    .skip-link {
+      position: absolute; top: -48px; left: 12px; z-index: 200;
+      background: var(--brand-700); color: white;
+      padding: 12px 20px; border-radius: 8px;
+      font-weight: 700; font-size: 0.875rem;
+      transition: top 0.18s ease;
+      box-shadow: var(--shadow-md);
+    }
+    .skip-link:focus { top: 12px; }
+
+    /* ── Reduced motion — vestibular accessibility ── */
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+      }
+      .logo-scroll { animation: none !important; transform: none !important; }
+      .fade-up { opacity: 1 !important; transform: none !important; }
+      .badge .dot { animation: none !important; }
+      .mockup-frame { transform: none !important; }
+    }
+
+    /* ── Contrast fix: subtle text upgraded to meet WCAG AA ── */
 
     /* ═══════════════════════════════════════════════════════════
        UTILITIES
@@ -184,13 +228,71 @@
     .btn-primary:active { transform: translateY(0); }
 
     /* mobile menu toggle */
-    .nav-menu-btn { display: none; padding: 8px; color: var(--muted); }
+    .nav-menu-btn {
+      display: none; width: 40px; height: 40px;
+      align-items: center; justify-content: center;
+      border-radius: var(--radius-sm);
+      color: var(--muted); background: var(--surface-2);
+      border: 1px solid var(--border);
+      transition: background 0.15s, color 0.15s;
+    }
+    .nav-menu-btn:hover { background: var(--border); color: var(--ink); }
+    .nav-menu-btn svg.close-icon { display: none; }
+    .nav-menu-btn[aria-expanded="true"] svg.menu-icon { display: none; }
+    .nav-menu-btn[aria-expanded="true"] svg.close-icon { display: block; }
+
+    .mobile-menu {
+      position: fixed; top: var(--nav-h); left: 0; right: 0;
+      background: var(--surface-glass);
+      backdrop-filter: blur(20px) saturate(1.8);
+      -webkit-backdrop-filter: blur(20px) saturate(1.8);
+      border-bottom: 1px solid var(--border);
+      box-shadow: var(--shadow-lg);
+      z-index: 99;
+      transform: translateY(-12px);
+      opacity: 0; visibility: hidden;
+      transition: transform 0.22s ease, opacity 0.22s ease, visibility 0.22s;
+      max-height: calc(100vh - var(--nav-h));
+      overflow-y: auto;
+    }
+    .mobile-menu[data-open="true"] {
+      transform: translateY(0); opacity: 1; visibility: visible;
+    }
+    .mobile-menu-inner {
+      padding: 20px 28px 28px;
+      display: flex; flex-direction: column; gap: 4px;
+    }
+    .mobile-menu a {
+      padding: 14px 16px; border-radius: var(--radius-sm);
+      font-size: 1rem; font-weight: 600; color: var(--ink);
+      transition: background 0.15s;
+      min-height: 48px;
+      display: flex; align-items: center;
+    }
+    .mobile-menu a:hover, .mobile-menu a:focus-visible {
+      background: var(--surface-2);
+    }
+    .mobile-menu .mm-divider {
+      height: 1px; background: var(--border); margin: 8px 4px;
+    }
+    .mobile-menu .mm-cta {
+      margin-top: 4px;
+      background: linear-gradient(135deg, var(--brand-700), var(--brand-600));
+      color: white; justify-content: center;
+      box-shadow: 0 2px 8px rgba(47,83,224,0.3);
+    }
+    .mobile-menu .mm-cta:hover { background: linear-gradient(135deg, var(--brand-800), var(--brand-700)); }
+
     @media (max-width: 860px) {
       .nav-links { display: none; }
       .nav-menu-btn { display: flex; }
     }
+    @media (min-width: 861px) {
+      .mobile-menu { display: none; }
+    }
     @media (max-width: 600px) {
       .nav-actions .btn-outline { display: none; }
+      .nav-actions .btn-primary { display: none; }
     }
 
     /* ═══════════════════════════════════════════════════════════
@@ -377,7 +479,7 @@
       font-size: 0.82rem; font-weight: 700; color: var(--muted);
       white-space: nowrap;
     }
-    .logo-pill .icon { font-size: 1.1rem; }
+    .logo-pill svg { color: var(--brand-600); flex-shrink: 0; }
 
     /* ═══════════════════════════════════════════════════════════
        SECTIONS SHARED
@@ -425,11 +527,11 @@
     .stream-icon {
       width: 52px; height: 52px; border-radius: var(--radius);
       display: flex; align-items: center; justify-content: center;
-      font-size: 1.5rem; margin-bottom: 20px;
+      margin-bottom: 20px;
     }
-    .stream-icon.blue { background: var(--brand-100); }
-    .stream-icon.cyan { background: rgba(6,182,212,0.10); }
-    .stream-icon.violet { background: rgba(124,58,237,0.10); }
+    .stream-icon.blue { background: var(--brand-100); color: var(--brand-700); }
+    .stream-icon.cyan { background: rgba(6,182,212,0.10); color: var(--accent-cyan); }
+    .stream-icon.violet { background: rgba(124,58,237,0.10); color: var(--accent-violet); }
     [data-theme="dark"] .stream-icon.blue { background: rgba(67,102,245,0.15); }
     [data-theme="dark"] .stream-icon.cyan { background: rgba(6,182,212,0.15); }
     [data-theme="dark"] .stream-icon.violet { background: rgba(124,58,237,0.15); }
@@ -557,7 +659,8 @@
     }
     .step-title { font-size: 1rem; font-weight: 700; margin-bottom: 8px; color: var(--ink); }
     .step-desc { font-size: 0.85rem; color: var(--muted); line-height: 1.6; }
-    .step-icon { font-size: 1.8rem; margin-bottom: 6px; }
+    .step-icon { display: flex; justify-content: center; margin-bottom: 6px; color: var(--brand-600); }
+    .step-icon svg { width: 28px; height: 28px; }
 
     @media (max-width: 860px) {
       .steps { grid-template-columns: repeat(2, 1fr); gap: 32px; }
@@ -593,9 +696,9 @@
       display: flex; align-items: center; justify-content: center;
       font-size: 1.2rem;
     }
-    .sec-icon.emerald { background: rgba(16,185,129,0.12); }
-    .sec-icon.brand { background: var(--brand-100); }
-    .sec-icon.amber { background: rgba(245,158,11,0.12); }
+    .sec-icon.emerald { background: rgba(16,185,129,0.12); color: var(--accent-emerald); }
+    .sec-icon.brand { background: var(--brand-100); color: var(--brand-700); }
+    .sec-icon.amber { background: rgba(245,158,11,0.12); color: var(--accent-amber); }
     [data-theme="dark"] .sec-icon.brand { background: rgba(67,102,245,0.15); }
     .sec-title { font-size: 0.9rem; font-weight: 700; color: var(--ink); margin-bottom: 4px; }
     .sec-desc { font-size: 0.82rem; color: var(--muted); line-height: 1.6; }
@@ -607,7 +710,7 @@
       display: flex; align-items: center; gap: 16px;
       position: relative; z-index: 1;
     }
-    .sec-banner-icon { font-size: 1.5rem; }
+    .sec-banner-icon { display: flex; align-items: center; }
     .sec-banner-text { font-size: 0.88rem; color: var(--muted); }
     .sec-banner-text strong { color: var(--ink); }
 
@@ -673,8 +776,8 @@
     .pricing-features li .check {
       width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0;
       display: flex; align-items: center; justify-content: center;
-      font-size: 0.65rem; font-weight: 800;
     }
+    .pricing-features li .check svg { stroke-width: 3; }
     .pricing-features li .check.green { background: rgba(16,185,129,0.15); color: var(--accent-emerald); }
     .pricing-card.featured .pricing-features li .check.green { background: rgba(16,185,129,0.25); }
 
@@ -851,17 +954,53 @@
 </head>
 <body>
 
+  <a href="#main" class="skip-link">Skip to content</a>
+
+  <!-- ════════════════════════════════════════════
+       SVG ICON SPRITE — Lucide-based, single source
+  ════════════════════════════════════════════ -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <defs>
+      <symbol id="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></symbol>
+      <symbol id="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></symbol>
+      <symbol id="i-arrow-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></symbol>
+      <symbol id="i-menu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></symbol>
+      <symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></symbol>
+      <symbol id="i-play" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></symbol>
+      <symbol id="i-check-circle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></symbol>
+      <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></symbol>
+      <symbol id="i-alert-triangle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></symbol>
+      <symbol id="i-bank" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="21" x2="21" y2="21"/><line x1="3" y1="10" x2="21" y2="10"/><polyline points="5 6 12 3 19 6"/><line x1="4" y1="10" x2="4" y2="21"/><line x1="20" y1="10" x2="20" y2="21"/><line x1="8" y1="14" x2="8" y2="17"/><line x1="12" y1="14" x2="12" y2="17"/><line x1="16" y1="14" x2="16" y2="17"/></symbol>
+      <symbol id="i-smartphone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></symbol>
+      <symbol id="i-credit-card" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></symbol>
+      <symbol id="i-file-text" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></symbol>
+      <symbol id="i-database" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></symbol>
+      <symbol id="i-upload-cloud" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/><polyline points="16 16 12 12 8 16"/></symbol>
+      <symbol id="i-zap" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></symbol>
+      <symbol id="i-user-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><polyline points="17 11 19 13 23 9"/></symbol>
+      <symbol id="i-file-signature" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M8 18c0-1 1-2 2-2s2 1 2 2-1 2-2 2-2-1-2-2z"/><path d="M12 18c1.5 0 1.5-3 4-3"/></symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></symbol>
+      <symbol id="i-shield-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></symbol>
+      <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+      <symbol id="i-key" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></symbol>
+      <symbol id="i-clipboard-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><polyline points="9 14 11 16 15 12"/></symbol>
+      <symbol id="i-server" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></symbol>
+      <symbol id="i-calendar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></symbol>
+    </defs>
+  </svg>
+
   <!-- ════════════════════════════════════════════
        NAVIGATION
   ════════════════════════════════════════════ -->
   <nav id="navbar">
     <div class="container nav-inner">
-      <a href="#" class="nav-logo">
-        <div class="nav-logo-mark">K</div>
+      <a href="#" class="nav-logo" aria-label="Kilter — home">
+        <div class="nav-logo-mark" aria-hidden="true">K</div>
         Kilter
       </a>
 
-      <div class="nav-links">
+      <div class="nav-links" role="navigation" aria-label="Primary">
         <a href="#streams">Features</a>
         <a href="#engine">Matching Engine</a>
         <a href="#security">Security</a>
@@ -870,20 +1009,42 @@
       </div>
 
       <div class="nav-actions">
-        <button class="btn-theme" id="themeToggle" aria-label="Toggle theme" title="Toggle dark mode">
-          <span id="themeIcon">🌙</span>
+        <button class="btn-theme" id="themeToggle" aria-label="Toggle dark mode" title="Toggle dark mode">
+          <svg id="themeIconMoon" width="18" height="18" aria-hidden="true"><use href="#i-moon"/></svg>
+          <svg id="themeIconSun" width="18" height="18" aria-hidden="true" style="display:none"><use href="#i-sun"/></svg>
         </button>
         <a href="pricing.html" class="btn-outline">Pricing</a>
-        <a href="#demo" class="btn-primary">Try the demo →</a>
+        <a href="#demo" class="btn-primary">
+          Try the demo
+          <svg width="14" height="14" aria-hidden="true" style="margin-left:4px;vertical-align:-2px"><use href="#i-arrow-right"/></svg>
+        </a>
       </div>
 
-      <button class="nav-menu-btn" aria-label="Menu">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-          <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
-        </svg>
+      <button class="nav-menu-btn" id="navMenuBtn" aria-label="Open menu" aria-expanded="false" aria-controls="mobileMenu">
+        <svg class="menu-icon" width="22" height="22" aria-hidden="true"><use href="#i-menu"/></svg>
+        <svg class="close-icon" width="22" height="22" aria-hidden="true"><use href="#i-x"/></svg>
       </button>
     </div>
   </nav>
+
+  <!-- Mobile menu panel -->
+  <div class="mobile-menu" id="mobileMenu" data-open="false" role="navigation" aria-label="Mobile menu">
+    <div class="mobile-menu-inner">
+      <a href="#streams">Features</a>
+      <a href="#engine">Matching Engine</a>
+      <a href="#security">Security</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#faq">FAQ</a>
+      <div class="mm-divider"></div>
+      <a href="pricing.html">Full pricing details</a>
+      <a href="#demo" class="mm-cta">
+        Try the demo
+        <svg width="14" height="14" aria-hidden="true" style="margin-left:6px"><use href="#i-arrow-right"/></svg>
+      </a>
+    </div>
+  </div>
+
+  <main id="main">
 
   <!-- ════════════════════════════════════════════
        HERO
@@ -996,35 +1157,35 @@
                   <td>Visa Base II</td>
                   <td>2026-05-09</td>
                   <td>2,450.00</td>
-                  <td><span class="status-pill pill-matched">✓ Matched</span></td>
+                  <td><span class="status-pill pill-matched"><svg width="11" height="11" aria-hidden="true"><use href="#i-check"/></svg> Matched</span></td>
                 </tr>
                 <tr>
                   <td><code>RRN-0049282</code></td>
                   <td>MTN MoMo B2W</td>
                   <td>2026-05-09</td>
                   <td>870.00</td>
-                  <td><span class="status-pill pill-matched">✓ Matched</span></td>
+                  <td><span class="status-pill pill-matched"><svg width="11" height="11" aria-hidden="true"><use href="#i-check"/></svg> Matched</span></td>
                 </tr>
                 <tr>
                   <td><code>MT940-28831</code></td>
                   <td>SWIFT MT940</td>
                   <td>2026-05-09</td>
                   <td>18,200.00</td>
-                  <td><span class="status-pill pill-pending">⏳ Review</span></td>
+                  <td><span class="status-pill pill-pending"><svg width="11" height="11" aria-hidden="true"><use href="#i-clock"/></svg> Review</span></td>
                 </tr>
                 <tr>
                   <td><code>RRN-0049291</code></td>
                   <td>Mastercard IPM</td>
                   <td>2026-05-09</td>
                   <td>1,120.50</td>
-                  <td><span class="status-pill pill-mismatch">⚠ Mismatch</span></td>
+                  <td><span class="status-pill pill-mismatch"><svg width="11" height="11" aria-hidden="true"><use href="#i-alert-triangle"/></svg> Mismatch</span></td>
                 </tr>
                 <tr>
                   <td><code>FLEX-2026-441</code></td>
                   <td>Flexcube GL</td>
                   <td>2026-05-09</td>
                   <td>52,000.00</td>
-                  <td><span class="status-pill pill-matched">✓ Matched</span></td>
+                  <td><span class="status-pill pill-matched"><svg width="11" height="11" aria-hidden="true"><use href="#i-check"/></svg> Matched</span></td>
                 </tr>
               </tbody>
             </table>
@@ -1042,35 +1203,35 @@
     <div style="overflow: hidden;">
       <div class="logo-scroll">
         <!-- duplicated for infinite loop -->
-        <div class="logo-pill"><span class="icon">📄</span> SWIFT MT940</div>
-        <div class="logo-pill"><span class="icon">📄</span> SWIFT MT950</div>
-        <div class="logo-pill"><span class="icon">📄</span> camt.053</div>
-        <div class="logo-pill"><span class="icon">📄</span> camt.054</div>
-        <div class="logo-pill"><span class="icon">💳</span> Visa Base II</div>
-        <div class="logo-pill"><span class="icon">💳</span> Mastercard IPM</div>
-        <div class="logo-pill"><span class="icon">💳</span> Verve GhIPSS</div>
-        <div class="logo-pill"><span class="icon">📱</span> MTN MoMo</div>
-        <div class="logo-pill"><span class="icon">📱</span> M-Pesa Safaricom</div>
-        <div class="logo-pill"><span class="icon">📱</span> Airtel Money</div>
-        <div class="logo-pill"><span class="icon">📱</span> Telcel Cash</div>
-        <div class="logo-pill"><span class="icon">🏦</span> Flexcube XLSX</div>
-        <div class="logo-pill"><span class="icon">🏦</span> T24 / Finacle</div>
-        <div class="logo-pill"><span class="icon">📊</span> BYO CSV/XLSX</div>
+        <div class="logo-pill"><svg width="16" height="16" aria-hidden="true"><use href="#i-file-text"/></svg> SWIFT MT940</div>
+        <div class="logo-pill"><svg width="16" height="16" aria-hidden="true"><use href="#i-file-text"/></svg> SWIFT MT950</div>
+        <div class="logo-pill"><svg width="16" height="16" aria-hidden="true"><use href="#i-file-text"/></svg> camt.053</div>
+        <div class="logo-pill"><svg width="16" height="16" aria-hidden="true"><use href="#i-file-text"/></svg> camt.054</div>
+        <div class="logo-pill"><svg width="16" height="16" aria-hidden="true"><use href="#i-credit-card"/></svg> Visa Base II</div>
+        <div class="logo-pill"><svg width="16" height="16" aria-hidden="true"><use href="#i-credit-card"/></svg> Mastercard IPM</div>
+        <div class="logo-pill"><svg width="16" height="16" aria-hidden="true"><use href="#i-credit-card"/></svg> Verve GhIPSS</div>
+        <div class="logo-pill"><svg width="16" height="16" aria-hidden="true"><use href="#i-smartphone"/></svg> MTN MoMo</div>
+        <div class="logo-pill"><svg width="16" height="16" aria-hidden="true"><use href="#i-smartphone"/></svg> M-Pesa Safaricom</div>
+        <div class="logo-pill"><svg width="16" height="16" aria-hidden="true"><use href="#i-smartphone"/></svg> Airtel Money</div>
+        <div class="logo-pill"><svg width="16" height="16" aria-hidden="true"><use href="#i-smartphone"/></svg> Telcel Cash</div>
+        <div class="logo-pill"><svg width="16" height="16" aria-hidden="true"><use href="#i-bank"/></svg> Flexcube XLSX</div>
+        <div class="logo-pill"><svg width="16" height="16" aria-hidden="true"><use href="#i-bank"/></svg> T24 / Finacle</div>
+        <div class="logo-pill"><svg width="16" height="16" aria-hidden="true"><use href="#i-database"/></svg> BYO CSV/XLSX</div>
         <!-- duplicate set -->
-        <div class="logo-pill"><span class="icon">📄</span> SWIFT MT940</div>
-        <div class="logo-pill"><span class="icon">📄</span> SWIFT MT950</div>
-        <div class="logo-pill"><span class="icon">📄</span> camt.053</div>
-        <div class="logo-pill"><span class="icon">📄</span> camt.054</div>
-        <div class="logo-pill"><span class="icon">💳</span> Visa Base II</div>
-        <div class="logo-pill"><span class="icon">💳</span> Mastercard IPM</div>
-        <div class="logo-pill"><span class="icon">💳</span> Verve GhIPSS</div>
-        <div class="logo-pill"><span class="icon">📱</span> MTN MoMo</div>
-        <div class="logo-pill"><span class="icon">📱</span> M-Pesa Safaricom</div>
-        <div class="logo-pill"><span class="icon">📱</span> Airtel Money</div>
-        <div class="logo-pill"><span class="icon">📱</span> Telcel Cash</div>
-        <div class="logo-pill"><span class="icon">🏦</span> Flexcube XLSX</div>
-        <div class="logo-pill"><span class="icon">🏦</span> T24 / Finacle</div>
-        <div class="logo-pill"><span class="icon">📊</span> BYO CSV/XLSX</div>
+        <div class="logo-pill"><svg width="16" height="16" aria-hidden="true"><use href="#i-file-text"/></svg> SWIFT MT940</div>
+        <div class="logo-pill"><svg width="16" height="16" aria-hidden="true"><use href="#i-file-text"/></svg> SWIFT MT950</div>
+        <div class="logo-pill"><svg width="16" height="16" aria-hidden="true"><use href="#i-file-text"/></svg> camt.053</div>
+        <div class="logo-pill"><svg width="16" height="16" aria-hidden="true"><use href="#i-file-text"/></svg> camt.054</div>
+        <div class="logo-pill"><svg width="16" height="16" aria-hidden="true"><use href="#i-credit-card"/></svg> Visa Base II</div>
+        <div class="logo-pill"><svg width="16" height="16" aria-hidden="true"><use href="#i-credit-card"/></svg> Mastercard IPM</div>
+        <div class="logo-pill"><svg width="16" height="16" aria-hidden="true"><use href="#i-credit-card"/></svg> Verve GhIPSS</div>
+        <div class="logo-pill"><svg width="16" height="16" aria-hidden="true"><use href="#i-smartphone"/></svg> MTN MoMo</div>
+        <div class="logo-pill"><svg width="16" height="16" aria-hidden="true"><use href="#i-smartphone"/></svg> M-Pesa Safaricom</div>
+        <div class="logo-pill"><svg width="16" height="16" aria-hidden="true"><use href="#i-smartphone"/></svg> Airtel Money</div>
+        <div class="logo-pill"><svg width="16" height="16" aria-hidden="true"><use href="#i-smartphone"/></svg> Telcel Cash</div>
+        <div class="logo-pill"><svg width="16" height="16" aria-hidden="true"><use href="#i-bank"/></svg> Flexcube XLSX</div>
+        <div class="logo-pill"><svg width="16" height="16" aria-hidden="true"><use href="#i-bank"/></svg> T24 / Finacle</div>
+        <div class="logo-pill"><svg width="16" height="16" aria-hidden="true"><use href="#i-database"/></svg> BYO CSV/XLSX</div>
       </div>
     </div>
   </div>
@@ -1089,7 +1250,7 @@
 
       <div class="streams-grid">
         <div class="stream-card fade-up">
-          <div class="stream-icon blue">🏦</div>
+          <div class="stream-icon blue"><svg width="26" height="26" aria-hidden="true"><use href="#i-bank"/></svg></div>
           <div class="stream-name">Nostro / GL</div>
           <div class="stream-desc">
             Pairs SWIFT statements (MT940/950, camt.053/054) and ISO 20022 messages against your core-banking GL extract.
@@ -1105,7 +1266,7 @@
         </div>
 
         <div class="stream-card fade-up">
-          <div class="stream-icon cyan">📱</div>
+          <div class="stream-icon cyan"><svg width="26" height="26" aria-hidden="true"><use href="#i-smartphone"/></svg></div>
           <div class="stream-name">Mobile Money</div>
           <div class="stream-desc">
             Ingests operator B2W / W2B CSV feeds directly. Pre-seeded profiles for the major West African networks.
@@ -1121,7 +1282,7 @@
         </div>
 
         <div class="stream-card fade-up">
-          <div class="stream-icon violet">💳</div>
+          <div class="stream-icon violet"><svg width="26" height="26" aria-hidden="true"><use href="#i-credit-card"/></svg></div>
           <div class="stream-name">Card Scheme</div>
           <div class="stream-desc">
             N-way matching on scheme-ref: auth → clearing → settlement.
@@ -1231,25 +1392,25 @@
 
       <div class="steps">
         <div class="step fade-up">
-          <div class="step-icon">📥</div>
+          <div class="step-icon"><svg width="28" height="28" aria-hidden="true"><use href="#i-upload-cloud"/></svg></div>
           <div class="step-num">01</div>
           <div class="step-title">Drop the file</div>
           <div class="step-desc">Upload via the UI, POST to the API, or let the watched-folder scanner auto-ingest from <code>messages/</code>. Any format Kilter knows, or map your own.</div>
         </div>
         <div class="step fade-up">
-          <div class="step-icon">⚡</div>
+          <div class="step-icon"><svg width="28" height="28" aria-hidden="true"><use href="#i-zap"/></svg></div>
           <div class="step-num">02</div>
           <div class="step-title">Engine matches</div>
           <div class="step-desc">Four-tier engine runs automatically. 75–85% of transactions matched in seconds. Exceptions ranked by confidence and surfaced to the review queue.</div>
         </div>
         <div class="step fade-up">
-          <div class="step-icon">👤</div>
+          <div class="step-icon"><svg width="28" height="28" aria-hidden="true"><use href="#i-user-check"/></svg></div>
           <div class="step-num">03</div>
           <div class="step-title">Operator decides</div>
           <div class="step-desc">Confirm, reject, or dispute in one click. Maker / checker workflow enforced. Every decision logged with timestamp, user, and reason.</div>
         </div>
         <div class="step fade-up">
-          <div class="step-icon">📋</div>
+          <div class="step-icon"><svg width="28" height="28" aria-hidden="true"><use href="#i-file-signature"/></svg></div>
           <div class="step-num">04</div>
           <div class="step-title">Sign the certificate</div>
           <div class="step-desc">Month-end reconciliation certificate signed by authorised approvers. Frozen snapshot — the figures never silently shift after sign-off.</div>
@@ -1273,42 +1434,42 @@
       <div class="security-glass">
         <div class="sec-grid">
           <div class="sec-item fade-up">
-            <div class="sec-icon emerald">🔒</div>
+            <div class="sec-icon emerald"><svg width="22" height="22" aria-hidden="true"><use href="#i-lock"/></svg></div>
             <div>
               <div class="sec-title">TOTP MFA on every login</div>
               <div class="sec-desc">Microsoft Authenticator out of the box. Active Directory / LDAPS as optional second layer per user. TOTP replay cache prevents 30-second code reuse.</div>
             </div>
           </div>
           <div class="sec-item fade-up">
-            <div class="sec-icon brand">🛡️</div>
+            <div class="sec-icon brand"><svg width="22" height="22" aria-hidden="true"><use href="#i-shield"/></svg></div>
             <div>
               <div class="sec-title">Non-root, read-only rootfs</div>
               <div class="sec-desc">Container runs as UID 10001. All Linux capabilities dropped. <code>no-new-privileges</code> enforced. Only mounted volumes and <code>/tmp</code> are writable.</div>
             </div>
           </div>
           <div class="sec-item fade-up">
-            <div class="sec-icon amber">🔑</div>
+            <div class="sec-icon amber"><svg width="22" height="22" aria-hidden="true"><use href="#i-key"/></svg></div>
             <div>
               <div class="sec-title">Encrypted at rest</div>
               <div class="sec-desc">TOTP secrets and SMTP credentials protected with Fernet (AES-128-CBC + HMAC-SHA256). Key lives in your secret manager, never baked into source.</div>
             </div>
           </div>
           <div class="sec-item fade-up">
-            <div class="sec-icon emerald">📋</div>
+            <div class="sec-icon emerald"><svg width="22" height="22" aria-hidden="true"><use href="#i-clipboard-check"/></svg></div>
             <div>
               <div class="sec-title">Append-only audit log</div>
               <div class="sec-desc">Every login, upload, match decision, dispute, and export is logged with UTC timestamp, acting user, and IP. Immutability enforced at the database trigger level.</div>
             </div>
           </div>
           <div class="sec-item fade-up">
-            <div class="sec-icon brand">💳</div>
+            <div class="sec-icon brand"><svg width="22" height="22" aria-hidden="true"><use href="#i-credit-card"/></svg></div>
             <div>
               <div class="sec-title">PCI-DSS storage scope reduction</div>
               <div class="sec-desc">Full PAN never persists — masked to <code>first6+last4</code> at the parser seam. No SAD (CVV, track, PIN) accepted. Free-text scanned and redacted on ingest.</div>
             </div>
           </div>
           <div class="sec-item fade-up">
-            <div class="sec-icon amber">🏠</div>
+            <div class="sec-icon amber"><svg width="22" height="22" aria-hidden="true"><use href="#i-server"/></svg></div>
             <div>
               <div class="sec-title">Self-hosted. No phone-home.</div>
               <div class="sec-desc">Runs on your VM or private cloud. No telemetry. No data leaves your infrastructure. You own the encryption key, you own the data.</div>
@@ -1317,7 +1478,7 @@
         </div>
 
         <div class="sec-banner">
-          <div class="sec-banner-icon">✅</div>
+          <div class="sec-banner-icon" aria-hidden="true" style="color:var(--accent-emerald);"><svg width="24" height="24"><use href="#i-shield-check"/></svg></div>
           <div class="sec-banner-text">
             <strong>Security headers on every response:</strong> HSTS (preload-eligible after 24 hours), CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy.
             Rate limit on <code>/login</code> (10 attempts / minute per IP).
@@ -1354,17 +1515,18 @@
           <div class="pricing-note">Your data, your VM, your terms. Walk away if we miss the targets.</div>
 
           <ul class="pricing-features">
-            <li><span class="check green">✓</span> Up to 10 nostro + 10 GL accounts</li>
-            <li><span class="check green">✓</span> Real (or anonymised) production data</li>
-            <li><span class="check green">✓</span> All three reconciliation streams</li>
-            <li><span class="check green">✓</span> Success criteria pinned upfront</li>
-            <li><span class="check green">✓</span> 50% discount on Year 1 if targets hit</li>
-            <li><span class="check green">✓</span> 25% discount on Year 2 (design partner)</li>
-            <li><span class="check green">✓</span> Data deleted on request if you walk</li>
+            <li><span class="check green" aria-hidden="true"><svg width="11" height="11"><use href="#i-check"/></svg></span> Up to 10 nostro + 10 GL accounts</li>
+            <li><span class="check green" aria-hidden="true"><svg width="11" height="11"><use href="#i-check"/></svg></span> Real (or anonymised) production data</li>
+            <li><span class="check green" aria-hidden="true"><svg width="11" height="11"><use href="#i-check"/></svg></span> All three reconciliation streams</li>
+            <li><span class="check green" aria-hidden="true"><svg width="11" height="11"><use href="#i-check"/></svg></span> Success criteria pinned upfront</li>
+            <li><span class="check green" aria-hidden="true"><svg width="11" height="11"><use href="#i-check"/></svg></span> 50% discount on Year 1 if targets hit</li>
+            <li><span class="check green" aria-hidden="true"><svg width="11" height="11"><use href="#i-check"/></svg></span> 25% discount on Year 2 (design partner)</li>
+            <li><span class="check green" aria-hidden="true"><svg width="11" height="11"><use href="#i-check"/></svg></span> Data deleted on request if you walk</li>
           </ul>
 
           <a href="mailto:timelessnypotech@outlook.com?subject=Kilter Pilot Request" class="btn-pricing-outline">
-            Start a pilot conversation →
+            Start a pilot conversation
+            <svg width="14" height="14" aria-hidden="true" style="margin-left:4px;vertical-align:-2px"><use href="#i-arrow-right"/></svg>
           </a>
         </div>
 
@@ -1379,25 +1541,27 @@
           <div class="pricing-note">Each nostro, wallet, and card-acquirer account = one slot. Volume discounts beyond 10 accounts.</div>
 
           <ul class="pricing-features">
-            <li><span class="check green">✓</span> All three reconciliation streams</li>
-            <li><span class="check green">✓</span> Full audit-grade certificates</li>
-            <li><span class="check green">✓</span> LDAP / AD integration</li>
-            <li><span class="check green">✓</span> Maker / checker / approver workflow</li>
-            <li><span class="check green">✓</span> Custom CSV/XLSX column mapping</li>
-            <li><span class="check green">✓</span> MySQL / SQLite — your choice</li>
-            <li><span class="check green">✓</span> Annual prepay, net 30</li>
-            <li><span class="check green">✓</span> Implementation: USD $3–10k one-time</li>
+            <li><span class="check green" aria-hidden="true"><svg width="11" height="11"><use href="#i-check"/></svg></span> All three reconciliation streams</li>
+            <li><span class="check green" aria-hidden="true"><svg width="11" height="11"><use href="#i-check"/></svg></span> Full audit-grade certificates</li>
+            <li><span class="check green" aria-hidden="true"><svg width="11" height="11"><use href="#i-check"/></svg></span> LDAP / AD integration</li>
+            <li><span class="check green" aria-hidden="true"><svg width="11" height="11"><use href="#i-check"/></svg></span> Maker / checker / approver workflow</li>
+            <li><span class="check green" aria-hidden="true"><svg width="11" height="11"><use href="#i-check"/></svg></span> Custom CSV/XLSX column mapping</li>
+            <li><span class="check green" aria-hidden="true"><svg width="11" height="11"><use href="#i-check"/></svg></span> MySQL / SQLite — your choice</li>
+            <li><span class="check green" aria-hidden="true"><svg width="11" height="11"><use href="#i-check"/></svg></span> Annual prepay, net 30</li>
+            <li><span class="check green" aria-hidden="true"><svg width="11" height="11"><use href="#i-check"/></svg></span> Implementation: USD $3–10k one-time</li>
           </ul>
 
           <a href="mailto:timelessnypotech@outlook.com?subject=Kilter Pricing Enquiry" class="btn-pricing-primary">
-            Get a quote →
+            Get a quote
+            <svg width="14" height="14" aria-hidden="true" style="margin-left:4px;vertical-align:-2px"><use href="#i-arrow-right"/></svg>
           </a>
         </div>
       </div>
 
       <div style="text-align: center; margin-top: 24px;">
         <a href="pricing.html" style="font-size: 0.88rem; color: var(--muted); text-decoration: underline; text-underline-offset: 3px;">
-          See full pricing breakdown with GHS / USD toggle →
+          See full pricing breakdown with GHS / USD toggle
+          <svg width="13" height="13" aria-hidden="true" style="margin-left:2px;vertical-align:-2px"><use href="#i-arrow-right"/></svg>
         </a>
       </div>
     </div>
@@ -1418,10 +1582,12 @@
           </p>
           <div class="demo-ctas">
             <a href="mailto:timelessnypotech@outlook.com?subject=Kilter Demo Request&body=Hi%2C%0A%0AI'd like to see a live Kilter demo.%0A%0AOrganisation%3A%20%5BFILL%5D%0AFile%20format%20we%20use%3A%20%5BFILL%5D%0AAvailability%3A%20%5BFILL%5D%0A" class="btn-demo-white">
-              📅 Book a 30-minute demo
+              <svg width="18" height="18" aria-hidden="true"><use href="#i-calendar"/></svg>
+              Book a 30-minute demo
             </a>
             <a href="pitch_pilot_bank.html" class="btn-demo-outline">
-              View the pilot deck →
+              View the pilot deck
+              <svg width="14" height="14" aria-hidden="true"><use href="#i-arrow-right"/></svg>
             </a>
           </div>
 
@@ -1439,28 +1605,28 @@
                 <div style="font-size: 0.8rem; color: rgba(255,255,255,0.8); font-weight: 600;">GHS 4,200.00</div>
                 <div class="demo-mini-ref">MT940-0019281</div>
               </div>
-              <span class="status-pill pill-matched" style="font-size: 0.6rem;">✓ Auto</span>
+              <span class="status-pill pill-matched" style="font-size: 0.6rem;"><svg width="9" height="9" aria-hidden="true"><use href="#i-check"/></svg> Auto</span>
             </div>
             <div class="demo-mini-row">
               <div>
                 <div style="font-size: 0.8rem; color: rgba(255,255,255,0.8); font-weight: 600;">GHS 870.50</div>
                 <div class="demo-mini-ref">MTN-B2W-2049</div>
               </div>
-              <span class="status-pill pill-matched" style="font-size: 0.6rem;">✓ Auto</span>
+              <span class="status-pill pill-matched" style="font-size: 0.6rem;"><svg width="9" height="9" aria-hidden="true"><use href="#i-check"/></svg> Auto</span>
             </div>
             <div class="demo-mini-row">
               <div>
                 <div style="font-size: 0.8rem; color: rgba(255,255,255,0.8); font-weight: 600;">GHS 18,200.00</div>
                 <div class="demo-mini-ref">RRN-0049291</div>
               </div>
-              <span class="status-pill pill-pending" style="font-size: 0.6rem;">⏳ Review</span>
+              <span class="status-pill pill-pending" style="font-size: 0.6rem;"><svg width="9" height="9" aria-hidden="true"><use href="#i-clock"/></svg> Review</span>
             </div>
             <div class="demo-mini-row">
               <div>
                 <div style="font-size: 0.8rem; color: rgba(255,255,255,0.8); font-weight: 600;">GHS 1,100.00</div>
                 <div class="demo-mini-ref">FLEX-2026-441</div>
               </div>
-              <span class="status-pill pill-matched" style="font-size: 0.6rem;">✓ Auto</span>
+              <span class="status-pill pill-matched" style="font-size: 0.6rem;"><svg width="9" height="9" aria-hidden="true"><use href="#i-check"/></svg> Auto</span>
             </div>
             <div style="margin-top: 16px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,0.08); text-align: center; font-size: 0.72rem; color: rgba(255,255,255,0.4);">
               84% matched · 23 items pending · 7 open
@@ -1483,40 +1649,42 @@
 
       <div class="faq-grid">
         <div class="faq-item">
-          <div class="faq-q">Does Kilter work without internet access?<span>→</span></div>
+          <div class="faq-q">Does Kilter work without internet access?<svg width="16" height="16" aria-hidden="true" style="flex-shrink:0;opacity:0.5"><use href="#i-arrow-right"/></svg></div>
           <div class="faq-a">Yes. Kilter is entirely self-hosted and has no phone-home telemetry. It works fully air-gapped on your VM or private cloud. Font resources are optional and can be proxied or bundled internally.</div>
         </div>
         <div class="faq-item">
-          <div class="faq-q">What database does it use?<span>→</span></div>
+          <div class="faq-q">What database does it use?<svg width="16" height="16" aria-hidden="true" style="flex-shrink:0;opacity:0.5"><use href="#i-arrow-right"/></svg></div>
           <div class="faq-a">SQLite by default (zero-config, WAL mode, hot backup API). MySQL is fully supported via <code>DATABASE_URL</code> env var — suitable for multi-tenant or high-concurrency deployments. See MYSQL.md in the package.</div>
         </div>
         <div class="faq-item">
-          <div class="faq-q">How do I handle a file format we invented ourselves?<span>→</span></div>
+          <div class="faq-q">How do I handle a file format we invented ourselves?<svg width="16" height="16" aria-hidden="true" style="flex-shrink:0;opacity:0.5"><use href="#i-arrow-right"/></svg></div>
           <div class="faq-a">Use the BYO CSV/XLSX column-mapping wizard in the UI. Map your columns once, save the profile, bind it to an account. Kilter will parse every future file from that account using that profile.</div>
         </div>
         <div class="faq-item">
-          <div class="faq-q">What if the engine misses a match?<span>→</span></div>
+          <div class="faq-q">What if the engine misses a match?<svg width="16" height="16" aria-hidden="true" style="flex-shrink:0;opacity:0.5"><use href="#i-arrow-right"/></svg></div>
           <div class="faq-a">Operators can manually confirm any unmatched item directly from the review queue. The decision is logged with timestamp, user, and reason. Matched-at and matched-by are stamped on the record.</div>
         </div>
         <div class="faq-item">
-          <div class="faq-q">Can I run multiple workers for performance?<span>→</span></div>
+          <div class="faq-q">Can I run multiple workers for performance?<svg width="16" height="16" aria-hidden="true" style="flex-shrink:0;opacity:0.5"><use href="#i-arrow-right"/></svg></div>
           <div class="faq-a">Single-worker is strongly recommended (default). The in-process TOTP replay cache isn't shared across workers — multi-worker risks OTP reuse attacks. A Redis-backed store is on the roadmap for high-throughput deployments.</div>
         </div>
         <div class="faq-item">
-          <div class="faq-q">How does Active Directory / LDAP integration work?<span>→</span></div>
+          <div class="faq-q">How does Active Directory / LDAP integration work?<svg width="16" height="16" aria-hidden="true" style="flex-shrink:0;opacity:0.5"><use href="#i-arrow-right"/></svg></div>
           <div class="faq-a">Set <code>KILTER_LDAP_URL</code>, <code>KILTER_LDAP_BASE_DN</code>, and optional CA bundle. Then flip individual users from <code>local</code> to <code>ldap</code> in the Users admin page. AD password becomes the first factor; TOTP remains the second. See LDAP.md for the full guide.</div>
         </div>
         <div class="faq-item">
-          <div class="faq-q">Is there an API?<span>→</span></div>
+          <div class="faq-q">Is there an API?<svg width="16" height="16" aria-hidden="true" style="flex-shrink:0;opacity:0.5"><use href="#i-arrow-right"/></svg></div>
           <div class="faq-a">Yes. Cards files are ingested via <code>POST /cards/files</code>. The full FastAPI spec is self-documented at <code>/docs</code> (Swagger UI) and <code>/redoc</code> on your deployed instance.</div>
         </div>
         <div class="faq-item">
-          <div class="faq-q">What's the upgrade path?<span>→</span></div>
+          <div class="faq-q">What's the upgrade path?<svg width="16" height="16" aria-hidden="true" style="flex-shrink:0;opacity:0.5"><use href="#i-arrow-right"/></svg></div>
           <div class="faq-a"><code>git pull && docker compose build --pull && docker compose up -d</code>. Schema is idempotent — <code>init_db()</code> runs on startup and applies any new migrations in-place. No manual migration step.</div>
         </div>
       </div>
     </div>
   </section>
+
+  </main>
 
   <!-- ════════════════════════════════════════════
        FOOTER
@@ -1594,7 +1762,8 @@
     // ── theme toggle ──────────────────────────────────────
     const root = document.documentElement;
     const themeBtn = document.getElementById('themeToggle');
-    const themeIcon = document.getElementById('themeIcon');
+    const themeIconMoon = document.getElementById('themeIconMoon');
+    const themeIconSun = document.getElementById('themeIconSun');
 
     const saved = localStorage.getItem('kilter-theme') ||
       (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
@@ -1606,9 +1775,37 @@
 
     function setTheme(t) {
       root.dataset.theme = t;
-      themeIcon.textContent = t === 'dark' ? '☀️' : '🌙';
+      themeIconMoon.style.display = t === 'dark' ? 'none' : 'block';
+      themeIconSun.style.display  = t === 'dark' ? 'block' : 'none';
+      themeBtn.setAttribute('aria-label', t === 'dark' ? 'Switch to light mode' : 'Switch to dark mode');
       localStorage.setItem('kilter-theme', t);
     }
+
+    // ── mobile menu ───────────────────────────────────────
+    const menuBtn  = document.getElementById('navMenuBtn');
+    const menuPanel = document.getElementById('mobileMenu');
+
+    function setMenu(open) {
+      menuBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      menuBtn.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+      menuPanel.dataset.open = open ? 'true' : 'false';
+      document.body.style.overflow = open ? 'hidden' : '';
+    }
+    menuBtn.addEventListener('click', () => {
+      setMenu(menuPanel.dataset.open !== 'true');
+    });
+    // close on link click
+    menuPanel.querySelectorAll('a').forEach(a => {
+      a.addEventListener('click', () => setMenu(false));
+    });
+    // close on Escape
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && menuPanel.dataset.open === 'true') setMenu(false);
+    });
+    // close if resized to desktop
+    window.addEventListener('resize', () => {
+      if (window.innerWidth > 860 && menuPanel.dataset.open === 'true') setMenu(false);
+    });
 
     // ── sticky nav shadow ─────────────────────────────────
     const navbar = document.getElementById('navbar');
